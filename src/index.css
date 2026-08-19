@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+:root {
+  /* XTRA Brand Colors */
+  --xtra-red: #F7414B;
+  --xtra-white: #FFFFFF;
+  --xtra-ink: #3A3534;
+  --xtra-blue: #5059FF;
+  --xtra-yellow: #FFD446;
+  --xtra-orange: #FF732D;
+  --status-success: #2FA36B;
+
+  /* Red Ramp */
+  --red-100: #FFE7E8;
+  --red-200: #FFC3C6;
+  --red-400: #FA6B73;
+  --red-500: #F7414B;
+  --red-600: #DE2A34;
+  --red-700: #B41C25;
+
+  /* Ink / Neutral Ramp */
+  --ink-900: #241F1F;
+  --ink-800: #3A3534;
+  --ink-600: #6B6362;
+  --ink-400: #9A9291;
+  --ink-300: #C7C1C0;
+  --ink-200: #E6E2E1;
+  --ink-100: #F3F1F0;
+  --ink-050: #FAF8F7;
+
+  /* Accent Tints */
+  --blue-100: #E6E7FF;
+  --blue-200: #C8CAFF;
+  --yellow-100: #FFF6DC;
+  --orange-100: #FFEBE0;
+  --green-100: #E3F7EC;
+
+  /* Typography */
+  --font-hebrew: 'Assistant', 'Rubik', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  font-family: var(--font-hebrew);
+  background-color: var(--ink-050);
+  color: var(--ink-800);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--ink-100);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ink-300);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-400);
+}
+
+/* Chunky sticker button and card utility */
+.xtra-sticker-shadow {
+  box-shadow: 3px 3px 0px var(--xtra-ink);
+}
+
+.xtra-sticker-shadow-sm {
+  box-shadow: 2px 2px 0px var(--xtra-ink);
+}
+
+.xtra-sticker-shadow-lg {
+  box-shadow: 4px 4px 0px var(--xtra-ink);
+}
+
+.xtra-card-border {
+  border: 2px solid var(--xtra-ink);
+  border-radius: 20px;
+}
+
