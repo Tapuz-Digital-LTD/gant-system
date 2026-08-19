@@ -1,4 +1,4 @@
-import { EventItem } from '../types';
+import { EventItem, isFloating, monthKeyOf } from '../types';
 import { toCsvDocument } from './csv';
 
 export function formatDate(isoStr?: string): string {
@@ -74,7 +74,7 @@ export function buildMonthCalendarGrid(
       byDay[day].push({
         item: ev,
         type: 'kickoff',
-        badgeLabel: `התנעה: ${ev.title}`,
+        badgeLabel: `תאריך תאריך התנעה: ${ev.title}`,
         bg: '#F7414B',
         fg: '#FFFFFF'
       });
@@ -82,7 +82,7 @@ export function buildMonthCalendarGrid(
 
     // Check actual dates
     if (showActuals && ev.actualDate) {
-      if (ev.actualDate === monthKey || ev.isFloating && ev.monthKey === monthKey) {
+      if (isFloating(ev) && monthKeyOf(ev) === monthKey) {
         if (!floatingEvents.some((f) => f.id === ev.id)) {
           floatingEvents.push(ev);
         }
@@ -100,7 +100,7 @@ export function buildMonthCalendarGrid(
           byDay[day].push({
             item: ev,
             type: 'actual',
-            badgeLabel: `אמת: ${ev.title}`,
+            badgeLabel: `תאריך אמת: ${ev.title}`,
             bg: '#3A3534',
             fg: '#FFFFFF'
           });
@@ -162,19 +162,19 @@ export function calculateEventProgress(event: EventItem): {
 
 export function exportBoardToCSV(boardName: string, events: EventItem[]): void {
   const headers = [
-    'מזהה',
+    'מספר פנימי',
     'שם האירוע',
     'קטגוריה',
-    'תאריך התנעה',
+    'תאריך תאריך התנעה',
     'תאריך אמת',
     'חודשי הכנה',
     'חודש יעד',
-    'ללא תאריך מדויק',
+    'בלי יום מדויק',
     'הערות',
     'תיאור',
-    'כמות משימות',
+    'מספר משימות',
     'משימות שהושלמו',
-    'אחוז התקדמות'
+    'התקדמות'
   ];
 
   const rows = events.map((ev) => {
@@ -184,10 +184,10 @@ export function exportBoardToCSV(boardName: string, events: EventItem[]): void {
       ev.title,
       ev.category,
       ev.kickoffDate || '',
-      ev.actualDate || '',
+      ev.actualDate,
       ev.prepMonths,
-      ev.monthKey,
-      ev.isFloating ? 'כן' : 'לא',
+      monthKeyOf(ev),
+      isFloating(ev) ? 'כן' : 'לא',
       ev.note || '',
       ev.description || '',
       progress.totalTasks,

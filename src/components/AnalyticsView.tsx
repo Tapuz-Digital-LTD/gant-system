@@ -1,7 +1,8 @@
-import React from 'react';
-import { BarChart3, CheckCircle2, Clock, Calendar, Users, Target, Award, Sparkles } from 'lucide-react';
-import { EventItem, MonthMeta, UserAccess } from '../types';
-import { calculateEventProgress, formatDate } from '../utils/dateHelpers';
+import React, { useMemo } from 'react';
+import { CalendarClock, Rocket, ListChecks, AlertTriangle } from 'lucide-react';
+import { EventItem, MonthMeta, UserAccess, EventCategory , monthKeyOf, isFloating } from '../types';
+import { CATEGORY_META, isOverdue, avatarColor, currentMonthKey } from '../utils/eventMeta';
+import { cn } from './ui';
 
 interface AnalyticsViewProps {
   events: EventItem[];
@@ -10,211 +11,211 @@ interface AnalyticsViewProps {
   boardName: string;
 }
 
-export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
-  events,
-  months,
-  users,
-  boardName
-}) => {
-  // Aggregate statistics
-  const totalEvents = events.length;
-  const kickoffsCount = events.filter((e) => !!e.kickoffDate).length;
-  const actualsCount = events.filter((e) => !!e.actualDate).length;
+const CATEGORIES = Object.keys(CATEGORY_META) as EventCategory[];
 
-  let totalTasks = 0;
-  let completedTasks = 0;
-  let inProgressTasks = 0;
-  let todoTasks = 0;
+export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ events, months, users }) => {
+  const stats = useMemo(() => {
+    const thisMonth = currentMonthKey();
+    const byCategory = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<EventCategory, number>;
+    const byAssignee = new Map<string, { name: string; total: number; done: number; late: number }>();
+    const userNames = new Map(users.map((u) => [u.id, u.name]));
 
-  const tasksByAssignee: { [email: string]: { name: string; total: number; done: number } } = {};
-  users.forEach((u) => {
-    tasksByAssignee[u.email] = { name: u.name, total: 0, done: 0 };
-  });
+    let totalTasks = 0;
+    let doneTasks = 0;
+    let lateTasks = 0;
 
-  const eventsByCategory: { [cat: string]: number } = {
-    holiday: 0,
-    campaign: 0,
-    b2b: 0,
-    social: 0,
-    operational: 0,
-    other: 0
-  };
+    for (const ev of events) {
+      byCategory[ev.category] = (byCategory[ev.category] || 0) + 1;
 
-  events.forEach((ev) => {
-    eventsByCategory[ev.category] = (eventsByCategory[ev.category] || 0) + 1;
+      for (const t of ev.tasks || []) {
+        totalTasks++;
+        if (t.status === 'done') doneTasks++;
+        if (isOverdue(t.dueDate, t.status)) lateTasks++;
 
-    (ev.tasks || []).forEach((t) => {
-      totalTasks++;
-      if (t.status === 'done') completedTasks++;
-      else if (t.status === 'in_progress' || t.status === 'ready_kickoff') inProgressTasks++;
-      else todoTasks++;
-
-      if (t.assigneeEmail) {
-        if (!tasksByAssignee[t.assigneeEmail]) {
-          tasksByAssignee[t.assigneeEmail] = { name: t.assigneeName || t.assigneeEmail, total: 0, done: 0 };
-        }
-        tasksByAssignee[t.assigneeEmail].total++;
-        if (t.status === 'done') {
-          tasksByAssignee[t.assigneeEmail].done++;
-        }
+        const key = t.assigneeId ?? 'unassigned';
+        const row =
+          byAssignee.get(key) ||
+          { name: userNames.get(key) ?? 'בלי אחראי', total: 0, done: 0, late: 0 };
+        row.total++;
+        if (t.status === 'done') row.done++;
+        if (isOverdue(t.dueDate, t.status)) row.late++;
+        byAssignee.set(key, row);
       }
-    });
-  });
+    }
 
-  const overallProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    const upcoming = events
+      .filter((e) => e.actualDate.slice(0, 7) >= thisMonth)
+      .sort((a, b) => a.actualDate.localeCompare(b.actualDate))
+      .slice(0, 6);
 
-  const categoryLabels: { [k: string]: { label: string; color: string } } = {
-    holiday: { label: 'חגים ומועדים', color: '#F7414B' },
-    campaign: { label: 'קמפיינים עונתיים', color: '#5059FF' },
-    b2b: { label: 'ועדים ו-B2B', color: '#FF732D' },
-    social: { label: 'סושיאל ומדיה', color: '#2FA36B' },
-    operational: { label: 'תפעול ופיתוח', color: '#FFD446' },
-    other: { label: 'אחר', color: '#9A9291' }
-  };
+    const perMonth = months.map((m) => ({
+      key: m.key,
+      label: m.title.replace(/\s+\d{4}$/, ''),
+      year: m.year,
+      count: events.filter((e) => e.actualDate.startsWith(m.key)).length,
+      isNow: m.key === thisMonth
+    }));
+
+    return {
+      totalEvents: events.length,
+      kickoffs: events.filter((e) => e.kickoffDate).length,
+      totalTasks,
+      doneTasks,
+      lateTasks,
+      byCategory,
+      byAssignee: [...byAssignee.entries()].sort((a, b) => b[1].total - a[1].total),
+      upcoming,
+      perMonth
+    };
+  }, [events, months, users]);
+
+  const peak = Math.max(1, ...stats.perMonth.map((m) => m.count));
+
+  const CARDS = [
+    { icon: CalendarClock, label: 'אירועים בלוח', value: stats.totalEvents, tint: 'text-primary bg-primary-soft' },
+    { icon: Rocket, label: 'עם תאריך תאריך התנעה', value: stats.kickoffs, tint: 'text-ready bg-ready-soft' },
+    { icon: ListChecks, label: 'משימות', value: stats.totalTasks, tint: 'text-done bg-done-soft' },
+    { icon: AlertTriangle, label: 'משימות באיחור', value: stats.lateTasks, tint: 'text-late bg-late-soft' }
+  ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
-      {/* Header */}
-      <div className="bg-white border-2 border-[#3A3534] rounded-2xl p-5 xtra-sticker-shadow flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-extrabold text-[#3A3534] flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-[#5059FF]" />
-            <span>דשבורד ביצועים ומעקב משימות: {boardName}</span>
-          </h2>
-          <p className="text-xs text-[#6B6362] mt-0.5">
-            ניתוח עומסי עבודה, קצב התקדמות וחלוקת משימות לפי חברי צוות
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs font-bold bg-[#FAF8F7] px-3.5 py-1.5 rounded-full border border-[#E6E2E1]">
-          <span>עודכן לאחרונה: <b>היום</b></span>
-        </div>
-      </div>
-
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Events */}
-        <div className="bg-white border-2 border-[#3A3534] rounded-2xl p-5 xtra-sticker-shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-[#6B6362] block">סך אירועים וקמפיינים</span>
-            <span className="text-3xl font-extrabold text-[#3A3534] mt-1 block">{totalEvents}</span>
-            <span className="text-[11px] text-[#2FA36B] font-semibold">2026–2028</span>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-[#FFE7E8] border border-[#F7414B] flex items-center justify-center text-[#F7414B]">
-            <Calendar className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Card 2: Total Tasks */}
-        <div className="bg-white border-2 border-[#3A3534] rounded-2xl p-5 xtra-sticker-shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-[#6B6362] block">סך משימות במערכת</span>
-            <span className="text-3xl font-extrabold text-[#3A3534] mt-1 block">{totalTasks}</span>
-            <span className="text-[11px] text-[#5059FF] font-semibold">{completedTasks} משימות הושלמו</span>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-[#E6E7FF] border border-[#5059FF] flex items-center justify-center text-[#5059FF]">
-            <Target className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Card 3: Completion Rate */}
-        <div className="bg-white border-2 border-[#3A3534] rounded-2xl p-5 xtra-sticker-shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-[#6B6362] block">אחוז ביצוע כולל</span>
-            <span className="text-3xl font-extrabold text-[#2FA36B] mt-1 block">{overallProgress}%</span>
-            <div className="w-24 h-2 bg-[#E6E2E1] rounded-full overflow-hidden mt-1.5">
-              <div
-                className="h-full bg-[#2FA36B] rounded-full"
-                style={{ width: `${overallProgress}%` }}
-              ></div>
+    <div className="flex flex-col gap-4 p-4 sm:p-6">
+      {/* summary cards */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {CARDS.map(({ icon: Icon, label, value, tint }) => (
+          <div key={label} className="flex items-center gap-3 rounded-xl border border-line bg-surface p-4 shadow-card">
+            <span className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-lg', tint)}>
+              <Icon className="h-5 w-5" />
+            </span>
+            <div className="flex min-w-0 flex-col">
+              <span className="text-2xl font-bold text-ink tnum">{value}</span>
+              <span className="truncate text-sm text-ink-tertiary">{label}</span>
             </div>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-[#E3F7EC] border border-[#2FA36B] flex items-center justify-center text-[#2FA36B]">
-            <CheckCircle2 className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Card 4: Team Members */}
-        <div className="bg-white border-2 border-[#3A3534] rounded-2xl p-5 xtra-sticker-shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-[#6B6362] block">חברי צוות בעלי גישה</span>
-            <span className="text-3xl font-extrabold text-[#3A3534] mt-1 block">{users.length}</span>
-            <span className="text-[11px] text-[#6B6362]">מורשי עריכה וצפייה</span>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-[#FFF6DC] border border-[#FFD446] flex items-center justify-center text-[#3A3534]">
-            <Users className="w-6 h-6" />
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Breakdown Section: Categories & Workload */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Category Breakdown */}
-        <div className="bg-white border-2 border-[#3A3534] rounded-2xl p-6 xtra-sticker-shadow flex flex-col gap-4">
-          <h3 className="text-sm font-extrabold text-[#3A3534] border-b border-[#E6E2E1] pb-3">
-            פילוח אירועים לפי קטגוריות
-          </h3>
-
-          <div className="flex flex-col gap-3">
-            {Object.entries(categoryLabels).map(([catKey, meta]) => {
-              const count = eventsByCategory[catKey] || 0;
-              const pct = totalEvents > 0 ? Math.round((count / totalEvents) * 100) : 0;
-
-              return (
-                <div key={catKey} className="flex flex-col gap-1 text-xs">
-                  <div className="flex items-center justify-between font-bold">
-                    <span className="flex items-center gap-2 text-[#3A3534]">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: meta.color }}></span>
-                      <span>{meta.label}</span>
-                    </span>
-                    <span className="text-[#6B6362]">
-                      {count} אירועים ({pct}%)
-                    </span>
-                  </div>
-                  <div className="w-full h-2 bg-[#FAF8F7] border border-[#E6E2E1] rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{ width: `${pct}%`, backgroundColor: meta.color }}
-                    ></div>
-                  </div>
+      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+        {/* events per month */}
+        <section className="rounded-xl border border-line bg-surface p-4 shadow-card">
+          <h2 className="mb-4 text-md font-bold text-ink">אירועים לאורך השנה</h2>
+          {stats.totalEvents === 0 ? (
+            <p className="py-8 text-center text-base text-ink-tertiary">עוד אין מה להציג</p>
+          ) : (
+            <div className="flex h-44 items-end gap-1 overflow-x-auto pb-1">
+              {stats.perMonth.map((m) => (
+                <div key={m.key} className="flex h-full min-w-9 flex-1 flex-col items-center justify-end gap-1.5">
+                  <span className="text-xs text-ink-tertiary tnum">{m.count || ''}</span>
+                  <div
+                    className={cn(
+                      'w-full rounded-t-md transition-colors',
+                      m.isNow ? 'bg-primary' : m.count ? 'bg-primary-line' : 'bg-subtle'
+                    )}
+                    style={{ height: `${Math.max(4, (m.count / peak) * 100)}%` }}
+                    title={`${m.label} ${m.year}: ${m.count} אירועים`}
+                  />
+                  <span
+                    className={cn(
+                      'w-full truncate text-center text-xs',
+                      m.isNow ? 'font-bold text-primary' : 'text-ink-tertiary'
+                    )}
+                  >
+                    {m.label.slice(0, 3)}
+                  </span>
                 </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* categories */}
+        <section className="rounded-xl border border-line bg-surface p-4 shadow-card">
+          <h2 className="mb-4 text-md font-bold text-ink">אירועים לפי קטגוריה</h2>
+          <ul className="flex flex-col gap-2.5">
+            {CATEGORIES.map((c) => {
+              const meta = CATEGORY_META[c];
+              const count = stats.byCategory[c] || 0;
+              const pct = stats.totalEvents ? Math.round((count / stats.totalEvents) * 100) : 0;
+              return (
+                <li key={c} className="flex items-center gap-3">
+                  <span className="w-28 shrink-0 truncate text-sm text-ink-secondary">{meta.label}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-subtle">
+                    <div className={cn('h-full rounded-full', meta.dot)} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="w-10 shrink-0 text-end text-sm text-ink-tertiary tnum">{count}</span>
+                </li>
               );
             })}
-          </div>
-        </div>
+          </ul>
+        </section>
+      </div>
 
-        {/* Workload by Assignee */}
-        <div className="bg-white border-2 border-[#3A3534] rounded-2xl p-6 xtra-sticker-shadow flex flex-col gap-4">
-          <h3 className="text-sm font-extrabold text-[#3A3534] border-b border-[#E6E2E1] pb-3">
-            עומס משימות לפי חברי צוות
-          </h3>
-
-          <div className="flex flex-col gap-3.5">
-            {Object.entries(tasksByAssignee).map(([email, info]) => {
-              const pct = info.total > 0 ? Math.round((info.done / info.total) * 100) : 0;
-
-              return (
-                <div key={email} className="flex flex-col gap-1 text-xs">
-                  <div className="flex items-center justify-between font-bold">
-                    <div className="flex flex-col">
-                      <span className="text-[#3A3534]">{info.name}</span>
-                      <span className="text-[10px] text-[#9A9291] font-mono">{email}</span>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* workload */}
+        <section className="rounded-xl border border-line bg-surface p-4 shadow-card">
+          <h2 className="mb-1 text-md font-bold text-ink">משימות לפי אחראי</h2>
+          <p className="mb-4 text-sm text-ink-tertiary">
+            {stats.totalTasks === 0
+              ? 'עוד אין משימות עם אחראי. הנתון יופיע כשיתחילו לעבוד בלוח'
+              : `${users.length} אנשים · ${stats.totalTasks} משימות`}
+          </p>
+          {stats.byAssignee.length === 0 ? (
+            <p className="py-6 text-center text-base text-ink-tertiary">—</p>
+          ) : (
+            <ul className="flex flex-col gap-2.5">
+              {stats.byAssignee.map(([userId, row]) => {
+                const pct = row.total ? Math.round((row.done / row.total) * 100) : 0;
+                return (
+                  <li key={userId} className="flex items-center gap-3">
+                    <span
+                      className={cn(
+                        'grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold text-white',
+                        avatarColor(userId)
+                      )}
+                    >
+                      {row.name.charAt(0)}
+                    </span>
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-base text-ink">{row.name}</span>
+                        <span className="shrink-0 text-sm text-ink-tertiary tnum">
+                          {row.done}/{row.total}
+                          {row.late > 0 && <span className="ms-1.5 font-semibold text-late">{row.late} באיחור</span>}
+                        </span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-subtle">
+                        <div className="h-full rounded-full bg-done" style={{ width: `${pct}%` }} />
+                      </div>
                     </div>
-                    <span className="text-[#6B6362]">
-                      {info.done}/{info.total} משימות ({pct}%)
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        {/* upcoming */}
+        <section className="rounded-xl border border-line bg-surface p-4 shadow-card">
+          <h2 className="mb-4 text-md font-bold text-ink">האירועים הקרובים</h2>
+          {stats.upcoming.length === 0 ? (
+            <p className="py-6 text-center text-base text-ink-tertiary">אין כאן אירועים קרובים</p>
+          ) : (
+            <ul className="flex flex-col">
+              {stats.upcoming.map((ev) => {
+                const meta = CATEGORY_META[ev.category];
+                return (
+                  <li key={ev.id} className="flex items-center gap-3 border-b border-line py-2 last:border-0">
+                    <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-base text-ink">{ev.title}</span>
+                    <span className="shrink-0 text-sm text-ink-tertiary tnum">
+                      {ev.actualDate.slice(0, 7)}
                     </span>
-                  </div>
-                  <div className="w-full h-2 bg-[#FAF8F7] border border-[#E6E2E1] rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-[#5059FF] rounded-full transition-all duration-300"
-                      style={{ width: `${pct}%` }}
-                    ></div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       </div>
     </div>
   );

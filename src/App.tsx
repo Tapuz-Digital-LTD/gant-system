@@ -1,20 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Loader2, PlugZap } from 'lucide-react';
+import { EventItem, UserAccess, ViewMode, FilterState } from './types';
+import { MONTHS_LIST } from './data/months';
+import { currentMonthKey } from './utils/eventMeta';
 import {
-  GanttBoard,
-  EventItem,
-  UserAccess,
-  UserRole,
-  ViewMode,
-  FilterState,
-  TaskItem
-} from './types';
-import {
-  MONTHS_LIST,
-  INITIAL_BOARDS,
-  INITIAL_USERS
-} from './data/initialData';
-import { api } from './services/api';
+  useBoards,
+  useUsers,
+  useEvents,
+  useEventMutations,
+  useBoardMutations,
+  describeError
+} from './hooks/useBoardData';
 import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
 import { MonthSelector } from './components/MonthSelector';
 import { MonthlyCalendarView } from './components/MonthlyCalendarView';
 import { GanttTimelineView } from './components/GanttTimelineView';
@@ -27,71 +26,42 @@ import { UserPermissionsModal } from './components/UserPermissionsModal';
 import { BoardManagementModal } from './components/BoardManagementModal';
 import { ExportModal } from './components/ExportModal';
 import { AIAssistantModal } from './components/AIAssistantModal';
+import { ArchiveModal } from './components/ArchiveModal';
+import { SignIn } from './components/SignIn';
+import { fetchAuthConfig, fetchMe, authClient } from './services/auth';
+import { Button, useToast } from './components/ui';
+import { makeCan } from './hooks/useCan';
+import { NoPermission } from './components/NoPermission';
+import { api } from './services/api';
 
-const STORAGE_BOARDS_KEY = 'xtra_gantt_boards_v3';
-const STORAGE_USERS_KEY = 'xtra_gantt_users_v3';
-const STORAGE_CURRENT_USER_KEY = 'xtra_gantt_current_user_v3';
-
-// Clear legacy mock cache keys
-try {
-  localStorage.removeItem('xtra_gantt_boards_v2');
-  localStorage.removeItem('xtra_gantt_users_v2');
-  localStorage.removeItem('xtra_gantt_current_user_v2');
-  localStorage.removeItem('xtra_gantt_boards_v1');
-  localStorage.removeItem('xtra_gantt_users_v1');
-} catch {
-  // ignore
+/** Last calendar day of a YYYY-MM bucket. */
+function endOfMonth(monthKey: string): string {
+  const [y, m] = monthKey.split('-').map(Number);
+  return `${monthKey}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
 }
 
+const VIEWS_NEEDING_FULL_RANGE: ViewMode[] = ['gantt', 'analytics'];
+
 export default function App() {
-  // Server state
-  const [serverConnected, setServerConnected] = useState<boolean>(true);
-  const [isLoadingInitial, setIsLoadingInitial] = useState<boolean>(true);
+  const { notify } = useToast();
+  const qc = useQueryClient();
 
-  // Load initial boards from localStorage or default
-  const [boards, setBoards] = useState<GanttBoard[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_BOARDS_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error('Failed to load boards from localStorage', e);
-    }
-    return INITIAL_BOARDS;
+  // Identity first: everything below is meaningless without a session.
+  const meQuery = useQuery({ queryKey: ['me'], queryFn: fetchMe, retry: false, staleTime: 60_000 });
+  const authConfigQuery = useQuery({
+    queryKey: ['auth-config'],
+    queryFn: fetchAuthConfig,
+    retry: false,
+    enabled: meQuery.isFetched && !meQuery.data
   });
+  const me = meQuery.data ?? null;
 
-  const [activeBoardId, setActiveBoardId] = useState<string>(() => {
-    return boards[0]?.id || 'board-events-main';
-  });
+  const boardsQuery = useBoards(Boolean(me));
+  const usersQuery = useUsers();
 
-  // Load users from localStorage or default
-  const [users, setUsers] = useState<UserAccess[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_USERS_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error('Failed to load users from localStorage', e);
-    }
-    return INITIAL_USERS;
-  });
-
-  // Current active user
-  const [currentUser, setCurrentUser] = useState<UserAccess>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_CURRENT_USER_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error('Failed to load currentUser from localStorage', e);
-    }
-    return INITIAL_USERS[0];
-  });
-
-  // Navigation & View Mode State
+  const [activeBoardId, setActiveBoardId] = useState<string>();
   const [viewMode, setViewMode] = useState<ViewMode>('calendar');
-  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number>(0);
-  const [showAllMonths, setShowAllMonths] = useState<boolean>(false);
-  const [activeYearFilter, setActiveYearFilter] = useState<string>('all');
-
-  // Filters
+  const [showAllMonths, setShowAllMonths] = useState(false);
   const [filterState, setFilterState] = useState<FilterState>({
     search: '',
     category: 'all',
@@ -102,489 +72,328 @@ export default function App() {
     year: 'all'
   });
 
-  // Modals state
-  const [selectedEventForDetail, setSelectedEventForDetail] = useState<EventItem | null>(null);
+  const filteredMonths = useMemo(
+    () => MONTHS_LIST.filter((m) => filterState.year === 'all' || String(m.year) === filterState.year),
+    [filterState.year]
+  );
+
+  // Land on the month the user is actually in, not on the first month of the range.
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(() => {
+    const i = MONTHS_LIST.findIndex((m) => m.key === currentMonthKey());
+    return i >= 0 ? i : 0;
+  });
+
+  const boards = boardsQuery.data ?? [];
+  const activeBoard = boards.find((b) => b.id === activeBoardId) ?? boards[0];
+
+  useEffect(() => {
+    if (!activeBoardId && boards.length) setActiveBoardId(boards[0].id);
+  }, [boards, activeBoardId]);
+
+  const visibleMonths = useMemo(() => {
+    if (showAllMonths) return filteredMonths;
+    const m = filteredMonths[Math.min(selectedMonthIndex, filteredMonths.length - 1)];
+    return m ? [m] : filteredMonths.slice(0, 1);
+  }, [filteredMonths, selectedMonthIndex, showAllMonths]);
+
+  /**
+   * The window actually requested from the server. Views that draw the whole
+   * plan ask for the full range; the calendar asks only for what it shows.
+   */
+  const range = useMemo(() => {
+    const months = VIEWS_NEEDING_FULL_RANGE.includes(viewMode) ? filteredMonths : visibleMonths;
+    const first = months[0] ?? MONTHS_LIST[0];
+    const last = months[months.length - 1] ?? MONTHS_LIST[MONTHS_LIST.length - 1];
+    return { from: `${first.key}-01`, to: endOfMonth(last.key) };
+  }, [viewMode, filteredMonths, visibleMonths]);
+
+  const eventsQuery = useEvents(activeBoard?.id, range.from, range.to);
+  const events = eventsQuery.data ?? [];
+  const users: UserAccess[] = usersQuery.data ?? [];
+
+  const m = useEventMutations(activeBoard?.id, range.from, range.to);
+  const boardMutations = useBoardMutations();
+
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
-  const [quickAddDate, setQuickAddDate] = useState<string | undefined>(undefined);
-  const [quickAddMonthKey, setQuickAddMonthKey] = useState<string | undefined>(undefined);
+  const [quickAddDate, setQuickAddDate] = useState<string>();
+  const [quickAddMonthKey, setQuickAddMonthKey] = useState<string>();
   const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
   const [isManageBoardsOpen, setIsManageBoardsOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isGlobalAiOpen, setIsGlobalAiOpen] = useState(false);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
 
-  // Fetch initial data from Backend Server on mount
-  useEffect(() => {
-    let isMounted = true;
-    const fetchServerData = async () => {
-      try {
-        const [serverBoards, serverUsers] = await Promise.all([
-          api.boards.getAll(),
-          api.users.getAll()
-        ]);
+  // The modal reads from the cache, so a save is reflected without a refetch.
+  const detailEvent = events.find((e) => e.id === detailId) ?? null;
 
-        if (!isMounted) return;
-
-        if (Array.isArray(serverBoards) && serverBoards.length > 0) {
-          setBoards(serverBoards);
-          if (!serverBoards.some((b) => b.id === activeBoardId)) {
-            setActiveBoardId(serverBoards[0].id);
-          }
-        }
-        if (Array.isArray(serverUsers) && serverUsers.length > 0) {
-          setUsers(serverUsers);
-          const matched = serverUsers.find((u) => u.email === currentUser.email) || serverUsers[0];
-          setCurrentUser(matched);
-        }
-        setServerConnected(true);
-      } catch (err) {
-        console.warn('Backend server not responding, running with local persistence:', err);
-        setServerConnected(false);
-      } finally {
-        if (isMounted) setIsLoadingInitial(false);
-      }
-    };
-
-    fetchServerData();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // Sync boards to localStorage for offline cache
-  useEffect(() => {
+  const run = async <T,>(work: Promise<T>, okMessage?: string): Promise<T | undefined> => {
     try {
-      localStorage.setItem(STORAGE_BOARDS_KEY, JSON.stringify(boards));
-    } catch (e) {
-      console.error('Failed to save boards to localStorage', e);
-    }
-  }, [boards]);
-
-  // Sync users to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(users));
-    } catch (e) {
-      console.error('Failed to save users to localStorage', e);
-    }
-  }, [users]);
-
-  // Sync current user
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_CURRENT_USER_KEY, JSON.stringify(currentUser));
-    } catch (e) {
-      console.error('Failed to save currentUser to localStorage', e);
-    }
-  }, [currentUser]);
-
-  // Active Board instance
-  const activeBoard = boards.find((b) => b.id === activeBoardId) || boards[0] || INITIAL_BOARDS[0];
-
-  // Handlers for Boards
-  const handleSelectBoard = (boardId: string) => {
-    setActiveBoardId(boardId);
-  };
-
-  const handleDuplicateBoard = async (boardId: string, customName?: string) => {
-    try {
-      const duplicated = await api.boards.duplicate(boardId, customName);
-      setBoards((prev) => [...prev, duplicated]);
-      setActiveBoardId(duplicated.id);
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server duplicate error, falling back locally:', err);
-      const targetBoard = boards.find((b) => b.id === boardId);
-      if (!targetBoard) return;
-
-      const newId = `board-${Date.now()}`;
-      const duplicatedBoard: GanttBoard = {
-        ...targetBoard,
-        id: newId,
-        name: customName || `${targetBoard.name} (עותק משוכפל)`,
-        isDefault: false,
-        createdAt: new Date().toISOString().slice(0, 10),
-        events: targetBoard.events.map((ev) => ({
-          ...ev,
-          id: `ev-${Math.random().toString(36).substring(2, 9)}`,
-          tasks: (ev.tasks || []).map((t) => ({
-            ...t,
-            id: `task-${Math.random().toString(36).substring(2, 9)}`
-          }))
-        }))
-      };
-
-      setBoards((prev) => [...prev, duplicatedBoard]);
-      setActiveBoardId(newId);
+      const result = await work;
+      if (okMessage) notify('success', okMessage);
+      return result;
+    } catch (error) {
+      notify('error', describeError(error));
+      return undefined;
     }
   };
 
-  const handleCreateBoard = async (newBoardData: Omit<GanttBoard, 'id' | 'createdAt'>) => {
-    try {
-      const created = await api.boards.create({
-        ...newBoardData,
-        users: [currentUser]
-      });
-      setBoards((prev) => [...prev, created]);
-      setActiveBoardId(created.id);
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server create board error, falling back locally:', err);
-      const newBoard: GanttBoard = {
-        ...newBoardData,
-        id: `board-${Date.now()}`,
-        createdAt: new Date().toISOString().slice(0, 10),
-        events: [],
-        users: [currentUser]
-      };
-      setBoards((prev) => [...prev, newBoard]);
-      setActiveBoardId(newBoard.id);
-    }
-  };
+  const currentUser: UserAccess = me
+    ? { id: me.id, email: me.email, name: me.name, role: me.role, isOwner: me.isOwner, permissions: me.permissions }
+    : { id: '', email: '', name: '', role: 'viewer' };
 
-  const handleRenameBoard = async (boardId: string, newName: string, newDesc?: string) => {
-    // Optimistic
-    setBoards((prev) =>
-      prev.map((b) =>
-        b.id === boardId ? { ...b, name: newName, description: newDesc || b.description } : b
-      )
+  const can = makeCan(me ? { id: me.id, email: me.email, name: me.name, role: me.role, isOwner: me.isOwner, permissions: me.permissions } : null);
+
+  if (meQuery.isLoading) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-canvas" dir="rtl">
+        <Loader2 className="h-6 w-6 animate-spin text-ink-tertiary" />
+      </div>
     );
+  }
 
-    try {
-      await api.boards.update(boardId, { name: newName, description: newDesc });
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server rename board error:', err);
+  if (!me) {
+    if (!authConfigQuery.data) {
+      return (
+        <div className="grid min-h-dvh place-items-center bg-canvas" dir="rtl">
+          <Loader2 className="h-6 w-6 animate-spin text-ink-tertiary" />
+        </div>
+      );
     }
-  };
-
-  const handleDeleteBoard = async (boardId: string) => {
-    if (boards.length <= 1) {
-      alert('לא ניתן למחוק את הלוח היחיד במערכת.');
-      return;
-    }
-
-    setBoards((prev) => prev.filter((b) => b.id !== boardId));
-    const remaining = boards.filter((b) => b.id !== boardId);
-    if (remaining.length > 0) {
-      setActiveBoardId(remaining[0].id);
-    }
-
-    try {
-      await api.boards.delete(boardId);
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server delete board error:', err);
-    }
-  };
-
-  // Handlers for Events
-  const handleAddEvent = async (newEvent: EventItem) => {
-    // Optimistic
-    setBoards((prev) =>
-      prev.map((b) => {
-        if (b.id === activeBoard.id) {
-          return {
-            ...b,
-            events: [newEvent, ...b.events]
-          };
-        }
-        return b;
-      })
+    return (
+      <SignIn
+        config={authConfigQuery.data}
+        onSignedIn={() => { void qc.invalidateQueries({ queryKey: [] }); }}
+      />
     );
+  }
 
-    try {
-      await api.events.add(activeBoard.id, newEvent);
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server add event error:', err);
-    }
-  };
-
-  const handleUpdateEvent = async (updatedEvent: EventItem) => {
-    // Optimistic
-    setBoards((prev) =>
-      prev.map((b) => {
-        if (b.id === activeBoard.id) {
-          return {
-            ...b,
-            events: b.events.map((ev) => (ev.id === updatedEvent.id ? updatedEvent : ev))
-          };
-        }
-        return b;
-      })
+  if (boardsQuery.isLoading) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-canvas" dir="rtl">
+        <div className="flex flex-col items-center gap-3 text-ink-tertiary">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span className="text-base">טוען בחר לוח…</span>
+        </div>
+      </div>
     );
+  }
 
-    if (selectedEventForDetail && selectedEventForDetail.id === updatedEvent.id) {
-      setSelectedEventForDetail(updatedEvent);
-    }
-
-    try {
-      await api.events.update(activeBoard.id, updatedEvent.id, updatedEvent);
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server update event error:', err);
-    }
-  };
-
-  const handleDeleteEvent = async (eventId: string) => {
-    // Optimistic
-    setBoards((prev) =>
-      prev.map((b) => {
-        if (b.id === activeBoard.id) {
-          return {
-            ...b,
-            events: b.events.filter((ev) => ev.id !== eventId)
-          };
-        }
-        return b;
-      })
+  if (boardsQuery.isError) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-canvas p-6" dir="rtl">
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <PlugZap className="h-7 w-7 text-late" />
+          <h1 className="text-lg font-bold text-ink">לא הצלחנו להתחבר</h1>
+          <p className="text-base text-ink-secondary">{describeError(boardsQuery.error)}</p>
+          <Button variant="primary" onClick={() => boardsQuery.refetch()}>
+            ניסיון חוזר
+          </Button>
+        </div>
+      </div>
     );
+  }
 
-    if (selectedEventForDetail && selectedEventForDetail.id === eventId) {
-      setSelectedEventForDetail(null);
-    }
-
-    try {
-      await api.events.delete(activeBoard.id, eventId);
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server delete event error:', err);
-    }
-  };
-
-  const handleToggleTaskStatus = async (eventId: string, taskId: string) => {
-    let nextStatus = 'done';
-    setBoards((prev) =>
-      prev.map((b) => {
-        if (b.id === activeBoard.id) {
-          return {
-            ...b,
-            events: b.events.map((ev) => {
-              if (ev.id === eventId) {
-                return {
-                  ...ev,
-                  tasks: (ev.tasks || []).map((t) => {
-                    if (t.id === taskId) {
-                      const next = t.status === 'done' ? 'todo' : 'done';
-                      nextStatus = next;
-                      return {
-                        ...t,
-                        status: next,
-                        completedAt: next === 'done' ? new Date().toISOString() : undefined
-                      };
-                    }
-                    return t;
-                  })
-                };
-              }
-              return ev;
-            })
-          };
-        }
-        return b;
-      })
+  if (!activeBoard) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-canvas p-6" dir="rtl">
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <h1 className="text-lg font-bold text-ink">עוד אין בחר לוח</h1>
+          <p className="text-base text-ink-secondary">צור לוח ראשון כדי להתחיל</p>
+          <Button
+            variant="primary"
+            onClick={() => run(boardMutations.create.mutateAsync({ name: 'לוח חדש' }), 'הלוח נוצר')}
+          >
+            יצירת לוח
+          </Button>
+        </div>
+      </div>
     );
-
-    try {
-      await api.tasks.update(activeBoard.id, eventId, taskId, {
-        status: nextStatus as any
-      });
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server toggle task error:', err);
-    }
-  };
-
-  const handleQuickAddOnDate = (dateStr: string, monthKey: string) => {
-    setQuickAddDate(dateStr);
-    setQuickAddMonthKey(monthKey);
-    setIsAddEventOpen(true);
-  };
-
-  // Handlers for Users & Permissions
-  const handleAddUser = async (newUser: UserAccess) => {
-    setUsers((prev) => [...prev, newUser]);
-    try {
-      await api.users.add(newUser);
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server add user error:', err);
-    }
-  };
-
-  const handleUpdateUserRole = async (userId: string, newRole: UserRole) => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
-    );
-    if (currentUser.id === userId) {
-      setCurrentUser((prev) => ({ ...prev, role: newRole }));
-    }
-
-    try {
-      await api.users.update(userId, { role: newRole });
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server update user role error:', err);
-    }
-  };
-
-  const handleRemoveUser = async (userId: string) => {
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
-    try {
-      await api.users.delete(userId);
-      setServerConnected(true);
-    } catch (err) {
-      console.error('Server remove user error:', err);
-    }
-  };
-
-  const handleSwitchActiveUser = (user: UserAccess) => {
-    setCurrentUser(user);
-  };
-
-  // Filter months by year if needed
-  const filteredMonths = MONTHS_LIST.filter((m) => {
-    if (activeYearFilter === 'all') return true;
-    return String(m.year) === activeYearFilter;
-  });
-
-  const visibleMonths = showAllMonths
-    ? filteredMonths
-    : [filteredMonths[Math.min(selectedMonthIndex, filteredMonths.length - 1)] || MONTHS_LIST[0]];
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF8F7] text-[#3A3534]" dir="rtl">
-      {/* Top Main Navbar */}
-      <Navbar
+    <div className="flex min-h-dvh bg-canvas text-ink" dir="rtl">
+      <Sidebar
         boards={boards}
-        activeBoard={activeBoard}
-        onSelectBoard={handleSelectBoard}
-        onDuplicateBoard={handleDuplicateBoard}
+        activeBoardId={activeBoard.id}
+        currentUser={currentUser}
+        onSelectBoard={setActiveBoardId}
+        onDuplicateBoard={async () => {
+          const copy = await run(
+            boardMutations.duplicate.mutateAsync({ id: activeBoard.id }),
+            'הלוח שוכפל'
+          );
+          if (copy) setActiveBoardId(copy.id);
+        }}
         onOpenCreateBoard={() => setIsManageBoardsOpen(true)}
         onOpenManageBoards={() => setIsManageBoardsOpen(true)}
-        viewMode={viewMode}
-        onSelectViewMode={setViewMode}
-        currentUser={currentUser}
+        can={can}
         onOpenPermissions={() => setIsPermissionsOpen(true)}
-        onOpenAddEvent={() => {
-          setQuickAddDate(undefined);
-          setQuickAddMonthKey(undefined);
-          setIsAddEventOpen(true);
+        onOpenArchive={() => setIsArchiveOpen(true)}
+        onSignOut={async () => {
+          await authClient.signOut({});
+          qc.clear();
+          await meQuery.refetch();
         }}
-        onOpenExport={() => setIsExportOpen(true)}
-        onOpenAIAssistant={() => setIsGlobalAiOpen(true)}
-        serverConnected={serverConnected}
-        filterState={filterState}
-        onUpdateFilter={(upd) => setFilterState((prev) => ({ ...prev, ...upd }))}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col">
-        {/* Month Selector Bar (Shown on Calendar, Gantt, List views) */}
-        {viewMode !== 'analytics' && (
-          <MonthSelector
-            months={filteredMonths}
-            selectedMonthIndex={selectedMonthIndex}
-            showAllMonths={showAllMonths}
-            onSelectMonth={(idx) => {
-              setSelectedMonthIndex(idx);
-              setShowAllMonths(false);
-            }}
-            onToggleShowAll={() => setShowAllMonths(!showAllMonths)}
-            onPrevMonth={() => {
-              setSelectedMonthIndex((prev) => Math.max(0, prev - 1));
-              setShowAllMonths(false);
-            }}
-            onNextMonth={() => {
-              setSelectedMonthIndex((prev) => Math.min(filteredMonths.length - 1, prev + 1));
-              setShowAllMonths(false);
-            }}
-            activeYearFilter={activeYearFilter}
-            onSelectYear={(yr) => {
-              setActiveYearFilter(yr);
-              setSelectedMonthIndex(0);
-            }}
-          />
-        )}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Navbar
+          activeBoard={activeBoard}
+          viewMode={viewMode}
+          onSelectViewMode={setViewMode}
+          currentUser={currentUser}
+          can={can}
+          onOpenPermissions={() => setIsPermissionsOpen(true)}
+          onOpenAddEvent={() => {
+            setQuickAddDate(undefined);
+            setQuickAddMonthKey(undefined);
+            setIsAddEventOpen(true);
+          }}
+          onOpenExport={() => setIsExportOpen(true)}
+          onOpenAIAssistant={() => setIsGlobalAiOpen(true)}
+          filterState={filterState}
+          onUpdateFilter={(upd) => setFilterState((prev) => ({ ...prev, ...upd }))}
+          isFetching={eventsQuery.isFetching}
+          boardId={activeBoard.id}
+          onOpenEvent={async (eventId) => {
+            // A hit may be outside the loaded window, so fetch it before opening.
+            if (!events.some((e) => e.id === eventId)) {
+              const found = await run(api.events.get(eventId));
+              if (found) qc.setQueryData(['events', activeBoard.id, range.from, range.to],
+                (prev: EventItem[] | undefined) => [...(prev ?? []), found]);
+            }
+            setDetailId(eventId);
+          }}
+        />
 
-        {/* View Switcher Output */}
-        <div className="flex-1">
-          {viewMode === 'calendar' && (
-            <MonthlyCalendarView
-              months={visibleMonths}
-              events={activeBoard.events}
-              filterState={filterState}
-              onOpenEventDetail={setSelectedEventForDetail}
-              onQuickAddOnDate={handleQuickAddOnDate}
-              currentUser={currentUser}
+        <main className="flex flex-1 flex-col">
+          {viewMode !== 'analytics' && (
+            <MonthSelector
+              months={filteredMonths}
+              selectedMonthIndex={selectedMonthIndex}
+              showAllMonths={showAllMonths}
+              onSelectMonth={(i) => {
+                setSelectedMonthIndex(i);
+                setShowAllMonths(false);
+              }}
+              onToggleShowAll={() => setShowAllMonths((v) => !v)}
+              onPrevMonth={() => setSelectedMonthIndex((i) => Math.max(0, i - 1))}
+              onNextMonth={() =>
+                setSelectedMonthIndex((i) => Math.min(filteredMonths.length - 1, i + 1))
+              }
             />
           )}
 
-          {viewMode === 'gantt' && (
-            <GanttTimelineView
-              months={MONTHS_LIST}
-              events={activeBoard.events}
-              filterState={filterState}
-              onOpenEventDetail={setSelectedEventForDetail}
-              currentUser={currentUser}
-            />
-          )}
+          <div className="flex-1">
+            {eventsQuery.isLoading ? (
+              <div className="flex items-center justify-center gap-2 py-24 text-ink-tertiary">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="text-base">טוען אירועים…</span>
+              </div>
+            ) : (
+              <>
+                {viewMode === 'calendar' && (
+                  <MonthlyCalendarView
+                    months={visibleMonths}
+                    events={events}
+                    filterState={filterState}
+                    onOpenEventDetail={(e: EventItem) => setDetailId(e.id)}
+                    onQuickAddOnDate={(dateStr, monthKey) => {
+                      setQuickAddDate(dateStr);
+                      setQuickAddMonthKey(monthKey);
+                      setIsAddEventOpen(true);
+                    }}
+                    can={can}
+                  />
+                )}
 
-          {viewMode === 'kanban' && (
-            <KanbanBoardView
-              events={activeBoard.events}
-              filterState={filterState}
-              onOpenEventDetail={setSelectedEventForDetail}
-              onOpenAddEvent={() => setIsAddEventOpen(true)}
-              currentUser={currentUser}
-            />
-          )}
+                {viewMode === 'gantt' && (
+                  <GanttTimelineView
+                    months={filteredMonths}
+                    events={events}
+                    filterState={filterState}
+                    onOpenEventDetail={(e: EventItem) => setDetailId(e.id)}
+                    can={can}
+                  />
+                )}
 
-          {viewMode === 'list' && (
-            <ListView
-              events={activeBoard.events}
-              filterState={filterState}
-              onOpenEventDetail={setSelectedEventForDetail}
-              onToggleTaskStatus={handleToggleTaskStatus}
-              onOpenAddEvent={() => setIsAddEventOpen(true)}
-              currentUser={currentUser}
-            />
-          )}
+                {viewMode === 'kanban' && (
+                  <KanbanBoardView
+                    events={events}
+                    filterState={filterState}
+                    onOpenEventDetail={(e: EventItem) => setDetailId(e.id)}
+                    onOpenAddEvent={() => setIsAddEventOpen(true)}
+                    onMoveEvent={(ev, status) =>
+                      run(
+                        m.update.mutateAsync({ id: ev.id, version: ev.version, changes: { status } })
+                      )
+                    }
+                    can={can}
+                  />
+                )}
 
-          {viewMode === 'analytics' && (
-            <AnalyticsView
-              events={activeBoard.events}
-              months={MONTHS_LIST}
-              users={users}
-              boardName={activeBoard.name}
-            />
-          )}
-        </div>
-      </main>
+                {viewMode === 'list' && (
+                  <ListView
+                    events={events}
+                    users={users}
+                    filterState={filterState}
+                    onOpenEventDetail={(e: EventItem) => setDetailId(e.id)}
+                    onToggleTaskStatus={(task) =>
+                      run(
+                        m.updateTask.mutateAsync({
+                          id: task.id,
+                          version: task.version,
+                          changes: { status: task.status === 'done' ? 'todo' : 'done' }
+                        })
+                      )
+                    }
+                    onOpenAddEvent={() => setIsAddEventOpen(true)}
+                    can={can}
+                  />
+                )}
 
-      {/* Footer */}
-      <footer className="border-t-2 border-[#3A3534] bg-white py-6 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-4 text-xs text-[#6B6362]">
-          <div className="flex items-center gap-2">
-            <span className="font-extrabold text-sm text-[#3A3534]">
-              XTRA <span className="text-[#F7414B]">Giftcard</span>
-            </span>
-            <span>• שרת API וגאנט משימות 2026–2028</span>
+                {viewMode === 'analytics' && (
+                  can('activity.view') ? (
+                    <AnalyticsView events={events} months={filteredMonths} users={users} boardName={activeBoard.name} />
+                  ) : (
+                    <NoPermission
+                      title="אין לך גישה לתמונת המצב"
+                      detail="בקש ממנהל המערכת להוסיף לך את ההרשאה לצפייה בנתונים."
+                    />
+                  )
+                )}
+              </>
+            )}
           </div>
+        </main>
+      </div>
 
-          <span>תאריך התנעה = עלייה לאוויר | תאריך אמת = מועד האירוע</span>
-        </div>
-      </footer>
-
-      {/* Modals & Dialogs */}
-      {selectedEventForDetail && (
+      {detailEvent && (
         <EventDetailModal
-          event={selectedEventForDetail}
-          onClose={() => setSelectedEventForDetail(null)}
-          onUpdateEvent={handleUpdateEvent}
-          onDeleteEvent={handleDeleteEvent}
+          event={detailEvent}
           users={users}
           currentUser={currentUser}
+          onClose={() => setDetailId(null)}
+          onUpdateEvent={(changes) =>
+            run(
+              m.update.mutateAsync({ id: detailEvent.id, version: detailEvent.version, changes }),
+              'נשמר'
+            )
+          }
+          onDeleteEvent={() =>
+            run(m.archive.mutateAsync(detailEvent.id), 'האירוע עבר לארכיון. אפשר לשחזר אותו משם').then(() =>
+              setDetailId(null)
+            )
+          }
+          onCreateTask={(input) =>
+            run(m.createTask.mutateAsync({ eventId: detailEvent.id, input }))
+          }
+          onUpdateTask={(id, version, changes) => run(m.updateTask.mutateAsync({ id, version, changes }))}
+          onDeleteTask={(id) => run(m.deleteTask.mutateAsync({ id, eventId: detailEvent.id }))}
+          onCreateComment={(body) =>
+            run(m.createComment.mutateAsync({ eventId: detailEvent.id, body }), 'התגובה נוספה')
+          }
         />
       )}
 
@@ -596,11 +405,14 @@ export default function App() {
             setQuickAddDate(undefined);
             setQuickAddMonthKey(undefined);
           }}
-          onAddEvent={handleAddEvent}
+          onAddEvent={async (input) => {
+            const created = await run(m.create.mutateAsync(input), 'האירוע נוצר');
+            if (created) setIsAddEventOpen(false);
+          }}
           months={MONTHS_LIST}
           defaultDate={quickAddDate}
           defaultMonthKey={quickAddMonthKey}
-          currentUser={currentUser}
+          isSaving={m.create.isPending}
         />
       )}
 
@@ -608,12 +420,8 @@ export default function App() {
         <UserPermissionsModal
           isOpen={isPermissionsOpen}
           onClose={() => setIsPermissionsOpen(false)}
-          users={users}
+          boards={boards}
           currentUser={currentUser}
-          onAddUser={handleAddUser}
-          onUpdateUserRole={handleUpdateUserRole}
-          onRemoveUser={handleRemoveUser}
-          onSwitchActiveUser={handleSwitchActiveUser}
         />
       )}
 
@@ -623,12 +431,11 @@ export default function App() {
           onClose={() => setIsManageBoardsOpen(false)}
           boards={boards}
           activeBoardId={activeBoard.id}
-          onSelectBoard={handleSelectBoard}
-          onDuplicateBoard={handleDuplicateBoard}
-          onCreateBoard={handleCreateBoard}
-          onRenameBoard={handleRenameBoard}
-          onDeleteBoard={handleDeleteBoard}
           currentUser={currentUser}
+          onSelectBoard={setActiveBoardId}
+          onCreateBoard={(input) => run(boardMutations.create.mutateAsync(input), 'הלוח נוצר')}
+          onRenameBoard={(id, name) => run(boardMutations.update.mutateAsync({ id, name }), 'השם עודכן')}
+          onDeleteBoard={(id) => run(boardMutations.archive.mutateAsync(id), 'הלוח עבר לארכיון')}
         />
       )}
 
@@ -637,6 +444,16 @@ export default function App() {
           isOpen={isExportOpen}
           onClose={() => setIsExportOpen(false)}
           board={activeBoard}
+          events={events}
+        />
+      )}
+
+      {isArchiveOpen && (
+        <ArchiveModal
+          isOpen={isArchiveOpen}
+          onClose={() => setIsArchiveOpen(false)}
+          boardId={activeBoard.id}
+          canEdit={can('event.restore')}
         />
       )}
 
@@ -644,16 +461,14 @@ export default function App() {
         <AIAssistantModal
           isOpen={isGlobalAiOpen}
           onClose={() => setIsGlobalAiOpen(false)}
-          users={users}
-          currentUser={currentUser}
-          onAddGeneratedTasks={(tasks) => {
-            // Add to the first event of active board or create general task
-            if (activeBoard.events.length > 0) {
-              const firstEv = activeBoard.events[0];
-              handleUpdateEvent({
-                ...firstEv,
-                tasks: [...(firstEv.tasks || []), ...tasks]
-              });
+          onAddGeneratedTasks={async (tasks) => {
+            const target = events[0];
+            if (!target) {
+              notify('error', 'כדי להוסיף משימות, צור קודם אירוע');
+              return;
+            }
+            for (const input of tasks) {
+              await run(m.createTask.mutateAsync({ eventId: target.id, input }));
             }
           }}
         />

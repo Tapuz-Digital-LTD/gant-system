@@ -1,276 +1,313 @@
 import React, { useState } from 'react';
-import { X, UserPlus, Users, Shield, Trash2, CheckCircle2, UserCheck, Mail, ShieldAlert } from 'lucide-react';
-import { UserAccess, UserRole } from '../types';
+import { UserPlus, Trash2, Loader2, Shield, Eye, Pencil, Building2, Mail, Users, SlidersHorizontal, Crown } from 'lucide-react';
+import { GanttBoard, Person, UserAccess, UserRole } from '../types';
+import { usePeople, usePeopleMutations, describeError } from '../hooks/useBoardData';
+import { useFormValidation, isEmail, required } from '../hooks/useFormValidation';
+import { avatarColor } from '../utils/eventMeta';
+import { Modal, Button, Badge, Field, Input, Select, Tooltip, useToast, cn } from './ui';
+import { PermissionsChecklist } from './PermissionsChecklist';
+import { NoPermission } from './NoPermission';
 
 interface UserPermissionsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  users: UserAccess[];
+  boards: GanttBoard[];
   currentUser: UserAccess;
-  onAddUser: (newUser: UserAccess) => void;
-  onUpdateUserRole: (userId: string, newRole: UserRole) => void;
-  onRemoveUser: (userId: string) => void;
-  onSwitchActiveUser: (user: UserAccess) => void;
 }
+
+const ROLES: { value: UserRole; label: string; hint: string }[] = [
+  { value: 'admin', label: 'מנהל', hint: 'יכול לעשות הכול, כולל לנהל אנשים וגישה' },
+  { value: 'editor', label: 'עורך', hint: 'יכול ליצור ולערוך אירועים ומשימות' },
+  { value: 'viewer', label: 'צופה', hint: 'יכול לצפות ולהוריד בלבד' }
+];
 
 export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
   isOpen,
   onClose,
-  users,
-  currentUser,
-  onAddUser,
-  onUpdateUserRole,
-  onRemoveUser,
-  onSwitchActiveUser
+  boards,
+  currentUser
 }) => {
-  if (!isOpen) return null;
-
-  const [newEmail, setNewEmail] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState<UserRole>('editor');
-
+  const { notify } = useToast();
   const isAdmin = currentUser.role === 'admin';
 
-  const avatarColors = ['#F7414B', '#5059FF', '#2FA36B', '#FF732D', '#9A9291', '#3A3534'];
+  const people = usePeople(isOpen && isAdmin);
+  const m = usePeopleMutations();
 
-  const handleAddUserSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEmail.trim()) return;
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<UserRole>('editor');
+  /** A guest reaches only the boards granted to them; staff reach the workspace. */
+  const [isGuest, setIsGuest] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [tab, setTab] = useState<'people' | 'permissions'>('people');
 
-    // Check if email already exists
-    if (users.some((u) => u.email.toLowerCase() === newEmail.trim().toLowerCase())) {
-      alert('משתמש עם כתובת מייל זו כבר קיים במערכת');
-      return;
+  const form = useFormValidation({
+    email: () =>
+      required(email, 'מה כתובת מייל?') ??
+      (isEmail(email) ? undefined : 'נראה שחסר משהו בכתובת. בדוק שיש @')
+  });
+
+  const run = async (work: Promise<unknown>, ok?: string) => {
+    try {
+      await work;
+      if (ok) notify('success', ok);
+      return true;
+    } catch (err) {
+      notify('error', describeError(err));
+      return false;
     }
-
-    const randomColor = avatarColors[Math.floor(Math.random() * avatarColors.length)];
-
-    const newUser: UserAccess = {
-      id: `user-${Date.now()}`,
-      email: newEmail.trim().toLowerCase(),
-      name: newName.trim() || newEmail.split('@')[0],
-      role: newRole,
-      avatarBg: randomColor,
-      addedAt: new Date().toISOString().slice(0, 10),
-      accessibleBoards: ['all']
-    };
-
-    onAddUser(newUser);
-    setNewEmail('');
-    setNewName('');
   };
 
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.check('up')) return;
+    const added = await run(
+      m.add.mutateAsync({ email: email.trim(), name: name.trim() || undefined, role, isGuest }),
+      'נוסף'
+    );
+    if (added) {
+      setEmail('');
+      setName('');
+      form.reset();
+    }
+  };
+
+  if (!isAdmin) {
+    return (
+      <Modal
+        open={isOpen}
+        onOpenChange={(o) => !o && onClose()}
+        title="אנשים"
+        footer={<Button variant="secondary" onClick={onClose}>סגור</Button>}
+      >
+        <p className="py-8 text-center text-base text-ink-secondary">
+          ניהול אנשים שמור למנהלי מערכת.
+        </p>
+      </Modal>
+    );
+  }
+
+  const list: Person[] = people.data ?? [];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="bg-white border-2 border-[#3A3534] rounded-[28px] max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col xtra-sticker-shadow-lg text-right">
-        {/* Header */}
-        <div className="p-6 border-b-2 border-[#3A3534] bg-[#FAF8F7] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#5059FF] border-2 border-[#3A3534] xtra-sticker-shadow-sm flex items-center justify-center text-white">
-              <Users className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-xl font-extrabold text-[#3A3534]">
-                ניהול משתמשים והרשאות לפי מייל
-              </h2>
-              <p className="text-xs text-[#6B6362]">
-                הענקת גישת עריכה או צפייה לחברי צוות ושותפים
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full border-2 border-[#3A3534] bg-white hover:bg-[#FFE7E8] text-[#3A3534] hover:text-[#F7414B] transition-all cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+    <Modal
+      open={isOpen}
+      onOpenChange={(o) => !o && onClose()}
+      size="lg"
+      title="אנשים וגישה"
+      description={`${list.length} אנשים`}
+      footer={<Button variant="secondary" onClick={onClose}>סגור</Button>}
+    >
+      <div className="flex flex-col gap-5">
+        <div className="flex items-center gap-1 border-b border-line" role="tablist">
+          {([
+            { id: 'people', label: 'אנשים', icon: Users },
+            { id: 'permissions', label: 'מה כל אחד יכול לעשות', icon: SlidersHorizontal }
+          ] as const).map((t) => {
+            const Icon = t.icon;
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  'relative flex items-center gap-2 px-3 py-2 text-base font-semibold transition-colors',
+                  active ? 'text-primary' : 'text-ink-tertiary hover:text-ink-secondary'
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                {t.label}
+                {active && <span className="absolute inset-x-2 -bottom-px h-[3px] rounded-t-full bg-primary" />}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6 text-xs">
-          {/* Active User Switcher Bar (Test & Simulation) */}
-          <div className="bg-[#E6E7FF] border border-[#5059FF] rounded-2xl p-4 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-[#5059FF] flex items-center gap-1.5">
-                <UserCheck className="w-4 h-4" />
-                <span>משתמש מחובר כעת במערכת (לבדיקת הרשאות):</span>
-              </span>
-              <span className="bg-white text-[#5059FF] font-bold px-2 py-0.5 rounded-full border border-[#C8CAFF] text-[11px]">
-                {currentUser.role === 'admin' ? 'מנהל ראשי' : currentUser.role === 'editor' ? 'עורך' : 'צופה בלבד'}
-              </span>
-            </div>
-            <p className="text-[#3A3534] text-[11px]">
-              ניתן להחליף משתמש כדי לבדוק כיצד הגאנט מוצג עבור צופה בלבד (Viewer) או עורך (Editor):
-            </p>
-            <div className="flex flex-wrap gap-2 pt-1">
-              {users.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => onSwitchActiveUser(u)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
-                    u.email === currentUser.email
-                      ? 'bg-[#3A3534] text-white border-[#3A3534] xtra-sticker-shadow-sm'
-                      : 'bg-white text-[#3A3534] border-[#C7C1C0] hover:border-[#3A3534]'
-                  }`}
-                >
-                  <span>{u.name} ({u.role})</span>
-                </button>
-              ))}
-            </div>
+        {tab === 'permissions' && (
+          <PermissionsChecklist enabled={isOpen} isOwner={Boolean(currentUser.isOwner)} />
+        )}
+
+        {tab === 'people' && (
+        <>
+        {/* --- invite --- */}
+        <form onSubmit={submit} noValidate className="flex flex-col gap-3 rounded-lg bg-canvas p-3">
+          <span className="text-base font-semibold text-ink">הוסף אדם</span>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="מייל" required error={form.error('email')} htmlFor="up-email">
+              <Input
+                id="up-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@xtra.co.il"
+                aria-invalid={Boolean(form.error('email'))}
+                className={form.error('email') ? 'border-late' : undefined}
+              />
+            </Field>
+            <Field label="שם" hint="לא חובה" htmlFor="up-name">
+              <Input id="up-name" value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
           </div>
 
-          {/* Invite User by Email Form */}
-          {isAdmin && (
-            <form
-              onSubmit={handleAddUserSubmit}
-              className="bg-[#FAF8F7] border-2 border-[#3A3534] rounded-2xl p-4 flex flex-col gap-3"
-            >
-              <div className="flex items-center gap-2 text-sm font-extrabold text-[#F7414B]">
-                <UserPlus className="w-4 h-4" />
-                <span>מתן גישה למשתמש חדש לפי כתובת מייל</span>
-              </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="תפקיד" hint={ROLES.find((r) => r.value === role)?.hint} htmlFor="up-role">
+              <Select id="up-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
+                {ROLES.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </Select>
+            </Field>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-1">
-                  <label className="font-bold text-[#3A3534] block mb-1">כתובת אימייל: *</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="user@company.co.il"
-                    value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-[#C7C1C0] bg-white font-mono text-[#3A3534]"
-                  />
-                </div>
+            <Field label="גישה לבחר לוח" htmlFor="up-scope">
+              <Select
+                id="up-scope"
+                value={isGuest ? 'guest' : 'staff'}
+                onChange={(e) => setIsGuest(e.target.value === 'guest')}
+              >
+                <option value="staff">צוות פנימי פנימי — רואה את כל הבחר לוח</option>
+                <option value="guest">אורח — רואה רק בחר לוח ששיתפת איתו</option>
+              </Select>
+            </Field>
+          </div>
 
-                <div>
-                  <label className="font-bold text-[#3A3534] block mb-1">שם מלא / תפקיד:</label>
-                  <input
-                    type="text"
-                    placeholder="לדוגמה: שירה - מנהלת רווחה"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-[#C7C1C0] bg-white text-[#3A3534]"
-                  />
-                </div>
+          <Button type="submit" variant="primary" size="sm" className="self-start" disabled={m.add.isPending}>
+            {m.add.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserPlus className="h-5 w-5" />}
+            הוספה
+          </Button>
 
-                <div>
-                  <label className="font-bold text-[#3A3534] block mb-1">רמת הרשאה:</label>
-                  <select
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value as UserRole)}
-                    className="w-full p-2.5 rounded-xl border border-[#C7C1C0] bg-white font-bold text-[#3A3534]"
-                  >
-                    <option value="editor">עורך מורשה (הוספה ועריכת משימות)</option>
-                    <option value="viewer">צופה בלבד (צפייה וייצוא)</option>
-                    <option value="admin">מנהל ראשי (ניהול מלא והרשאות)</option>
-                  </select>
-                </div>
-              </div>
+          <p className="flex items-start gap-1.5 text-sm text-ink-tertiary">
+            <Mail className="mt-0.5 h-4 w-4 shrink-0" />
+            אין צורך בסיסמה. בכניסה הראשונה הם יזינו את המייל ויקבלו קוד.
+          </p>
+        </form>
 
-              <div className="flex justify-end pt-1">
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-full border-2 border-[#3A3534] bg-[#F7414B] hover:bg-[#DE2A34] text-white font-bold text-xs xtra-sticker-shadow-sm cursor-pointer"
-                >
-                  הוסף משתמש
-                </button>
-              </div>
-            </form>
-          )}
+        {/* --- list --- */}
+        {people.isLoading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-ink-tertiary" /></div>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {list.map((u) => {
+              const isMe = u.id === currentUser.id;
+              const removing = confirmRemove === u.id;
 
-          {/* List of Authorized Users */}
-          <div className="flex flex-col gap-3">
-            <span className="text-sm font-extrabold text-[#3A3534]">
-              רשימת בעלי גישה לגאנט ({users.length})
-            </span>
+              return (
+                <li key={u.id} className="flex flex-col gap-2 rounded-lg border border-line px-3 py-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold text-white', avatarColor(u.email))}>
+                      {u.name.charAt(0)}
+                    </span>
 
-            <div className="divide-y divide-[#E6E2E1] border border-[#E6E2E1] rounded-2xl bg-white overflow-hidden">
-              {users.map((u) => {
-                const isCurrentUser = u.email === currentUser.email;
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-base font-semibold text-ink">{u.name}</span>
+                        {isMe && <Badge tone="primary">זה אני</Badge>}
+                        {u.isOwner ? (
+                          <Badge tone="ready">
+                            <Crown className="h-3.5 w-3.5" />
+                            מנהל ראשי
+                          </Badge>
+                        ) : (
+                          <Badge tone={u.isGuest ? 'progress' : 'neutral'}>
+                            {u.isGuest ? <Building2 className="h-3.5 w-3.5" /> : <Shield className="h-3.5 w-3.5" />}
+                            {u.isGuest ? 'אורח' : 'צוות פנימי'}
+                          </Badge>
+                        )}
+                      </span>
+                      <span className="truncate text-sm text-ink-tertiary">{u.email}</span>
+                    </div>
 
-                return (
-                  <div
-                    key={u.id}
-                    className="p-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-[#FAF8F7] transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs border border-[#3A3534]"
-                        style={{ backgroundColor: u.avatarBg }}
+                    {u.isOwner ? (
+                      <Badge tone="neutral" className="shrink-0">מנהל · קבוע</Badge>
+                    ) : (
+                      <Select
+                        value={u.role}
+                        onChange={(e) => run(m.update.mutateAsync({ id: u.id, role: e.target.value as UserRole }), 'התפקיד עודכן')}
+                        aria-label={`שנה את התפקיד של ${u.name}`}
+                        className="h-8 w-28 shrink-0 text-sm"
                       >
-                        {u.name.charAt(0)}
-                      </div>
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-[#3A3534]">{u.name}</span>
-                          {isCurrentUser && (
-                            <span className="bg-[#FFE7E8] text-[#F7414B] font-bold text-[10px] px-2 py-0.5 rounded-full">
-                              אתה
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[#6B6362] font-mono text-[11px]">{u.email}</span>
-                      </div>
-                    </div>
+                        {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      </Select>
+                    )}
 
-                    <div className="flex items-center gap-3">
-                      {isAdmin && !isCurrentUser ? (
-                        <select
-                          value={u.role}
-                          onChange={(e) => onUpdateUserRole(u.id, e.target.value as UserRole)}
-                          className="px-2.5 py-1 rounded-lg border border-[#C7C1C0] bg-white font-bold text-[#3A3534]"
-                        >
-                          <option value="admin">מנהל ראשי</option>
-                          <option value="editor">עורך מורשה</option>
-                          <option value="viewer">צופה בלבד</option>
-                        </select>
-                      ) : (
-                        <span
-                          className={`px-3 py-1 rounded-full text-[11px] font-bold ${
-                            u.role === 'admin'
-                              ? 'bg-[#FFE7E8] text-[#F7414B]'
-                              : u.role === 'editor'
-                              ? 'bg-[#E6E7FF] text-[#5059FF]'
-                              : 'bg-[#FAF8F7] text-[#6B6362]'
-                          }`}
-                        >
-                          {u.role === 'admin' ? 'מנהל ראשי' : u.role === 'editor' ? 'עורך מורשה' : 'צופה בלבד'}
-                        </span>
-                      )}
-
-                      {isAdmin && !isCurrentUser && (
-                        <button
-                          onClick={() => {
-                            if (confirm(`האם להסיר את הגישה עבור ${u.email}?`)) {
-                              onRemoveUser(u.id);
-                            }
+                    {removing ? (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Button variant="ghost" size="sm" onClick={() => setConfirmRemove(null)}>בטל שינוי בשם הלוח</Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={async () => {
+                            await run(m.remove.mutateAsync(u.id), 'הגישה הוסרה');
+                            setConfirmRemove(null);
                           }}
-                          className="p-1.5 rounded-lg hover:bg-[#FFE7E8] text-[#9A9291] hover:text-[#DE2A34]"
-                          title="הסרת משתמש"
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                          הסרה
+                        </Button>
+                      </div>
+                    ) : (
+                      !isMe && !u.isOwner && (
+                        <Tooltip label="הסר גישה">
+                          <Button variant="ghost" size="sm" iconOnly aria-label={`הסר את הגישה של ${u.name}`} onClick={() => setConfirmRemove(u.id)}>
+                            <Trash2 className="h-5 w-5" />
+                          </Button>
+                        </Tooltip>
+                      )
+                    )}
+                  </div>
+
+                  {/* guests need explicit board grants */}
+                  {u.isGuest && (
+                    <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-2 ps-12">
+                      <span className="text-sm text-ink-tertiary">בחר לוח</span>
+                      {boards.map((b) => {
+                        const grant = u.boards.find((g) => g.boardId === b.id);
+                        return (
+                          <button
+                            key={b.id}
+                            onClick={() =>
+                              grant
+                                ? run(m.revoke.mutateAsync({ boardId: b.id, userId: u.id }))
+                                : run(m.grant.mutateAsync({ boardId: b.id, userId: u.id, role: 'viewer' }))
+                            }
+                            className={cn(
+                              'flex items-center gap-1 rounded-md border px-2 py-1 text-sm transition-colors',
+                              grant
+                                ? 'border-primary-line bg-primary-soft text-primary'
+                                : 'border-line text-ink-tertiary hover:bg-subtle'
+                            )}
+                          >
+                            {grant && (grant.role === 'editor' ? <Pencil className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />)}
+                            {b.name}
+                          </button>
+                        );
+                      })}
+                      {u.boards.length > 0 && (
+                        <Select
+                          value={u.boards[0].role}
+                          onChange={(e) =>
+                            u.boards.forEach((g) =>
+                              run(m.grant.mutateAsync({ boardId: g.boardId, userId: u.id, role: e.target.value as 'editor' | 'viewer' }))
+                            )
+                          }
+                          aria-label="בחר גישה לבחר לוח"
+                          className="h-7 w-24 text-sm"
+                        >
+                          <option value="viewer">צפייה בלבד</option>
+                          <option value="editor">ערוך</option>
+                        </Select>
                       )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t-2 border-[#3A3534] bg-[#FAF8F7] flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 rounded-full bg-[#3A3534] hover:bg-[#241F1F] text-white font-bold text-xs xtra-sticker-shadow-sm cursor-pointer"
-          >
-            סיום וסגירה
-          </button>
-        </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        </>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 };

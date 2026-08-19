@@ -1,36 +1,27 @@
 import express from 'express';
+import { createApiRouter } from '../server/api.js';
+import { initDb } from '../server/db/client.js';
+import { authHandler, describeAuthHandler, resolveActorFromSession } from '../server/mount-auth.js';
 
-import { boardsRouter } from '../server/routes/boards.js';
-import { eventsRouter } from '../server/routes/events.js';
-import { tasksRouter } from '../server/routes/tasks.js';
-import { usersRouter } from '../server/routes/users.js';
-import { exportRouter } from '../server/routes/export.js';
-import { aiRouter } from '../server/routes/ai.js';
-
-// ponytail: Vercel serves dist/ statically, so this function only handles /api/*
+// Vercel serves dist/ statically; this function only handles /api/*.
 const app = express();
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'XTRA Gantt & Task Management Server',
-    timestamp: new Date().toISOString(),
-    env: process.env.VERCEL_ENV || 'production'
-  });
+// One init per warm instance; requests queue behind it on a cold start.
+const ready = initDb().catch((err) => {
+  console.error(JSON.stringify({ level: 'fatal', msg: 'db_init_failed', error: String(err) }));
 });
 
-app.use('/api/boards', boardsRouter);
-app.use('/api/boards/:boardId/events', eventsRouter);
-app.use('/api/boards/:boardId/events/:eventId/tasks', tasksRouter);
-app.use('/api/users', usersRouter);
-app.use('/api/export', exportRouter);
-app.use('/api/ai', aiRouter);
-
-app.all('/api/*', (req, res) => {
-  res.status(404).json({ success: false, message: `API route ${req.method} ${req.path} not found` });
+app.use(async (_req, _res, next) => {
+  await ready;
+  next();
 });
+
+// Better Auth reads the raw body itself, so it must mount before express.json.
+app.all('/api/auth/*', authHandler());
+app.get('/api/auth-config', describeAuthHandler());
+
+app.use(express.json({ limit: '1mb' }));
+app.use('/api', createApiRouter(undefined, resolveActorFromSession));
 
 export default app;

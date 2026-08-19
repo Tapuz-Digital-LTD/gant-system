@@ -1,81 +1,154 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-:root {
-  /* XTRA Brand Colors */
-  --xtra-red: #F7414B;
-  --xtra-white: #FFFFFF;
-  --xtra-ink: #3A3534;
-  --xtra-blue: #5059FF;
-  --xtra-yellow: #FFD446;
-  --xtra-orange: #FF732D;
-  --status-success: #2FA36B;
+/* ============================================================
+   Design tokens
 
-  /* Red Ramp */
-  --red-100: #FFE7E8;
-  --red-200: #FFC3C6;
-  --red-400: #FA6B73;
-  --red-500: #F7414B;
-  --red-600: #DE2A34;
-  --red-700: #B41C25;
+   Two colour systems that never overlap:
+   · one action colour (indigo) for navigation, links and buttons
+   · a set of saturated status fills for state
+   Nothing else in the product is allowed to be coloured.
+   ============================================================ */
 
-  /* Ink / Neutral Ramp */
-  --ink-900: #241F1F;
-  --ink-800: #3A3534;
-  --ink-600: #6B6362;
-  --ink-400: #9A9291;
-  --ink-300: #C7C1C0;
-  --ink-200: #E6E2E1;
-  --ink-100: #F3F1F0;
-  --ink-050: #FAF8F7;
+@theme {
+  /* --- surfaces: cool light neutrals --- */
+  --color-canvas: #f3f5f9;
+  --color-surface: #ffffff;
+  --color-subtle: #eef0f6;
+  --color-muted: #e4e7f0;
 
-  /* Accent Tints */
-  --blue-100: #E6E7FF;
-  --blue-200: #C8CAFF;
-  --yellow-100: #FFF6DC;
-  --orange-100: #FFEBE0;
-  --green-100: #E3F7EC;
+  --color-line: #e1e5ee;
+  --color-line-strong: #cdd2e0;
 
-  /* Typography */
-  --font-hebrew: 'Assistant', 'Rubik', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --color-ink: #1a1f33;
+  --color-ink-secondary: #576078;
+  --color-ink-tertiary: #848da5;
+  --color-ink-disabled: #aeb5c7;
+
+  /* --- action --- */
+  --color-primary: #3358e0;
+  --color-primary-hover: #2846c4;
+  --color-primary-soft: #eaeeff;
+  --color-primary-line: #c3ceff;
+
+  /* --- status fills: saturated, white text sits on them --- */
+  --color-todo: #98a0b5;
+  --color-progress: #f0a32e;
+  --color-ready: #8b5cf6;
+  --color-done: #00a870;
+  --color-late: #e23c4e;
+
+  /* --- status tints: same meaning, quiet surface --- */
+  --color-todo-soft: #eef0f5;
+  --color-progress-soft: #fef4e4;
+  --color-ready-soft: #f3edff;
+  --color-done-soft: #e3f7ef;
+  --color-late-soft: #fdebed;
+
+  /* --- categories: colourful but still distinguishable at 8px --- */
+  --color-cat-holiday: #e8871e;
+  --color-cat-campaign: #e2445c;
+  --color-cat-b2b: #3358e0;
+  --color-cat-social: #a25ddc;
+  --color-cat-operational: #0f9b8e;
+  --color-cat-other: #7a8296;
+
+  /* --- type: comfortable. 12px is the floor, and it is metadata only. --- */
+  --font-sans: 'Assistant', 'Rubik', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.375rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.5rem;
+  --text-md: 1rem;
+  --text-md--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+
+  /* --- geometry --- */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  --shadow-card: 0 1px 2px rgb(26 31 51 / 0.05);
+  --shadow-raised: 0 2px 8px -2px rgb(26 31 51 / 0.1), 0 1px 2px rgb(26 31 51 / 0.05);
+  --shadow-pop: 0 10px 28px -8px rgb(26 31 51 / 0.16), 0 2px 6px -2px rgb(26 31 51 / 0.08);
+  --shadow-modal: 0 24px 56px -12px rgb(26 31 51 / 0.24), 0 6px 12px -6px rgb(26 31 51 / 0.1);
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  font-family: var(--font-hebrew);
-  background-color: var(--ink-050);
-  color: var(--ink-800);
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Custom scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: var(--ink-100);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--ink-300);
-  border-radius: 999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-400);
+/* Dates and counts must line up in columns. */
+time,
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
-/* Chunky sticker button and card utility */
-.xtra-sticker-shadow {
-  box-shadow: 3px 3px 0px var(--xtra-ink);
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
-.xtra-sticker-shadow-sm {
-  box-shadow: 2px 2px 0px var(--xtra-ink);
+::selection {
+  background: var(--color-primary-soft);
+  color: var(--color-ink);
 }
 
-.xtra-sticker-shadow-lg {
-  box-shadow: 4px 4px 0px var(--xtra-ink);
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border: 3.5px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-disabled);
+    background-clip: content-box;
+  }
 }
 
-.xtra-card-border {
-  border: 2px solid var(--xtra-ink);
-  border-radius: 20px;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
-

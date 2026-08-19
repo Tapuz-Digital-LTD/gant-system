@@ -1,6 +1,7 @@
-import React from 'react';
-import { ChevronRight, ChevronLeft, CalendarRange } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { ChevronRight, ChevronLeft, Rows3, CalendarDays } from 'lucide-react';
 import { MonthMeta } from '../types';
+import { Button, Tooltip, cn } from './ui';
 
 interface MonthSelectorProps {
   months: MonthMeta[];
@@ -10,8 +11,17 @@ interface MonthSelectorProps {
   onToggleShowAll: () => void;
   onPrevMonth: () => void;
   onNextMonth: () => void;
-  activeYearFilter: string;
-  onSelectYear: (year: string) => void;
+}
+
+/** "אוגוסט 2026" → "אוגוסט 26" — the century is never in question here. */
+function shortMonth(m: MonthMeta): string {
+  return `${m.title.replace(/\s+\d{4}$/, '')} ${String(m.year).slice(2)}`;
+}
+
+/** The month the user is actually living in, as YYYY-MM. */
+function currentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export const MonthSelector: React.FC<MonthSelectorProps> = ({
@@ -21,87 +31,118 @@ export const MonthSelector: React.FC<MonthSelectorProps> = ({
   onSelectMonth,
   onToggleShowAll,
   onPrevMonth,
-  onNextMonth,
-  activeYearFilter,
-  onSelectYear
+  onNextMonth
 }) => {
+  const todayKey = currentMonthKey();
+  const todayIndex = months.findIndex((m) => m.key === todayKey);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // Keep the selected chip in view when navigating with the arrows.
+  useEffect(() => {
+    stripRef.current
+      ?.querySelector('[data-selected="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [selectedMonthIndex, showAllMonths]);
+
+  const selected = months[selectedMonthIndex];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-2 flex flex-col gap-3">
-      {/* Year Filter & Navigation Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* Year Pills */}
-        <div className="flex items-center gap-1.5 bg-white p-1 rounded-full border-2 border-[#3A3534] xtra-sticker-shadow-sm">
-          <span className="text-[11px] font-bold text-[#6B6362] px-2.5">שנה:</span>
-          {(['all', '2026', '2027', '2028'] as const).map((yr) => (
-            <button
-              key={yr}
-              onClick={() => onSelectYear(yr)}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                activeYearFilter === yr
-                  ? 'bg-[#F7414B] text-white'
-                  : 'hover:bg-[#FAF8F7] text-[#3A3534]'
-              }`}
-            >
-              {yr === 'all' ? 'הכל (2026–2028)' : yr}
-            </button>
-          ))}
-        </div>
-
-        {/* Previous / Next / All Months Toggle */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onPrevMonth}
-            disabled={selectedMonthIndex === 0 && !showAllMonths}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full border-2 border-[#3A3534] bg-white hover:bg-[#FAF8F7] text-[#3A3534] font-bold text-xs transition-all xtra-sticker-shadow-sm disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            title="חודש קודם"
-          >
-            <ChevronRight className="w-4 h-4" />
-            <span>חודש קודם</span>
-          </button>
-
-          <button
-            onClick={onNextMonth}
-            disabled={selectedMonthIndex === months.length - 1 && !showAllMonths}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full border-2 border-[#3A3534] bg-white hover:bg-[#FAF8F7] text-[#3A3534] font-bold text-xs transition-all xtra-sticker-shadow-sm disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            title="חודש הבא"
-          >
-            <span>חודש הבא</span>
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={onToggleShowAll}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full border-2 border-[#3A3534] font-bold text-xs transition-all xtra-sticker-shadow-sm ${
-              showAllMonths
-                ? 'bg-[#5059FF] text-white'
-                : 'bg-white hover:bg-[#FAF8F7] text-[#3A3534]'
-            }`}
-          >
-            <CalendarRange className="w-3.5 h-3.5" />
-            <span>{showAllMonths ? 'הצגת חודש בודד' : 'הצגת כל החודשים רציף'}</span>
-          </button>
-        </div>
+    <div className="flex items-center gap-2 border-b border-line bg-surface px-3 py-2 sm:px-4">
+      <div className="flex items-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          onClick={onPrevMonth}
+          disabled={selectedMonthIndex === 0 || showAllMonths}
+          aria-label="עבור לחודש הקודם"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          onClick={onNextMonth}
+          disabled={selectedMonthIndex >= months.length - 1 || showAllMonths}
+          aria-label="עבור לחודש הבא"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
       </div>
 
-      {/* Horizontal Month Chips Bar */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+      {todayIndex >= 0 && (
+        <Tooltip label={months[todayIndex].title}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onSelectMonth(todayIndex)}
+            disabled={!showAllMonths && selectedMonthIndex === todayIndex}
+          >
+            <CalendarDays className="h-4.5 w-4.5" />
+            היום
+          </Button>
+        </Tooltip>
+      )}
+
+      <span className="h-4 w-px bg-line" aria-hidden="true" />
+
+      {/* month strip */}
+      <div
+        ref={stripRef}
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scroll-smooth"
+        role="tablist"
+        aria-label="בחר חודש"
+      >
         {months.map((m, i) => {
           const isSelected = i === selectedMonthIndex && !showAllMonths;
+          const isToday = m.key === todayKey;
+          const isPast = m.key < todayKey;
+
           return (
             <button
               key={m.key}
+              role="tab"
+              aria-selected={isSelected}
+              data-selected={isSelected}
               onClick={() => onSelectMonth(i)}
-              className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border-2 transition-all cursor-pointer ${
+              title={m.hebrew}
+              className={cn(
+                'group relative shrink-0 rounded-md px-2.5 py-1 text-sm font-medium transition-colors',
                 isSelected
-                  ? 'border-[#3A3534] bg-[#3A3534] text-white xtra-sticker-shadow-sm'
-                  : 'border-[#E6E2E1] bg-white text-[#3A3534] hover:border-[#3A3534] hover:bg-[#FAF8F7]'
-              }`}
+                  ? 'bg-ink text-white'
+                  : isPast
+                    ? 'text-ink-disabled hover:bg-subtle hover:text-ink-secondary'
+                    : 'text-ink-secondary hover:bg-subtle hover:text-ink'
+              )}
             >
-              <span>{m.title.replace(' 20', " '")}</span>
+              {shortMonth(m)}
+              {isToday && !isSelected && (
+                <span className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-primary" aria-hidden="true" />
+              )}
             </button>
           );
         })}
       </div>
+
+      <span className="h-4 w-px bg-line" aria-hidden="true" />
+
+      <Tooltip label={showAllMonths ? 'הצג חודש אחד' : 'הצג את כל החודשים'}>
+        <Button
+          variant={showAllMonths ? 'secondary' : 'ghost'}
+          size="sm"
+          iconOnly
+          onClick={onToggleShowAll}
+          aria-pressed={showAllMonths}
+          aria-label={showAllMonths ? 'הצג חודש אחד' : 'הצג את כל החודשים'}
+        >
+          <Rows3 className="h-5 w-5" />
+        </Button>
+      </Tooltip>
+
+      {selected && !showAllMonths && (
+        <span className="hidden shrink-0 text-xs text-ink-tertiary lg:block">{selected.hebrew}</span>
+      )}
     </div>
   );
 };

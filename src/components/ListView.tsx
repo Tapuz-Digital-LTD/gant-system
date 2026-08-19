@@ -1,273 +1,215 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, CheckCircle2, Clock, Plus, Tag, User, Calendar, ExternalLink } from 'lucide-react';
-import { EventItem, FilterState, UserAccess, TaskItem } from '../types';
+import React, { useMemo, useState } from 'react';
+import { ChevronDown, ChevronLeft, Plus, Inbox, AlertTriangle, Check } from 'lucide-react';
+import { EventItem, TaskItem, FilterState, UserAccess, isFloating } from '../types';
+import { filterEvents } from '../utils/filterEvents';
+import type { Can } from '../hooks/useCan';
 import { formatDate, calculateEventProgress } from '../utils/dateHelpers';
+import { CATEGORY_META, PRIORITY_META, isOverdue } from '../utils/eventMeta';
+import { Button, Badge, Dot, Tooltip, cn } from './ui';
 
 interface ListViewProps {
   events: EventItem[];
+  users: UserAccess[];
   filterState: FilterState;
   onOpenEventDetail: (event: EventItem) => void;
-  onToggleTaskStatus: (eventId: string, taskId: string) => void;
+  onToggleTaskStatus: (task: TaskItem) => void;
   onOpenAddEvent: () => void;
-  currentUser: UserAccess;
+  can: Can;
 }
 
 export const ListView: React.FC<ListViewProps> = ({
   events,
+  users,
   filterState,
   onOpenEventDetail,
   onToggleTaskStatus,
   onOpenAddEvent,
-  currentUser
+  can
 }) => {
-  const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const canToggle = can('task.edit');
+  const canAdd = can('event.create');
 
-  const canEdit = currentUser.role === 'admin' || currentUser.role === 'editor';
+  const filteredEvents = useMemo(() => filterEvents(events, filterState), [events, filterState]);
+  const userNames = useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users]);
 
-  const toggleExpand = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedEventIds((prev) => {
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  };
 
-  const filteredEvents = events.filter((ev) => {
-    if (filterState.search) {
-      const q = filterState.search.toLowerCase();
-      const matchTitle = ev.title.toLowerCase().includes(q);
-      const matchDesc = (ev.description || '').toLowerCase().includes(q);
-      const matchTask = ev.tasks?.some(
-        (t) => t.title.toLowerCase().includes(q) || t.assigneeName.toLowerCase().includes(q)
-      );
-      if (!matchTitle && !matchDesc && !matchTask) return false;
-    }
-
-    if (filterState.category !== 'all' && ev.category !== filterState.category) {
-      return false;
-    }
-
-    if (filterState.year !== 'all') {
-      const inYear = ev.monthKey.startsWith(filterState.year) ||
-        (ev.kickoffDate && ev.kickoffDate.startsWith(filterState.year)) ||
-        (ev.actualDate && ev.actualDate.startsWith(filterState.year));
-      if (!inYear) return false;
-    }
-
-    return true;
-  });
+  if (filteredEvents.length === 0) {
+    return (
+      <EmptyState
+        hasFilters={Boolean(filterState.search) || filterState.category !== 'all' || filterState.year !== 'all'}
+        canEdit={canAdd}
+        onAdd={onOpenAddEvent}
+      />
+    );
+  }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-extrabold text-[#3A3534]">
-            רשימת אירועים ומשימות מפורטת
-          </h2>
-          <p className="text-xs text-[#6B6362]">
-            תצוגת טבלה מלאה, מעקב התקדמות ומשימות לכל אירוע
-          </p>
+    <div className="p-4 sm:p-6">
+      <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-card">
+        {/* column header */}
+        <div className="grid grid-cols-[2rem_1fr_7rem_7rem_9rem] items-center gap-3 border-b border-line bg-canvas px-4 py-2.5 text-xs font-semibold text-ink-tertiary">
+          <span />
+          <span>אירוע</span>
+          <span>תאריך התנעה</span>
+          <span>תאריך אמת</span>
+          <span>משימות</span>
         </div>
-        {canEdit && (
-          <button
-            onClick={onOpenAddEvent}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border-2 border-[#3A3534] bg-[#F7414B] hover:bg-[#DE2A34] text-white font-bold text-xs xtra-sticker-shadow-sm cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>הוספת אירוע</span>
-          </button>
-        )}
-      </div>
 
-      {/* Table Container */}
-      <div className="bg-white border-2 border-[#3A3534] rounded-2xl xtra-sticker-shadow overflow-hidden">
-        <div className="divide-y divide-[#E6E2E1]">
-          {filteredEvents.length === 0 ? (
-            <div className="p-12 text-center text-sm text-[#9A9291] italic">
-              לא נמצאו אירועים התואמים את החיפוש
-            </div>
-          ) : (
-            filteredEvents.map((ev) => {
-              const isExpanded = expandedEventIds.has(ev.id);
-              const progress = calculateEventProgress(ev);
+        <ul className="divide-y divide-line">
+          {filteredEvents.map((ev) => {
+            const isOpen = expanded.has(ev.id);
+            const progress = calculateEventProgress(ev);
+            const meta = CATEGORY_META[ev.category];
+            const lateCount = (ev.tasks || []).filter((t) => isOverdue(t.dueDate, t.status)).length;
 
-              return (
-                <div key={ev.id} className="flex flex-col">
-                  {/* Event Row */}
-                  <div
-                    onClick={() => onOpenEventDetail(ev)}
-                    className="p-4 hover:bg-[#FAF8F7] transition-colors cursor-pointer flex flex-wrap items-center justify-between gap-4"
+            return (
+              <li key={ev.id}>
+                <div className="grid grid-cols-[2rem_1fr_7rem_7rem_9rem] items-start gap-3 px-4 py-3 transition-colors hover:bg-subtle">
+                  <button
+                    onClick={() => toggle(ev.id)}
+                    aria-expanded={isOpen}
+                    aria-label={isOpen ? 'הסתר משימות' : 'הצג משימות'}
+                    className="grid h-5 w-5 place-items-center rounded text-ink-tertiary hover:bg-muted hover:text-ink"
                   >
-                    <div className="flex items-center gap-3 min-w-[280px]">
-                      <button
-                        onClick={(e) => toggleExpand(ev.id, e)}
-                        className="p-1 rounded-lg hover:bg-[#E6E2E1] text-[#6B6362]"
-                        title={isExpanded ? 'כווץ משימות' : 'הרחב משימות'}
-                      >
-                        {isExpanded ? (
-                          <ChevronUp className="w-4 h-4" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4" />
-                        )}
-                      </button>
+                    {isOpen ? <ChevronDown className="h-4.5 w-4.5" /> : <ChevronLeft className="h-4.5 w-4.5" />}
+                  </button>
 
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-[#3A3534] hover:text-[#F7414B]">
-                            {ev.title}
+                  <button onClick={() => onOpenEventDetail(ev)} className="flex min-w-0 flex-col gap-0.5 text-start">
+                    <span className="flex w-full min-w-0 items-center gap-1.5">
+                      <Dot className={meta.dot} />
+                      <span className="truncate text-md font-semibold text-ink">{ev.title}</span>
+                      {lateCount > 0 && (
+                        <Tooltip label={`${lateCount} משימות באיחור`}>
+                          <span className="flex items-center gap-0.5 text-late">
+                            <AlertTriangle className="h-4 w-4" />
+                            <span className="text-xs font-semibold tnum">{lateCount}</span>
                           </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#E6E7FF] text-[#5059FF]">
-                            {ev.monthKey}
-                          </span>
-                        </div>
-                        {ev.note && (
-                          <span className="text-[11px] text-[#6B6362]">{ev.note}</span>
-                        )}
-                      </div>
-                    </div>
+                        </Tooltip>
+                      )}
+                    </span>
+                    {ev.note && <span className="w-full text-xs leading-snug text-ink-tertiary">{ev.note}</span>}
+                  </button>
 
-                    {/* Dates */}
-                    <div className="flex items-center gap-4 text-xs">
-                      {ev.kickoffDate && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#F7414B]"></span>
-                          <span className="text-[#6B6362]">התנעה:</span>
-                          <span className="font-bold text-[#F7414B] font-mono">
-                            {formatDate(ev.kickoffDate)}
-                          </span>
-                        </div>
-                      )}
-                      {ev.actualDate && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#3A3534]"></span>
-                          <span className="text-[#6B6362]">אמת:</span>
-                          <span className="font-bold text-[#3A3534] font-mono">
-                            {ev.isFloating ? 'במהלך החודש' : formatDate(ev.actualDate)}
-                          </span>
-                        </div>
-                      )}
-                      {ev.prepMonths > 0 && (
-                        <span className="text-[11px] bg-[#E6E7FF] text-[#5059FF] px-2 py-0.5 rounded-full font-semibold">
-                          הכנה {ev.prepMonths} ח׳
-                        </span>
-                      )}
-                    </div>
+                  <span className="text-base text-ink-secondary tnum">
+                    {ev.kickoffDate ? formatDate(ev.kickoffDate) : '—'}
+                  </span>
+                  <span className="text-base text-ink-secondary tnum">
+                    {isFloating(ev) ? 'החודש' : formatDate(ev.actualDate)}
+                  </span>
 
-                    {/* Tasks Progress & View Action */}
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[#3A3534]">
-                          {progress.completedTasks}/{progress.totalTasks} משימות
-                        </span>
-                        <div className="w-16 h-2 bg-[#E6E2E1] rounded-full overflow-hidden">
+                  <div className="flex items-center gap-2">
+                    {progress.totalTasks === 0 ? (
+                      <span className="text-xs text-ink-tertiary">אין משימות</span>
+                    ) : (
+                      <>
+                        <div className="h-1 w-12 overflow-hidden rounded-full bg-muted">
                           <div
-                            className="h-full bg-[#2FA36B] rounded-full"
+                            className={cn('h-full rounded-full', progress.percentage === 100 ? 'bg-done' : 'bg-ink-secondary')}
                             style={{ width: `${progress.percentage}%` }}
-                          ></div>
+                          />
                         </div>
-                      </div>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenEventDetail(ev);
-                        }}
-                        className="text-xs font-bold text-[#5059FF] hover:underline flex items-center gap-1"
-                      >
-                        <span>פרטים</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </button>
-                    </div>
+                        <span className="text-xs text-ink-tertiary tnum">
+                          {progress.completedTasks}/{progress.totalTasks}
+                        </span>
+                      </>
+                    )}
                   </div>
-
-                  {/* Expanded Subtasks List */}
-                  {isExpanded && (
-                    <div className="bg-[#FAF8F7] border-t border-[#E6E2E1] px-6 py-3 flex flex-col gap-2">
-                      <div className="text-[11px] font-bold text-[#6B6362]">
-                        משימות פעילות לאירוע ({ev.tasks?.length || 0}):
-                      </div>
-
-                      {(!ev.tasks || ev.tasks.length === 0) ? (
-                        <div className="text-xs text-[#9A9291] italic py-1">
-                          אין עדיין משימות שהוגדרו לאירוע זה. לחץ על "פרטים" להוספת משימות.
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-1.5">
-                          {ev.tasks.map((task) => (
-                            <div
-                              key={task.id}
-                              className="flex items-center justify-between gap-3 p-2 rounded-xl bg-white border border-[#E6E2E1] text-xs"
-                            >
-                              <div className="flex items-center gap-2.5 truncate">
-                                {canEdit ? (
-                                  <button
-                                    onClick={() => onToggleTaskStatus(ev.id, task.id)}
-                                    className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
-                                      task.status === 'done'
-                                        ? 'bg-[#2FA36B] border-[#2FA36B] text-white'
-                                        : 'border-[#3A3534] bg-white hover:bg-[#FAF8F7]'
-                                    }`}
-                                  >
-                                    {task.status === 'done' && <CheckCircle2 className="w-3.5 h-3.5" />}
-                                  </button>
-                                ) : (
-                                  <span
-                                    className={`w-3.5 h-3.5 rounded-full ${
-                                      task.status === 'done' ? 'bg-[#2FA36B]' : 'bg-[#C7C1C0]'
-                                    }`}
-                                  ></span>
-                                )}
-
-                                <span
-                                  className={`truncate font-medium ${
-                                    task.status === 'done' ? 'line-through text-[#9A9291]' : 'text-[#3A3534]'
-                                  }`}
-                                >
-                                  {task.title}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-3 shrink-0 text-[11px] text-[#6B6362]">
-                                <span className="flex items-center gap-1">
-                                  <User className="w-3 h-3 text-[#9A9291]" />
-                                  <span>{task.assigneeName}</span>
-                                </span>
-                                {task.dueDate && (
-                                  <span className="font-mono">{formatDate(task.dueDate)}</span>
-                                )}
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                    task.priority === 'urgent'
-                                      ? 'bg-[#FFE7E8] text-[#F7414B]'
-                                      : task.priority === 'high'
-                                      ? 'bg-[#FFEBE0] text-[#FF732D]'
-                                      : 'bg-[#FAF8F7] text-[#6B6362]'
-                                  }`}
-                                >
-                                  {task.priority === 'urgent'
-                                    ? 'דחוף'
-                                    : task.priority === 'high'
-                                    ? 'גבוה'
-                                    : task.priority === 'medium'
-                                    ? 'בינוני'
-                                    : 'נמוך'}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
-              );
-            })
-          )}
-        </div>
+
+                {isOpen && (
+                  <div className="border-t border-line bg-canvas px-4 py-3 ps-14">
+                    {!ev.tasks || ev.tasks.length === 0 ? (
+                      <div className="flex items-center gap-2 py-1">
+                        <span className="text-xs text-ink-tertiary">עוד אין משימות באירוע הזה</span>
+                        <button
+                          onClick={() => onOpenEventDetail(ev)}
+                          className="text-xs font-semibold text-primary hover:underline"
+                        >
+                          הוספת משימה
+                        </button>
+                      </div>
+                    ) : (
+                      <ul className="flex flex-col gap-0.5">
+                        {ev.tasks.map((task) => {
+                          const late = isOverdue(task.dueDate, task.status);
+                          const done = task.status === 'done';
+                          const prio = PRIORITY_META[task.priority];
+
+                          return (
+                            <li key={task.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-subtle">
+                              <button
+                                onClick={() => canToggle && onToggleTaskStatus(task)}
+                                disabled={!canToggle}
+                                aria-label={done ? 'סמן את המשימה כלא הושלמה' : 'סמן את המשימה כהושלמה'}
+                                className={cn(
+                                  'grid h-5 w-5 shrink-0 place-items-center rounded-md border transition-colors',
+                                  done ? 'border-done bg-done text-white' : 'border-line-strong bg-surface hover:border-ink-secondary',
+                                  !canToggle && 'cursor-not-allowed opacity-60'
+                                )}
+                              >
+                                {done && <Check className="h-4 w-4" strokeWidth={3} />}
+                              </button>
+
+                              <span className={cn('min-w-0 flex-1 truncate text-base', done ? 'text-ink-tertiary line-through' : 'text-ink')}>
+                                {task.title}
+                              </span>
+
+                              {(task.priority === 'urgent' || task.priority === 'high') && !done && (
+                                <Badge tone={prio.tone}>{prio.label}</Badge>
+                              )}
+                              <span className="w-20 shrink-0 truncate text-xs text-ink-tertiary">{task.assigneeId ? (userNames.get(task.assigneeId) ?? '—') : '—'}</span>
+                              {task.dueDate && (
+                                <span className={cn('w-14 shrink-0 text-xs tnum', late ? 'font-semibold text-late' : 'text-ink-tertiary')}>
+                                  {formatDate(task.dueDate)}
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </div>
   );
 };
+
+export function EmptyState({
+  hasFilters,
+  canEdit,
+  onAdd
+}: {
+  hasFilters: boolean;
+  canEdit: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 px-4 py-20 text-center">
+      <Inbox className="h-6 w-6 text-ink-disabled" aria-hidden="true" />
+      <p className="text-base font-semibold text-ink">
+        {hasFilters ? 'אין כאן אירועים שמתאימים למה שבחרת' : 'עוד אין אירועים בלוח'}
+      </p>
+      <p className="max-w-xs text-sm text-ink-tertiary">
+        {hasFilters ? 'נסה לשנות את הסינון או לנקות את החפש אירוע או משימה' : 'הוסף אירוע ראשון כדי להתחיל'}
+      </p>
+      {!hasFilters && canEdit && (
+        <Button variant="primary" size="sm" onClick={onAdd} className="mt-2">
+          <Plus className="h-4.5 w-4.5" />
+          אירוע חדש
+        </Button>
+      )}
+    </div>
+  );
+}

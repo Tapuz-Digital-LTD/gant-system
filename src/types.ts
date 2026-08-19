@@ -1,55 +1,143 @@
+/** Mirrors what the API returns. No field here is invented by the client. */
+
 export type ViewMode = 'calendar' | 'gantt' | 'kanban' | 'list' | 'analytics';
 
 export type TaskStatus = 'todo' | 'in_progress' | 'ready_kickoff' | 'done';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type EventCategory = 'holiday' | 'campaign' | 'b2b' | 'social' | 'operational' | 'other';
+export type UserRole = 'admin' | 'editor' | 'viewer';
+export type DatePrecision = 'day' | 'month';
 
-export interface TaskChecklistItem {
+export interface UserAccess {
   id: string;
-  text: string;
-  done: boolean;
+  email: string;
+  name: string;
+  role: UserRole;
+  isOwner?: boolean;
+  /** What this person may actually do. Comes from the server, never guessed. */
+  permissions?: string[];
 }
 
-export interface TaskComment {
+/** Every capability the UI gates on. Mirrors server/permissions.ts. */
+export type Capability =
+  | 'event.create' | 'event.edit' | 'event.delete' | 'event.restore'
+  | 'task.create' | 'task.edit' | 'task.delete'
+  | 'comment.create'
+  | 'board.create' | 'board.edit' | 'board.duplicate' | 'board.delete'
+  | 'export.run' | 'activity.view'
+  | 'people.manage' | 'permissions.manage';
+
+/** A person plus the boards they can reach. Staff have an empty list and see everything. */
+export interface Person {
   id: string;
-  userEmail: string;
-  userName: string;
-  text: string;
-  date: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  isGuest: boolean;
+  /** The workspace owner: bypasses every permission and cannot be removed. */
+  isOwner: boolean;
+  createdAt: string;
+  boards: { boardId: string; role: 'editor' | 'viewer' }[];
+}
+
+export interface PermissionEntry {
+  key: string;
+  label: string;
+  group: string;
+}
+
+export interface PermissionMatrix {
+  catalog: PermissionEntry[];
+  roles: { key: UserRole; label: string }[];
+  matrix: Record<UserRole, Record<string, boolean>>;
 }
 
 export interface TaskItem {
   id: string;
+  eventId: string;
   title: string;
-  description?: string;
+  description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
-  assigneeEmail: string;
-  assigneeName: string;
-  dueDate?: string;
-  completedAt?: string;
-  checklist: TaskChecklistItem[];
-  comments?: TaskComment[];
+  assigneeId: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  dueDate: string | null;
+  position: number;
+  completedAt: string | null;
+  version: number;
 }
-
-export type EventCategory = 'holiday' | 'campaign' | 'b2b' | 'social' | 'operational' | 'other';
 
 export interface EventItem {
   id: string;
+  boardId: string;
   title: string;
   category: EventCategory;
-  kickoffDate?: string; // YYYY-MM-DD
-  actualDate?: string; // YYYY-MM-DD or YYYY-MM
+  /** The event's own state — set by a person, not derived from its tasks. */
+  status: TaskStatus;
+  /** Optional milestone inside the work window, not its start. */
+  kickoffDate: string | null;
+  /** Always a full YYYY-MM-DD. Month precision anchors to the 1st. */
+  actualDate: string;
+  actualPrecision: DatePrecision;
   prepMonths: number;
-  isFloating: boolean; // if event occurs throughout the month without a specific day
-  monthKey: string; // e.g. '2026-08'
-  note?: string; // e.g. 'לאירוע 04.12.2026' or 'הכנה 2 חודשים'
-  description?: string;
-  tasks: TaskItem[];
-  color?: string;
-  targetAudience?: string;
-  budgetEstimate?: string;
+  note: string | null;
+  description: string | null;
   createdAt: string;
-  createdBy: string;
+  version: number;
+  tasks: TaskItem[];
+}
+
+export interface EventComment {
+  id: string;
+  eventId: string;
+  taskId: string | null;
+  body: string;
+  createdAt: string;
+  authorId: string | null;
+  authorName: string | null;
+  authorEmail: string | null;
+}
+
+export interface GanttBoard {
+  id: string;
+  name: string;
+  description: string;
+  position: number;
+  eventCount: number;
+}
+
+export interface ActivityEntry {
+  id: string;
+  actorId: string | null;
+  entity: string;
+  entityId: string;
+  action: string;
+  before: unknown;
+  after: unknown;
+  createdAt: string;
+}
+
+export interface Holiday {
+  date: string;
+  title: string;
+  hebrewDate: string;
+  kind: 'major' | 'minor' | 'modern' | 'fast' | 'roshchodesh';
+  /** A day people do not work — the constraint that matters when planning. */
+  isYomTov: boolean;
+}
+
+export interface SearchHit {
+  kind: 'event' | 'task';
+  eventId: string;
+  title: string;
+  actualDate: string;
+  actualPrecision: DatePrecision;
+  /** Why this row matched — shown to the reader so a result is never a mystery. */
+  matchedOn: 'title' | 'note' | 'description' | 'task';
+  context: string | null;
+  status?: TaskStatus;
+  dueDate?: string | null;
 }
 
 export interface MonthMeta {
@@ -60,31 +148,6 @@ export interface MonthMeta {
   monthNumber: number;
 }
 
-export type UserRole = 'admin' | 'editor' | 'viewer';
-
-export interface UserAccess {
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  avatarBg: string;
-  addedAt: string;
-  accessibleBoards?: string[]; // board IDs or 'all'
-}
-
-export interface GanttBoard {
-  id: string;
-  name: string;
-  description: string;
-  category: 'events' | 'social' | 'tasks' | 'operations' | 'custom';
-  color: string;
-  icon: string;
-  events: EventItem[];
-  users: UserAccess[];
-  createdAt: string;
-  isDefault?: boolean;
-}
-
 export interface FilterState {
   search: string;
   category: string;
@@ -92,5 +155,17 @@ export interface FilterState {
   assignee: string;
   showKickoffs: boolean;
   showActuals: boolean;
-  year: string; // 'all' | '2026' | '2027' | '2028'
+  year: string;
+}
+
+/* --- derived, never stored --- */
+
+/** The month an event is filed under. Derived, so it can never disagree. */
+export function monthKeyOf(event: Pick<EventItem, 'actualDate'>): string {
+  return event.actualDate.slice(0, 7);
+}
+
+/** "During the month, no exact day" — one source of truth, no boolean to contradict it. */
+export function isFloating(event: Pick<EventItem, 'actualPrecision'>): boolean {
+  return event.actualPrecision === 'month';
 }
