@@ -19,10 +19,10 @@ export const PERMISSIONS = [
 
   { key: 'comment.create', label: 'כתיבת תגובות', group: 'תקשורת' },
 
-  { key: 'board.create', label: 'יצירת בחר לוח', group: 'בחר לוח' },
-  { key: 'board.edit', label: 'שנה שם ותיאור של לוח', group: 'בחר לוח' },
-  { key: 'board.duplicate', label: 'שכפול בחר לוח', group: 'בחר לוח' },
-  { key: 'board.delete', label: 'מחיקת בחר לוח', group: 'בחר לוח' },
+  { key: 'board.create', label: 'יצירת לוח', group: 'לוחות' },
+  { key: 'board.edit', label: 'שנה שם ותיאור של לוח', group: 'לוחות' },
+  { key: 'board.duplicate', label: 'שכפול לוח', group: 'לוחות' },
+  { key: 'board.delete', label: 'מחיקת לוח', group: 'לוחות' },
 
   { key: 'export.run', label: 'הורדה והדפסה לאקסל וגיבוי', group: 'נתונים' },
   { key: 'activity.view', label: 'צפייה בלבד ביומן הפעילות', group: 'נתונים' },

@@ -1,19 +1,19 @@
 import React, { useMemo } from 'react';
 import { CalendarClock, Rocket, ListChecks, AlertTriangle } from 'lucide-react';
-import { EventItem, MonthMeta, UserAccess, EventCategory , monthKeyOf, isFloating } from '../types';
+import { EventItem, UserAccess, EventCategory, monthKeyOf, isFloating } from '../types';
+import { monthName } from '../utils/period';
 import { CATEGORY_META, isOverdue, avatarColor, currentMonthKey } from '../utils/eventMeta';
 import { cn } from './ui';
 
 interface AnalyticsViewProps {
   events: EventItem[];
-  months: MonthMeta[];
   users: UserAccess[];
   boardName: string;
 }
 
 const CATEGORIES = Object.keys(CATEGORY_META) as EventCategory[];
 
-export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ events, months, users }) => {
+export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ events, users }) => {
   const stats = useMemo(() => {
     const thisMonth = currentMonthKey();
     const byCategory = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<EventCategory, number>;
@@ -48,12 +48,15 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ events, months, us
       .sort((a, b) => a.actualDate.localeCompare(b.actualDate))
       .slice(0, 6);
 
-    const perMonth = months.map((m) => ({
-      key: m.key,
-      label: m.title.replace(/\s+\d{4}$/, ''),
-      year: m.year,
-      count: events.filter((e) => e.actualDate.startsWith(m.key)).length,
-      isNow: m.key === thisMonth
+    // The months to chart are the months the data actually covers, plus the
+    // current one, so the shape follows the board instead of a fixed list.
+    const monthKeys = [...new Set([thisMonth, ...events.map((e) => e.actualDate.slice(0, 7))])].sort();
+    const perMonth = monthKeys.map((key) => ({
+      key,
+      label: monthName(key),
+      year: Number(key.slice(0, 4)),
+      count: events.filter((e) => e.actualDate.startsWith(key)).length,
+      isNow: key === thisMonth
     }));
 
     return {
@@ -67,13 +70,13 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ events, months, us
       upcoming,
       perMonth
     };
-  }, [events, months, users]);
+  }, [events, users]);
 
   const peak = Math.max(1, ...stats.perMonth.map((m) => m.count));
 
   const CARDS = [
     { icon: CalendarClock, label: 'אירועים בלוח', value: stats.totalEvents, tint: 'text-primary bg-primary-soft' },
-    { icon: Rocket, label: 'עם תאריך תאריך התנעה', value: stats.kickoffs, tint: 'text-ready bg-ready-soft' },
+    { icon: Rocket, label: 'עם תאריך עלייה לאוויר', value: stats.kickoffs, tint: 'text-ready bg-ready-soft' },
     { icon: ListChecks, label: 'משימות', value: stats.totalTasks, tint: 'text-done bg-done-soft' },
     { icon: AlertTriangle, label: 'משימות באיחור', value: stats.lateTasks, tint: 'text-late bg-late-soft' }
   ];
@@ -114,13 +117,16 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ events, months, us
                     style={{ height: `${Math.max(4, (m.count / peak) * 100)}%` }}
                     title={`${m.label} ${m.year}: ${m.count} אירועים`}
                   />
+                  {/* The year is not decoration: the chart spans three of them,
+                      and two Decembers with no year are two unlabelled bars. */}
                   <span
                     className={cn(
-                      'w-full truncate text-center text-xs',
+                      'w-full truncate text-center text-xs leading-tight',
                       m.isNow ? 'font-bold text-primary' : 'text-ink-tertiary'
                     )}
                   >
                     {m.label.slice(0, 3)}
+                    <span className="block text-ink-disabled tnum">{String(m.year).slice(2)}</span>
                   </span>
                 </div>
               ))}

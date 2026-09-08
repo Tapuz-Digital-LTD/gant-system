@@ -35,7 +35,7 @@ if (existing) {
     .update(users)
     .set({ role, isGuest: false, ...(name ? { name } : {}) })
     .where(sql`lower(${users.email}) = ${email}`);
-  console.log(`✓ ${email} עודכן — תפקיד ${role}, צוות פנימי פנימי`);
+  console.log(`✓ ${email} עודכן — תפקיד ${role}, צוות פנימי`);
 } else {
   await db.insert(users).values({
     email,
@@ -45,7 +45,7 @@ if (existing) {
     // Verification happens when they enter the code sent to this address.
     emailVerified: false
   });
-  console.log(`✓ ${email} נוצר — תפקיד ${role}, צוות פנימי פנימי`);
+  console.log(`✓ ${email} נוצר — תפקיד ${role}, צוות פנימי`);
 }
 
 console.log('  הכניסה: הזן את הכתובת במסך ההתחברות וקבל קוד בן 6 ספרות.');

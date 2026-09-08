@@ -139,10 +139,15 @@ export function createRepo(db: Database) {
               title: ev.title,
               category: ev.category,
               status: ev.status,
-              kickoffDate: ev.kickoffDate,
               actualDate: ev.actualDate,
               actualPrecision: ev.actualPrecision,
               prepMonths: ev.prepMonths,
+              workStartDate: ev.workStartDate,
+              reviewDate: ev.reviewDate,
+              freezeDate: ev.freezeDate,
+              kickoffDate: ev.kickoffDate,
+              announceDate: ev.announceDate,
+              campaignEndDate: ev.campaignEndDate,
               hebrewRule: ev.hebrewRule,
               note: ev.note,
               description: ev.description,
@@ -188,11 +193,25 @@ export function createRepo(db: Database) {
 
     /**
      * The windowed read the whole product depends on: one board, one date range.
-     * An event is in the window when its work window overlaps it — the bar spans
-     * `actual_date - prep_months` to `actual_date`, so a long prep period must
-     * still appear in months where no date literally falls.
+     *
+     * An event belongs to the window when *anything about it* overlaps: the work
+     * window, any milestone, or the campaign tail that runs past the event date.
+     * Filtering on `actual_date` alone used to drop an event whose go-live day
+     * was on screen but whose event date was not — it vanished with no message,
+     * which reads as data loss rather than as a filter.
+     *
+     * LEAST and GREATEST ignore NULLs, so an unset milestone simply does not
+     * widen the span.
      */
     async listEvents(boardId: string, from: string, to: string) {
+      const spanStart = sql`least(
+        coalesce(${events.workStartDate},
+                 (${events.actualDate} - make_interval(months => ${events.prepMonths}))::date),
+        ${events.reviewDate}, ${events.freezeDate},
+        ${events.kickoffDate}, ${events.announceDate}
+      )`;
+      const spanEnd = sql`greatest(${events.actualDate}, ${events.campaignEndDate})`;
+
       const rows = await db
         .select()
         .from(events)
@@ -200,8 +219,8 @@ export function createRepo(db: Database) {
           and(
             eq(events.boardId, boardId),
             isNull(events.archivedAt),
-            lte(sql`${events.actualDate} - make_interval(months => ${events.prepMonths})`, to),
-            gte(events.actualDate, from)
+            lte(spanStart, to),
+            gte(spanEnd, from)
           )
         )
         .orderBy(asc(events.actualDate));

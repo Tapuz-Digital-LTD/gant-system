@@ -74,7 +74,7 @@ export function buildMonthCalendarGrid(
       byDay[day].push({
         item: ev,
         type: 'kickoff',
-        badgeLabel: `תאריך תאריך התנעה: ${ev.title}`,
+        badgeLabel: `עלייה לאוויר: ${ev.title}`,
         bg: '#F7414B',
         fg: '#FFFFFF'
       });
@@ -100,7 +100,7 @@ export function buildMonthCalendarGrid(
           byDay[day].push({
             item: ev,
             type: 'actual',
-            badgeLabel: `תאריך אמת: ${ev.title}`,
+            badgeLabel: `תאריך האירוע: ${ev.title}`,
             bg: '#3A3534',
             fg: '#FFFFFF'
           });
@@ -165,8 +165,8 @@ export function exportBoardToCSV(boardName: string, events: EventItem[]): void {
     'מספר פנימי',
     'שם האירוע',
     'קטגוריה',
-    'תאריך תאריך התנעה',
-    'תאריך אמת',
+    'עלייה לאוויר',
+    'תאריך האירוע',
     'חודשי הכנה',
     'חודש יעד',
     'בלי יום מדויק',

@@ -117,7 +117,7 @@ export function PermissionsChecklist({ enabled, isOwner }: { enabled: boolean; i
 
       <p className="flex items-start gap-1.5 text-sm text-ink-tertiary">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-        אורחים מוגבלים גם לפי הבחר לוח שסימנת להם — גם אם התפקיד שלהם מרשה יותר.
+        אורחים מוגבלים גם לפי הלוחות שסימנת להם — גם אם התפקיד שלהם מרשה יותר.
       </p>
     </div>
   );

@@ -4,6 +4,7 @@ import { EventItem, FilterState, UserAccess, TaskStatus, isFloating } from '../t
 import { filterEvents } from '../utils/filterEvents';
 import type { Can } from '../hooks/useCan';
 import { formatDate, calculateEventProgress } from '../utils/dateHelpers';
+import { monthName } from '../utils/period';
 import { CATEGORY_META, STATUS_META, isOverdue } from '../utils/eventMeta';
 import { Dot, StatusPill, Tooltip, cn } from './ui';
 import { EmptyState } from './ListView';
@@ -11,6 +12,8 @@ import { EmptyState } from './ListView';
 interface KanbanBoardViewProps {
   events: EventItem[];
   filterState: FilterState;
+  /** Whether anything is filtered, so the empty state can say why. */
+  hasFilters: boolean;
   onOpenEventDetail: (event: EventItem) => void;
   onOpenAddEvent: () => void;
   onMoveEvent: (event: EventItem, status: TaskStatus) => void;
@@ -22,6 +25,7 @@ const COLUMNS: TaskStatus[] = ['todo', 'in_progress', 'ready_kickoff', 'done'];
 export const KanbanBoardView: React.FC<KanbanBoardViewProps> = ({
   events,
   filterState,
+  hasFilters,
   onOpenEventDetail,
   onOpenAddEvent,
   onMoveEvent,
@@ -44,7 +48,7 @@ export const KanbanBoardView: React.FC<KanbanBoardViewProps> = ({
   if (filteredEvents.length === 0) {
     return (
       <EmptyState
-        hasFilters={Boolean(filterState.search) || filterState.category !== 'all' || filterState.year !== 'all'}
+        hasFilters={hasFilters}
         canEdit={canAdd}
         onAdd={onOpenAddEvent}
       />
@@ -56,7 +60,7 @@ export const KanbanBoardView: React.FC<KanbanBoardViewProps> = ({
       {held && (
         <div className="flex items-center gap-2 rounded-lg bg-primary-soft px-3 py-2" role="status">
           <span className="text-base text-ink">
-            נבחר: <b>{held.title}</b> — בחר עמודה עם Enter, או Escape לבטל שינוי בשם הלוח
+            נבחר: <b>{held.title}</b> — בחר עמודה עם Enter, או Escape לביטול
           </span>
         </div>
       )}
@@ -163,8 +167,12 @@ export const KanbanBoardView: React.FC<KanbanBoardViewProps> = ({
                         </div>
 
                         <div className="flex items-center gap-2 text-xs text-ink-tertiary tnum">
-                          {ev.kickoffDate && <span>תאריך התנעה {formatDate(ev.kickoffDate)}</span>}
-                          <span>אמת {isFloating(ev) ? 'החודש' : formatDate(ev.actualDate)}</span>
+                          {ev.kickoffDate && <span>עלייה לאוויר {formatDate(ev.kickoffDate)}</span>}
+                          <span>
+                            {isFloating(ev)
+                              ? `במהלך ${monthName(ev.actualDate)}`
+                              : `האירוע ${formatDate(ev.actualDate)}`}
+                          </span>
                         </div>
 
                         {progress.totalTasks > 0 && (

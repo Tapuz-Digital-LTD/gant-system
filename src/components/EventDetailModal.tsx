@@ -29,6 +29,7 @@ import {
   Tooltip,
   cn
 } from './ui';
+import { EventDatesEditor, EventDatesSummary } from './EventDates';
 import { AIAssistantModal } from './AIAssistantModal';
 
 interface EventDetailModalProps {
@@ -107,10 +108,10 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
         size="lg"
         title={event.title}
         description={`${cat.label} · ${
-          event.kickoffDate ? `תאריך תאריך התנעה: ${formatDate(event.kickoffDate)}` : 'אין תאריך תאריך התנעה'
+          event.kickoffDate ? `עלייה לאוויר: ${formatDate(event.kickoffDate)}` : 'אין תאריך עלייה לאוויר'
         }${
           event.actualDate
-            ? ` · תאריך אמת ${isFloating(event) ? 'במהלך החודש' : formatDate(event.actualDate)}`
+            ? ` · תאריך האירוע ${isFloating(event) ? 'במהלך החודש' : formatDate(event.actualDate)}`
             : ''
         }`}
         footer={
@@ -120,7 +121,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div className="me-auto flex items-center gap-2">
                   <span className="text-sm text-ink-secondary">להעביר את האירוע לארכיון?</span>
                   <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
-                    בטל שינוי בשם הלוח
+                    ביטול
                   </Button>
                   <Button
                     variant="danger"
@@ -338,33 +339,10 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       ))}
                     </Select>
                   </Field>
-                  <Field label="חודשי הכנה" hint="חודשי הכנה" htmlFor="ev-prep">
-                    <Input
-                      id="ev-prep"
-                      type="number"
-                      min={0}
-                      max={12}
-                      value={event.prepMonths}
-                      onChange={(e) => onUpdateEvent({ prepMonths: Number(e.target.value) || 0 })}
-                    />
-                  </Field>
-                  <Field label="תאריך תאריך התנעה" hint="עלייה לאוויר" htmlFor="ev-kick">
-                    <Input
-                      id="ev-kick"
-                      type="date"
-                      defaultValue={event.kickoffDate ?? ''}
-                      onChange={(e) => onUpdateEvent({ kickoffDate: e.target.value || null })}
-                    />
-                  </Field>
-                  <Field label="תאריך אמת" hint="מועד האירוע" htmlFor="ev-actual">
-                    <Input
-                      id="ev-actual"
-                      type="date"
-                      defaultValue={isFloating(event) ? '' : event.actualDate}
-                      onChange={(e) => e.target.value && onUpdateEvent({ actualDate: e.target.value, actualPrecision: 'day' })}
-                    />
-                  </Field>
                 </div>
+
+                <EventDatesEditor event={event} onUpdateEvent={onUpdateEvent} />
+
                 <Field label="הערה" htmlFor="ev-note">
                   <Input id="ev-note" defaultValue={event.note ?? ''} onBlur={(e) => e.target.value !== (event.note ?? '') && onUpdateEvent({ note: e.target.value })} />
                 </Field>
@@ -378,25 +356,23 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 </Field>
               </>
             ) : (
-              <dl className="flex flex-col gap-3">
-                {[
-                  ['קטגוריה', cat.label],
-                  ['תאריך תאריך התנעה', event.kickoffDate ? formatDate(event.kickoffDate) : '—'],
-                  [
-                    'תאריך אמת',
-                    isFloating(event) ? 'במהלך החודש' : formatDate(event.actualDate)
-                  ],
-                  ['חודשי הכנה', `${event.prepMonths}`],
-                  ['הערה', event.note || '—'],
-                  ['תיאור', event.description || '—'],
-                  ['נוצר', formatDate(event.createdAt.slice(0, 10))]
-                ].map(([label, value]) => (
-                  <div key={label} className="grid grid-cols-[8rem_1fr] gap-3">
-                    <dt className="text-sm text-ink-tertiary">{label}</dt>
-                    <dd className="text-base text-ink">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <>
+                <EventDatesSummary event={event} />
+
+                <dl className="flex flex-col gap-3 border-t border-line pt-4">
+                  {[
+                    ['סוג האירוע', cat.label],
+                    ['הערה', event.note || '—'],
+                    ['תיאור', event.description || '—'],
+                    ['נוצר', formatDate(event.createdAt.slice(0, 10))]
+                  ].map(([label, value]) => (
+                    <div key={label} className="grid grid-cols-[8rem_1fr] gap-3">
+                      <dt className="text-sm text-ink-tertiary">{label}</dt>
+                      <dd className="text-base text-ink">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </>
             )}
           </div>
         )}

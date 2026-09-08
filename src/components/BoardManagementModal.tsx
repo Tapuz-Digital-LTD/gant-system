@@ -49,8 +49,8 @@ export const BoardManagementModal: React.FC<BoardManagementModalProps> = ({
     <Modal
       open={isOpen}
       onOpenChange={(o) => !o && onClose()}
-      title="ניהול בחר לוח"
-      description={`${boards.length} בחר לוח`}
+      title="ניהול הלוחות"
+      description={`${boards.length} לוחות`}
       footer={
         <>
           {canEdit && !creating && (
@@ -86,7 +86,7 @@ export const BoardManagementModal: React.FC<BoardManagementModalProps> = ({
                 יצירה
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
-                בטל שינוי בשם הלוח
+                ביטול
               </Button>
             </div>
           </form>

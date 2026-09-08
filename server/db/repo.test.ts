@@ -109,6 +109,82 @@ assert.equal(c.taskId, null, 'a comment can belong to the event with no task at 
 const commentList = await repo.listComments(rosh.id);
 assert.equal(commentList.length, 1, 'comments are readable without touching tasks[0]');
 
+// ---------- milestones ----------
+// A board of its own, so archiving below cannot reach it.
+const msBoard = await repo.createBoard({ name: 'לוח אבני דרך', description: '' }, null);
+
+const hanukkah = await repo.createEvent(
+  msBoard.id,
+  {
+    title: 'מבצע חנוכה',
+    category: 'campaign',
+    actualDate: '2026-12-14',
+    actualPrecision: 'day',
+    prepMonths: 2,
+    workStartDate: '2026-10-19',
+    reviewDate: '2026-11-20',
+    freezeDate: '2026-11-28',
+    kickoffDate: '2026-12-06',
+    announceDate: '2026-12-06',
+    campaignEndDate: '2027-01-31'
+  },
+  null
+);
+assert.equal(hanukkah.workStartDate, '2026-10-19', 'an exact work start is stored as given');
+assert.equal(hanukkah.announceDate, '2026-12-06');
+assert.equal(hanukkah.campaignEndDate, '2027-01-31');
+assert.notEqual(hanukkah.announceDate, hanukkah.kickoffDate === null, 'go-live and announcement stay separate fields');
+
+// An event with no milestones keeps every one of them null. Nothing is invented.
+const bare = await repo.createEvent(
+  msBoard.id,
+  { title: 'מתנת סוף שנה', category: 'campaign', actualDate: '2026-12-01', actualPrecision: 'month', prepMonths: 1 },
+  null
+);
+assert.equal(bare.workStartDate, null, 'no work start is invented from prep months');
+assert.equal(bare.campaignEndDate, null, 'no campaign end is invented from the event date');
+assert.equal(bare.kickoffDate, null);
+
+// Editing one milestone leaves the others alone.
+const edited = await repo.updateEvent(hanukkah.id, hanukkah.version, { freezeDate: '2026-11-30' }, null);
+assert.equal(edited.freezeDate, '2026-11-30');
+assert.equal(edited.reviewDate, '2026-11-20', 'the other milestones survive an edit');
+assert.equal(edited.workStartDate, '2026-10-19');
+
+// Clearing a milestone is a real operation, not a no-op.
+const cleared = await repo.updateEvent(edited.id, edited.version, { announceDate: null }, null);
+assert.equal(cleared.announceDate, null, 'a milestone can be removed');
+assert.equal(cleared.kickoffDate, '2026-12-06', 'clearing one does not clear its neighbour');
+
+// The window must not hide an event just because its event date is elsewhere.
+const janTail = await repo.listEvents(msBoard.id, '2027-01-01', '2027-01-31');
+assert.ok(
+  janTail.some((e) => e.id === hanukkah.id),
+  'an event is still returned in a month reached only by its campaign tail'
+);
+
+const workStartMonth = await repo.listEvents(msBoard.id, '2026-10-01', '2026-10-31');
+assert.ok(
+  workStartMonth.some((e) => e.id === hanukkah.id),
+  'the month the exact work start falls in returns the event'
+);
+
+const farOff = await repo.listEvents(msBoard.id, '2028-01-01', '2028-01-31');
+assert.equal(farOff.length, 0, 'a range past every date still returns nothing');
+
+// Duplicating a board must carry the milestones. Losing them here would be silent.
+const copy = await repo.duplicateBoard(msBoard.id, 'לוח אבני דרך — עותק', null);
+const copied = await repo.listEvents(copy.id, '2026-01-01', '2027-12-31');
+const copiedHanukkah = copied.find((e) => e.title === 'מבצע חנוכה');
+assert.ok(copiedHanukkah, 'the duplicated board has the event');
+assert.equal(copiedHanukkah!.workStartDate, '2026-10-19', 'work start survives duplication');
+assert.equal(copiedHanukkah!.reviewDate, '2026-11-20', 'review survives duplication');
+assert.equal(copiedHanukkah!.freezeDate, '2026-11-30', 'freeze survives duplication');
+assert.equal(copiedHanukkah!.kickoffDate, '2026-12-06', 'go-live survives duplication');
+assert.equal(copiedHanukkah!.campaignEndDate, '2027-01-31', 'campaign end survives duplication');
+const copiedBare = copied.find((e) => e.title === 'מתנת סוף שנה');
+assert.equal(copiedBare?.announceDate, null, 'an empty milestone stays empty in the copy');
+
 // ---------- not found ----------
 await assert.rejects(
   () => repo.getEvent('00000000-0000-4000-8000-000000000000'),
@@ -125,7 +201,10 @@ await repo.archiveEvent(t1.eventId, null);
 assert.equal((await repo.listEvents(board.id, '2027-01-01', '2027-12-31')).length, 1, 'archived events drop out of reads');
 
 await repo.archiveBoard(board.id, null);
-assert.equal((await repo.listBoards()).length, 0, 'archived boards drop out of reads');
+assert.ok(
+  !(await repo.listBoards()).some((b) => b.id === board.id),
+  'archived boards drop out of reads'
+);
 
 // ---------- audit trail ----------
 const trail = await repo.listActivity('event', rosh.id);
