@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:local": "DATABASE_URL= RESEND_API_KEY= SMTP_USER= SMTP_PASS= SMTP_HOST= MAIL_FROM= VERCEL_OIDC_TOKEN= AUTH_SECRET=local-dev-only tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
@@ -17,7 +18,9 @@
     "staff:add": "tsx server/db/add-staff.ts",
     "mail:check": "tsx server/db/check-mail.ts",
     "owner:set": "tsx server/db/set-owner.ts",
-    "db:fix-dates": "tsx server/db/fix-holiday-dates.ts"
+    "db:fix-dates": "tsx server/db/fix-holiday-dates.ts",
+    "db:seed:local": "DATABASE_URL= RESEND_API_KEY= SMTP_USER= SMTP_PASS= SMTP_HOST= MAIL_FROM= VERCEL_OIDC_TOKEN= AUTH_SECRET=local-dev-only tsx server/db/seed.ts",
+    "db:whoami": "DATABASE_URL= RESEND_API_KEY= SMTP_USER= SMTP_PASS= SMTP_HOST= MAIL_FROM= VERCEL_OIDC_TOKEN= AUTH_SECRET=local-dev-only tsx server/db/whoami.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -39,8 +39,11 @@ export async function initDb(): Promise<Database> {
 
   const { PGlite } = await import('@electric-sql/pglite');
   const { drizzle: drizzlePglite } = await import('drizzle-orm/pglite');
-  const { readFileSync, readdirSync } = await import('node:fs');
+  const { readFileSync, readdirSync, mkdirSync } = await import('node:fs');
 
+  // PGlite creates the leaf directory but not its parents, so a fresh clone
+  // dies on ENOENT before the first query.
+  mkdirSync('.data/pg', { recursive: true });
   const client = new PGlite('.data/pg');
   closePglite = () => client.close();
 
