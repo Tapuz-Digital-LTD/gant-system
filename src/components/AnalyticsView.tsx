@@ -117,13 +117,16 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ events, users }) =
                     style={{ height: `${Math.max(4, (m.count / peak) * 100)}%` }}
                     title={`${m.label} ${m.year}: ${m.count} אירועים`}
                   />
+                  {/* The year is not decoration: the chart spans three of them,
+                      and two Decembers with no year are two unlabelled bars. */}
                   <span
                     className={cn(
-                      'w-full truncate text-center text-xs',
+                      'w-full truncate text-center text-xs leading-tight',
                       m.isNow ? 'font-bold text-primary' : 'text-ink-tertiary'
                     )}
                   >
                     {m.label.slice(0, 3)}
+                    <span className="block text-ink-disabled tnum">{String(m.year).slice(2)}</span>
                   </span>
                 </div>
               ))}

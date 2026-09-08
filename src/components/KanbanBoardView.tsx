@@ -4,6 +4,7 @@ import { EventItem, FilterState, UserAccess, TaskStatus, isFloating } from '../t
 import { filterEvents } from '../utils/filterEvents';
 import type { Can } from '../hooks/useCan';
 import { formatDate, calculateEventProgress } from '../utils/dateHelpers';
+import { monthName } from '../utils/period';
 import { CATEGORY_META, STATUS_META, isOverdue } from '../utils/eventMeta';
 import { Dot, StatusPill, Tooltip, cn } from './ui';
 import { EmptyState } from './ListView';
@@ -167,7 +168,11 @@ export const KanbanBoardView: React.FC<KanbanBoardViewProps> = ({
 
                         <div className="flex items-center gap-2 text-xs text-ink-tertiary tnum">
                           {ev.kickoffDate && <span>עלייה לאוויר {formatDate(ev.kickoffDate)}</span>}
-                          <span>אמת {isFloating(ev) ? 'החודש' : formatDate(ev.actualDate)}</span>
+                          <span>
+                            {isFloating(ev)
+                              ? `במהלך ${monthName(ev.actualDate)}`
+                              : `האירוע ${formatDate(ev.actualDate)}`}
+                          </span>
                         </div>
 
                         {progress.totalTasks > 0 && (
