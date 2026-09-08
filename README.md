@@ -1,20 +1,43 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# תכנון אירועים · XTRA
 
-# Run and deploy your AI Studio app
+לוח שנה ותכנון אירועים: מתי מתחילים לעבוד על כל אירוע, מתי הוא עולה לאוויר,
+ומתי הוא קורה.
 
-This contains everything you need to run your app locally.
+- [CONTEXT.md](CONTEXT.md) — מילון המונחים של הדומיין. מה כל מונח *אומר*,
+  ואיך הוא נקרא על המסך.
+- [docs/adr/](docs/adr/) — החלטות שיקר לשנות, והנימוק שלהן.
 
-View your app in AI Studio: https://ai.studio/apps/74c7c3c3-f565-4d24-930b-519c370bea22
+## הרצה מקומית
 
-## Run Locally
+**דרישה:** Node.js 20 ומעלה.
 
-**Prerequisites:**  Node.js
+```bash
+npm install
+npm run dev:local     # http://localhost:3000
+```
 
+`dev:local` מרוקן כל פרט התחברות של פרודקשן לפני שהתצורה נטענת, כך ש-`.env.local`
+לא יכול לגבור עליו, והמערכת נופלת חזרה למסד נתונים מקומי (PGlite תחת `.data/pg`).
+**לפיתוח ולבדיקות משתמשים רק בזה.**
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+npm run db:whoami     # מדפיס לאיזה מסד נתונים מחוברים. יוצא בשגיאה אם הוא מרוחק
+npm run db:seed:local # טוען את data/app-db.json למסד המקומי
+```
+
+בסביבה המקומית אין שליחת מייל, ולכן **קוד הכניסה החד-פעמי נכתב ללוג של השרת**
+במקום להישלח. מחפשים בו `otp_not_emailed`.
+
+`npm run dev` מתחבר למה שמוגדר ב-`.env.local` — כלומר לפרודקשן. אין להשתמש בו
+לבדיקות.
+
+## בדיקות
+
+```bash
+npm run check         # טיפוסים, בדיקות, ובנייה
+```
+
+## פריסה
+
+Vercel. `api/index.ts` מגיש את ה-API, `dist/` את הממשק.
+מיגרציות למסד הפרודקשן: `npm run db:migrate`.
