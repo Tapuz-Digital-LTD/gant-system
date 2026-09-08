@@ -154,7 +154,7 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
 
                     <Tooltip
                       label={`${ev.title} · הכנה ${ev.prepMonths} חודשים${
-                        ev.kickoffDate ? ` · תאריך תאריך התנעה ${formatDate(ev.kickoffDate)}` : ''
+                        ev.kickoffDate ? ` · עלייה לאוויר ${formatDate(ev.kickoffDate)}` : ''
                       }`}
                     >
                       <button
@@ -189,11 +189,11 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
       <div className="mt-2 flex flex-wrap items-center gap-4 px-1 text-xs text-ink-tertiary">
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-5 rounded bg-primary" aria-hidden="true" />
-          חלון עבודה (הכנה עד תאריך אמת)
+          תקופת הכנה (עד תאריך האירוע)
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-1 rounded-full bg-late" aria-hidden="true" />
-          תאריך תאריך התנעה
+          עלייה לאוויר
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-5 rounded bg-muted" aria-hidden="true" />

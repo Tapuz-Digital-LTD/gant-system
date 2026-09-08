@@ -114,11 +114,11 @@ function MonthCard({
         <div className="flex items-center gap-3 text-xs text-ink-secondary">
           <span className="flex items-center gap-1.5">
             <Dot className="bg-primary" />
-            {kickoffsThisMonth.length} התנעות
+            {kickoffsThisMonth.length} עליות לאוויר
           </span>
           <span className="flex items-center gap-1.5">
             <Dot className="bg-ink" />
-            {actualsThisMonth.length} תאריכי אמת
+            {actualsThisMonth.length} ימי אירוע
           </span>
         </div>
       </header>
@@ -219,7 +219,7 @@ function MonthCard({
                   return (
                     <Tooltip
                       key={`${entry.item.id}-${i}`}
-                      label={`${isKickoff ? 'תאריך התנעה' : 'תאריך אמת'} · ${entry.item.title}`}
+                      label={`${isKickoff ? 'עלייה לאוויר' : 'תאריך האירוע'} · ${entry.item.title}`}
                     >
                       <button
                         onClick={() => onOpenEventDetail(entry.item)}

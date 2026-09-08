@@ -161,14 +161,14 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
               </Select>
             </Field>
 
-            <Field label="גישה לבחר לוח" htmlFor="up-scope">
+            <Field label="גישה ללוחות" htmlFor="up-scope">
               <Select
                 id="up-scope"
                 value={isGuest ? 'guest' : 'staff'}
                 onChange={(e) => setIsGuest(e.target.value === 'guest')}
               >
-                <option value="staff">צוות פנימי פנימי — רואה את כל הבחר לוח</option>
-                <option value="guest">אורח — רואה רק בחר לוח ששיתפת איתו</option>
+                <option value="staff">צוות פנימי — רואה את כל הלוחות</option>
+                <option value="guest">אורח — רואה רק לוחות ששיתפת איתו</option>
               </Select>
             </Field>
           </div>
@@ -234,7 +234,7 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
 
                     {removing ? (
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <Button variant="ghost" size="sm" onClick={() => setConfirmRemove(null)}>בטל שינוי בשם הלוח</Button>
+                        <Button variant="ghost" size="sm" onClick={() => setConfirmRemove(null)}>ביטול</Button>
                         <Button
                           variant="danger"
                           size="sm"
@@ -260,7 +260,7 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
                   {/* guests need explicit board grants */}
                   {u.isGuest && (
                     <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-2 ps-12">
-                      <span className="text-sm text-ink-tertiary">בחר לוח</span>
+                      <span className="text-sm text-ink-tertiary">לוחות</span>
                       {boards.map((b) => {
                         const grant = u.boards.find((g) => g.boardId === b.id);
                         return (
@@ -291,7 +291,7 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
                               run(m.grant.mutateAsync({ boardId: g.boardId, userId: u.id, role: e.target.value as 'editor' | 'viewer' }))
                             )
                           }
-                          aria-label="בחר גישה לבחר לוח"
+                          aria-label="בחר גישה ללוח"
                           className="h-7 w-24 text-sm"
                         >
                           <option value="viewer">צפייה בלבד</option>

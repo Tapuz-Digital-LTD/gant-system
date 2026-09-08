@@ -45,7 +45,7 @@ export const eventCreate = z
     description: z.string().trim().max(5000).nullish()
   })
   .refine((v) => !v.kickoffDate || v.kickoffDate <= v.actualDate, {
-    message: 'תאריך תאריך התנעה לא יכול להיות אחרי תאריך אמת',
+    message: 'תאריך העלייה לאוויר לא יכול להיות אחרי תאריך האירוע',
     path: ['kickoffDate']
   });
 

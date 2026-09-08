@@ -54,10 +54,10 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
     if (exactDate && !actualDate) next.actualDate = 'בחר את התאריך המדויק';
 
     if (kickoffDate && exactDate && actualDate && kickoffDate > actualDate) {
-      next.kickoffDate = 'תאריך תאריך התנעה צריך להיות לפני תאריך אמת';
+      next.kickoffDate = 'העלייה לאוויר צריכה להיות לפני תאריך האירוע';
     }
     if (kickoffDate && !exactDate && kickoffDate > `${monthKey}-31`) {
-      next.kickoffDate = 'תאריך תאריך התנעה לא יכול להיות אחרי חודש היעד';
+      next.kickoffDate = 'העלייה לאוויר לא יכולה להיות אחרי חודש האירוע';
     }
     if (prepMonths < 0 || prepMonths > 12) next.prepMonths = 'בחר בין 0 ל-12 חודשים';
 
@@ -105,7 +105,7 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            בטל שינוי בשם הלוח
+            ביטול
           </Button>
           <Button variant="primary" form="add-event-form" type="submit" disabled={isSaving}>
             {isSaving ? 'שומר…' : 'צור אירוע'}
@@ -174,12 +174,12 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
               onChange={(e) => setExactDate(e.target.checked)}
               className="h-5 w-5 accent-primary"
             />
-            יש תאריך אמת מדויק
+            יש יום מדויק לאירוע
             <span className="text-sm text-ink-tertiary">בלי יום מדויק: במהלך החודש</span>
           </label>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="תאריך תאריך התנעה" hint="עלייה לאוויר" error={field('kickoffDate')} htmlFor="ae-kick">
+            <Field label="מתי עולים לאוויר" hint="הקמפיין מתחיל להתפרסם ללקוחות" error={field('kickoffDate')} htmlFor="ae-kick">
               <Input
                 id="ae-kick"
                 type="date"
@@ -191,7 +191,7 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
             </Field>
 
             {exactDate && (
-              <Field label="תאריך אמת" required hint="מועד האירוע" error={field('actualDate')} htmlFor="ae-actual">
+              <Field label="מתי האירוע קורה" required hint="המועד שהאירוע עצמו מתקיים" error={field('actualDate')} htmlFor="ae-actual">
                 <Input
                   id="ae-actual"
                   type="date"

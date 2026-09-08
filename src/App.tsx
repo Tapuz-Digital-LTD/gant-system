@@ -173,7 +173,7 @@ export default function App() {
       <div className="grid min-h-dvh place-items-center bg-canvas" dir="rtl">
         <div className="flex flex-col items-center gap-3 text-ink-tertiary">
           <Loader2 className="h-6 w-6 animate-spin" />
-          <span className="text-base">טוען בחר לוח…</span>
+          <span className="text-base">טוען לוחות…</span>
         </div>
       </div>
     );
@@ -198,7 +198,7 @@ export default function App() {
     return (
       <div className="grid min-h-dvh place-items-center bg-canvas p-6" dir="rtl">
         <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-          <h1 className="text-lg font-bold text-ink">עוד אין בחר לוח</h1>
+          <h1 className="text-lg font-bold text-ink">עוד אין לוחות</h1>
           <p className="text-base text-ink-secondary">צור לוח ראשון כדי להתחיל</p>
           <Button
             variant="primary"

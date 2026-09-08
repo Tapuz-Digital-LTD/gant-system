@@ -106,14 +106,14 @@ export function createApiRouter(
   }));
 
   api.post('/boards', asyncRoute(async (req, res) => {
-    const actor = await requirePermission(req.repo, req.actor, 'board.create', 'יצירת בחר לוח');
-    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בבחר לוח ששיתפו איתו, אבל לא ליצור לוח');
+    const actor = await requirePermission(req.repo, req.actor, 'board.create', 'יצירת לוח');
+    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בלוח ששיתפו איתו, אבל לא ליצור לוח');
     const input = v.boardCreate.parse(req.body);
     res.status(201).json({ data: await req.repo.createBoard(input, actor.id) });
   }));
 
   api.patch('/boards/:id', asyncRoute(async (req, res) => {
-    const actor = await requirePermission(req.repo, req.actor, 'board.edit', 'עריכת בחר לוח');
+    const actor = await requirePermission(req.repo, req.actor, 'board.edit', 'עריכת לוח');
     const boardId = id(req.params.id);
     await assertBoardWrite(req.repo, actor, boardId);
     const input = v.boardUpdate.parse(req.body);
@@ -121,8 +121,8 @@ export function createApiRouter(
   }));
 
   api.post('/boards/:id/duplicate', asyncRoute(async (req, res) => {
-    const actor = await requirePermission(req.repo, req.actor, 'board.duplicate', 'שכפול בחר לוח');
-    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בבחר לוח ששיתפו איתו, אבל לא לשכפל לוח');
+    const actor = await requirePermission(req.repo, req.actor, 'board.duplicate', 'שכפול לוח');
+    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בלוח ששיתפו איתו, אבל לא לשכפל לוח');
     const boardId = id(req.params.id);
     await assertBoardRead(req.repo, actor, boardId);
     const { name } = v.boardDuplicate.parse(req.body ?? {});
@@ -130,8 +130,8 @@ export function createApiRouter(
   }));
 
   api.delete('/boards/:id', asyncRoute(async (req, res) => {
-    const actor = await requirePermission(req.repo, req.actor, 'board.delete', 'מחיקת בחר לוח');
-    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בבחר לוח ששיתפו איתו, אבל לא למחוק לוח');
+    const actor = await requirePermission(req.repo, req.actor, 'board.delete', 'מחיקת לוח');
+    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בלוח ששיתפו איתו, אבל לא למחוק לוח');
     const boardId = id(req.params.id);
     await assertBoardWrite(req.repo, actor, boardId);
     await req.repo.archiveBoard(boardId, actor.id);

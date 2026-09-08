@@ -63,8 +63,8 @@ export function createAiRouter(): Router {
 הפק רשימת משימות מומלצת עבור:
 - אירוע: "${eventTitle}"
 - קטגוריה: ${category ?? 'קמפיין'}
-- תאריך תאריך התנעה: ${kickoffDate ?? 'לא הוגדר'}
-- תאריך אמת: ${actualDate ?? 'לא הוגדר'}
+- עלייה לאוויר: ${kickoffDate ?? 'לא הוגדר'}
+- תאריך האירוע: ${actualDate ?? 'לא הוגדר'}
 - חודשי הכנה: ${prepMonths}
 
 החזר JSON תקין בלבד:

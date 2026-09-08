@@ -57,8 +57,8 @@ export const ListView: React.FC<ListViewProps> = ({
         <div className="grid grid-cols-[2rem_1fr_7rem_7rem_9rem] items-center gap-3 border-b border-line bg-canvas px-4 py-2.5 text-xs font-semibold text-ink-tertiary">
           <span />
           <span>אירוע</span>
-          <span>תאריך התנעה</span>
-          <span>תאריך אמת</span>
+          <span>עלייה לאוויר</span>
+          <span>תאריך האירוע</span>
           <span>משימות</span>
         </div>
 

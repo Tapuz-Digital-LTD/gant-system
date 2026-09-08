@@ -73,7 +73,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ events, months, us
 
   const CARDS = [
     { icon: CalendarClock, label: 'אירועים בלוח', value: stats.totalEvents, tint: 'text-primary bg-primary-soft' },
-    { icon: Rocket, label: 'עם תאריך תאריך התנעה', value: stats.kickoffs, tint: 'text-ready bg-ready-soft' },
+    { icon: Rocket, label: 'עם תאריך עלייה לאוויר', value: stats.kickoffs, tint: 'text-ready bg-ready-soft' },
     { icon: ListChecks, label: 'משימות', value: stats.totalTasks, tint: 'text-done bg-done-soft' },
     { icon: AlertTriangle, label: 'משימות באיחור', value: stats.lateTasks, tint: 'text-late bg-late-soft' }
   ];

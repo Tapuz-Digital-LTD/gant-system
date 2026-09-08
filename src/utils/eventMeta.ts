@@ -14,7 +14,7 @@ export const CATEGORY_META: Record<EventCategory, { label: string; dot: string; 
 export const STATUS_META: Record<TaskStatus, { label: string; fill: StatusFill }> = {
   todo: { label: 'עוד לא התחיל', fill: 'todo' },
   in_progress: { label: 'בתהליך', fill: 'progress' },
-  ready_kickoff: { label: 'מוכן לתאריך התנעה', fill: 'ready' },
+  ready_kickoff: { label: 'מוכן לעלייה לאוויר', fill: 'ready' },
   done: { label: 'הושלם', fill: 'done' }
 };
 

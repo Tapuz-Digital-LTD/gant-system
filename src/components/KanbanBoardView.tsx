@@ -56,7 +56,7 @@ export const KanbanBoardView: React.FC<KanbanBoardViewProps> = ({
       {held && (
         <div className="flex items-center gap-2 rounded-lg bg-primary-soft px-3 py-2" role="status">
           <span className="text-base text-ink">
-            נבחר: <b>{held.title}</b> — בחר עמודה עם Enter, או Escape לבטל שינוי בשם הלוח
+            נבחר: <b>{held.title}</b> — בחר עמודה עם Enter, או Escape לביטול
           </span>
         </div>
       )}
@@ -163,7 +163,7 @@ export const KanbanBoardView: React.FC<KanbanBoardViewProps> = ({
                         </div>
 
                         <div className="flex items-center gap-2 text-xs text-ink-tertiary tnum">
-                          {ev.kickoffDate && <span>תאריך התנעה {formatDate(ev.kickoffDate)}</span>}
+                          {ev.kickoffDate && <span>עלייה לאוויר {formatDate(ev.kickoffDate)}</span>}
                           <span>אמת {isFloating(ev) ? 'החודש' : formatDate(ev.actualDate)}</span>
                         </div>
 

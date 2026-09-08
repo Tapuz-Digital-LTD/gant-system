@@ -101,7 +101,7 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            בטל שינוי בשם הלוח
+            ביטול
           </Button>
           <Button variant="primary" onClick={accept} disabled={chosen.size === 0 || suggestions.length === 0}>
             הוספת {chosen.size} משימות

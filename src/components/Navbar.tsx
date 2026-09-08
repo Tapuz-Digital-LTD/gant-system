@@ -71,7 +71,7 @@ const STATUSES: { value: string; label: string }[] = [
   { value: 'all', label: 'כל הסטטוסים' },
   { value: 'todo', label: 'עוד לא התחיל' },
   { value: 'in_progress', label: 'בתהליך' },
-  { value: 'ready_kickoff', label: 'מוכן לתאריך התנעה' },
+  { value: 'ready_kickoff', label: 'מוכן לעלייה לאוויר' },
   { value: 'done', label: 'הושלם' }
 ];
 
@@ -210,7 +210,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onChange={(e) => onUpdateFilter({ showKickoffs: e.target.checked })}
                   className="h-4.5 w-4.5 accent-primary"
                 />
-                תאריכי תאריך התנעה
+                ימי עלייה לאוויר
               </label>
               <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-secondary">
                 <input
@@ -219,7 +219,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onChange={(e) => onUpdateFilter({ showActuals: e.target.checked })}
                   className="h-4.5 w-4.5 accent-primary"
                 />
-                תאריכי אמת
+                ימי האירוע
               </label>
             </fieldset>
           </div>
