@@ -67,10 +67,16 @@ export interface EventInput {
   title: string;
   category?: EventCategory;
   status?: TaskStatus;
-  kickoffDate?: string | null;
   actualDate: string;
   actualPrecision?: DatePrecision;
   prepMonths?: number;
+  /* Milestones — every one optional, none derived from another. */
+  workStartDate?: string | null;
+  reviewDate?: string | null;
+  freezeDate?: string | null;
+  kickoffDate?: string | null;
+  announceDate?: string | null;
+  campaignEndDate?: string | null;
   note?: string | null;
   description?: string | null;
 }

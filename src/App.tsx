@@ -11,7 +11,7 @@ import {
   describeError
 } from './hooks/useBoardData';
 import { useRoute, navigate } from './hooks/useRoute';
-import { Period, periodRange, timelineRange } from './utils/period';
+import { Period, monthKey, periodRange, timelineRange } from './utils/period';
 import { ViewName, boardRoute, buildRoute, forgetPlace, rememberPlace } from './utils/routes';
 import { HomeScreen } from './components/HomeScreen';
 import { BoardHub } from './components/BoardHub';
@@ -164,8 +164,10 @@ export default function App() {
   const setPeriod = (period: Period) => go({ period }, { replace: true });
   const openEvent = (eventId: string) => go({ eventId });
   const closeEvent = () => go({ eventId: null });
-  const openAddEvent = (date?: string, monthKey?: string) => {
-    setQuickAdd({ date, monthKey });
+  const openAddEvent = (date?: string, month?: string) => {
+    // Opened from the toolbar, the form should start in the month on screen —
+    // not in today's, which is somewhere else entirely once you have navigated.
+    setQuickAdd({ date, monthKey: month ?? monthKey(route.period.anchor) });
     go({ creating: true });
   };
   const closeAddEvent = () => {
