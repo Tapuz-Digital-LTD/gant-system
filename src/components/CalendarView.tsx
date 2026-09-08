@@ -116,7 +116,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   return (
     <div className="p-3 sm:p-5">
-      <section className="overflow-hidden rounded-xl border border-line bg-surface shadow-card">
+      {/*
+        A phone gets an agenda, not a seven-column grid squeezed to 50px where
+        every name is an ellipsis. Same events, same words, same icons — read
+        top to bottom instead of left to right.
+      */}
+      <Agenda
+        days={days}
+        byDay={byDay}
+        floating={floating}
+        holidays={holidaysByDate}
+        today={today}
+        canAdd={canAdd}
+        onOpenEventDetail={onOpenEventDetail}
+        onQuickAddOnDate={onQuickAddOnDate}
+        rangeFrom={range.from}
+      />
+
+      <section className="hidden overflow-hidden rounded-xl border border-line bg-surface shadow-card sm:block">
         {/* weekday header */}
         <div className="grid grid-cols-7 border-b border-line bg-canvas">
           {(isWeek ? days : WEEKDAY_SHORT.map((_, i) => ({ weekday: i, date: '' }))).map((d, i) => (
@@ -299,6 +316,136 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     </div>
   );
 };
+
+function Agenda({
+  days,
+  byDay,
+  floating,
+  holidays,
+  today,
+  canAdd,
+  onOpenEventDetail,
+  onQuickAddOnDate,
+  rangeFrom
+}: {
+  days: { date: string; inPeriod: boolean; weekday: number }[];
+  byDay: Map<string, { event: EventItem; occurrence: MilestoneOccurrence }[]>;
+  floating: EventItem[];
+  holidays: Map<string, Holiday[]>;
+  today: string;
+  canAdd: boolean;
+  onOpenEventDetail: (e: EventItem) => void;
+  onQuickAddOnDate: (date: string, monthKey: string) => void;
+  rangeFrom: string;
+}) {
+  const withSomething = days.filter(
+    (d) => d.inPeriod && ((byDay.get(d.date)?.length ?? 0) > 0 || (holidays.get(d.date)?.length ?? 0) > 0)
+  );
+
+  return (
+    <section className="flex flex-col gap-2 sm:hidden">
+      {withSomething.length === 0 && floating.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-line bg-surface px-4 py-10 text-center">
+          <CalendarOff className="h-7 w-7 text-ink-disabled" aria-hidden="true" />
+          <p className="text-md font-semibold text-ink">אין כאן כלום בתקופה הזאת</p>
+          {canAdd && (
+            <Button variant="primary" onClick={() => onQuickAddOnDate(rangeFrom, monthKeyOfDate(rangeFrom))}>
+              <Plus className="h-5 w-5" />
+              הוסף אירוע
+            </Button>
+          )}
+        </div>
+      ) : (
+        withSomething.map((day) => {
+          const entries = byDay.get(day.date) ?? [];
+          const dayHolidays = holidays.get(day.date) ?? [];
+          const isToday = day.date === today;
+
+          return (
+            <div
+              key={day.date}
+              className={cn(
+                'overflow-hidden rounded-xl border bg-surface shadow-card',
+                isToday ? 'border-primary' : 'border-line'
+              )}
+            >
+              <div
+                className={cn(
+                  'flex items-baseline gap-2 px-3 py-2',
+                  isToday ? 'bg-primary-soft' : 'bg-canvas'
+                )}
+              >
+                <span className={cn('text-md font-bold tnum', isToday ? 'text-primary' : 'text-ink')}>
+                  {Number(day.date.slice(8, 10))} ב{monthName(day.date)}
+                </span>
+                <span className="text-sm text-ink-tertiary">{WEEKDAY_LONG[day.weekday]}</span>
+                {isToday && <span className="text-sm font-semibold text-primary">היום</span>}
+                {dayHolidays.length > 0 && (
+                  <span
+                    className={cn(
+                      'ms-auto truncate text-sm',
+                      HOLIDAY_STYLE[(dayHolidays.find((h) => h.kind === 'major') ?? dayHolidays[0]).kind]
+                    )}
+                  >
+                    {(dayHolidays.find((h) => h.kind === 'major') ?? dayHolidays[0]).title}
+                  </span>
+                )}
+              </div>
+
+              {entries.length > 0 && (
+                <ul className="flex flex-col divide-y divide-line">
+                  {entries.map(({ event, occurrence }, i) => (
+                    <li key={`${event.id}-${occurrence.meta.key}-${i}`}>
+                      <button
+                        onClick={() => onOpenEventDetail(event)}
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-start transition-colors hover:bg-subtle"
+                      >
+                        <span
+                          className={cn(
+                            'grid h-8 w-8 shrink-0 place-items-center rounded-lg',
+                            occurrence.meta.bg,
+                            occurrence.meta.text
+                          )}
+                        >
+                          <occurrence.meta.icon className="h-4.5 w-4.5" aria-hidden="true" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className={cn('block text-sm font-bold', occurrence.meta.text)}>
+                            {occurrence.meta.short}
+                          </span>
+                          <span className="block text-base text-ink">{event.title}</span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      {floating.length > 0 && (
+        <div className="rounded-xl border border-line bg-surface p-3 shadow-card">
+          <p className="mb-2 text-sm font-bold text-ink-secondary">במהלך החודש, בלי יום מדויק</p>
+          <ul className="flex flex-col gap-1.5">
+            {floating.map((ev) => (
+              <li key={ev.id}>
+                <button
+                  onClick={() => onOpenEventDetail(ev)}
+                  className="flex w-full items-center gap-2 rounded-lg border border-ms-actual/25 bg-ms-actual-soft px-2.5 py-2 text-start"
+                >
+                  <ActualIcon className="h-4.5 w-4.5 shrink-0 text-ms-actual" aria-hidden="true" />
+                  <span className="text-base text-ink">{ev.title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function MilestoneChip({
   event,

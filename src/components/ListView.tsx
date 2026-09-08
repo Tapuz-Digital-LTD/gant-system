@@ -4,6 +4,7 @@ import { EventItem, TaskItem, FilterState, UserAccess, isFloating } from '../typ
 import { filterEvents } from '../utils/filterEvents';
 import type { Can } from '../hooks/useCan';
 import { formatDate, calculateEventProgress } from '../utils/dateHelpers';
+import { monthName } from '../utils/period';
 import { CATEGORY_META, PRIORITY_META, isOverdue } from '../utils/eventMeta';
 import { Button, Badge, Dot, Tooltip, cn } from './ui';
 
@@ -104,12 +105,14 @@ export const ListView: React.FC<ListViewProps> = ({
                     {ev.kickoffDate ? formatDate(ev.kickoffDate) : '—'}
                   </span>
                   <span className="text-base text-ink-secondary tnum">
-                    {isFloating(ev) ? 'החודש' : formatDate(ev.actualDate)}
+                    {isFloating(ev)
+                      ? `במהלך ${monthName(ev.actualDate)} ${ev.actualDate.slice(0, 4)}`
+                      : formatDate(ev.actualDate)}
                   </span>
 
                   <div className="flex items-center gap-2">
                     {progress.totalTasks === 0 ? (
-                      <span className="text-xs text-ink-tertiary">אין משימות</span>
+                      <span className="text-base text-ink-disabled">—</span>
                     ) : (
                       <>
                         <div className="h-1 w-12 overflow-hidden rounded-full bg-muted">
@@ -205,7 +208,7 @@ export function EmptyState({
         {hasFilters ? 'אין כאן אירועים שמתאימים למה שבחרת' : 'עוד אין אירועים בלוח'}
       </p>
       <p className="max-w-xs text-sm text-ink-tertiary">
-        {hasFilters ? 'נסה לשנות את הסינון או לנקות את החפש אירוע או משימה' : 'הוסף אירוע ראשון כדי להתחיל'}
+        {hasFilters ? 'אפשר לשנות את הסינון, או לנקות את החיפוש' : 'הוסף אירוע ראשון כדי להתחיל'}
       </p>
       {!hasFilters && canEdit && (
         <Button variant="primary" size="sm" onClick={onAdd} className="mt-2">

@@ -70,8 +70,8 @@ export const PeriodBar: React.FC<PeriodBarProps> = ({
     );
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-2.5 sm:px-6">
-      <div className="flex items-center gap-0.5">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line bg-surface px-3 py-2.5 sm:px-6">
+      <div className="flex shrink-0 items-center gap-0.5">
         <Button variant="ghost" size="sm" iconOnly onClick={() => step(-1)} aria-label={backLabel(period, variant)}>
           <ChevronRight className="h-5 w-5" />
         </Button>
@@ -80,14 +80,14 @@ export const PeriodBar: React.FC<PeriodBarProps> = ({
         </Button>
       </div>
 
-      <div className="min-w-0 flex-1">
-        <h2 className="truncate text-md font-bold tracking-tight text-ink" aria-live="polite">
+      <div className="order-last min-w-0 basis-full sm:order-none sm:basis-auto sm:flex-1">
+        <h2 className="text-md font-bold tracking-tight text-ink" aria-live="polite">
           {title}
         </h2>
-        {subtitle && <p className="truncate text-xs text-ink-tertiary">{subtitle}</p>}
+        {subtitle && <p className="text-xs text-ink-tertiary">{subtitle}</p>}
       </div>
 
-      <Button variant="secondary" size="sm" onClick={() => onChange(today)} disabled={onToday}>
+      <Button variant="secondary" size="sm" className="shrink-0" onClick={() => onChange(today)} disabled={onToday}>
         <CalendarCheck className="h-4.5 w-4.5" />
         היום
       </Button>

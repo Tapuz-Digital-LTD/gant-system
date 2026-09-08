@@ -118,19 +118,20 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-surface">
       {/* --- where am I --- */}
-      <div className="flex h-14 items-center gap-2 px-3 sm:px-5">
+      <div className="flex h-14 min-w-0 items-center gap-2 px-3 sm:px-5">
         <Button variant="ghost" size="sm" onClick={onBackHome} className="shrink-0">
           <ArrowRight className="h-4.5 w-4.5" />
           <span className="hidden sm:inline">כל הלוחות</span>
         </Button>
 
-        <span className="text-ink-disabled" aria-hidden="true">
+        <span className="hidden text-ink-disabled sm:inline" aria-hidden="true">
           ›
         </span>
 
+        {/* The board name is the trail; on a phone the search box needs the room. */}
         <button
           onClick={onBackToBoard}
-          className="min-w-0 truncate rounded-md px-1.5 py-1 text-md font-bold tracking-tight text-ink transition-colors hover:bg-subtle"
+          className="hidden min-w-0 truncate rounded-md px-1.5 py-1 text-md font-bold tracking-tight text-ink transition-colors hover:bg-subtle sm:block"
         >
           {board.name}
         </button>
@@ -142,7 +143,7 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
           </span>
         )}
 
-        <div className="flex-1" />
+        <div className="hidden flex-1 sm:block" />
 
         <SearchBox boardId={board.id} onOpenEvent={onOpenEvent} />
 
@@ -186,7 +187,7 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
       </div>
 
       {/* --- what am I looking at --- */}
-      <div className="flex items-center gap-1 px-2 sm:px-4">
+      <div className="flex min-w-0 items-center gap-1 px-2 sm:px-4">
         <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" aria-label="תצוגות">
           {PRIMARY_VIEWS.map((v) => {
             const active = view === v.id;
