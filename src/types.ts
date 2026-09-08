@@ -159,14 +159,27 @@ export interface MonthMeta {
   monthNumber: number;
 }
 
+/** One of the seven moments in an event's life. Described in data/milestones.ts. */
+export type MilestoneKey =
+  | 'workStart'
+  | 'review'
+  | 'freeze'
+  | 'kickoff'
+  | 'announce'
+  | 'actual'
+  | 'campaignEnd';
+
 export interface FilterState {
   search: string;
   category: string;
   status: string;
   assignee: string;
-  showKickoffs: boolean;
-  showActuals: boolean;
-  year: string;
+  /**
+   * Milestone kinds the person has switched off. Empty means show everything.
+   * Replaces the two showKickoffs/showActuals booleans, which could not grow
+   * past two kinds and said nothing about the other five.
+   */
+  hiddenMilestones: MilestoneKey[];
 }
 
 /* --- derived, never stored --- */

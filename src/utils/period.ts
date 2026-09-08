@@ -1,4 +1,7 @@
-import { HDate } from '@hebcal/core';
+// @hebcal/hdate, not @hebcal/core: the calendar arithmetic without the
+// holiday database, which the server already owns. Same answers, and it
+// keeps ~35kB of gzipped holiday tables out of every page load.
+import { HDate } from '@hebcal/hdate';
 import { MonthMeta } from '../types';
 
 /**
@@ -205,6 +208,41 @@ export function monthMeta(monthKeyStr: string): MonthMeta {
     year,
     monthNumber
   };
+}
+
+// ------------------------------------------------------------ calendar grid
+
+export interface CalendarDay {
+  date: string;
+  /** False for the leading and trailing days a month grid borrows from its
+   *  neighbours. A week grid has none of those. */
+  inPeriod: boolean;
+  /** 0 = Sunday. */
+  weekday: number;
+}
+
+/**
+ * The days a calendar draws. A month is padded to whole weeks so the columns
+ * line up; a week is exactly seven days and borrows nothing.
+ */
+export function calendarGrid(p: Period): CalendarDay[] {
+  if (p.mode === 'week') {
+    const from = startOfWeek(p.anchor);
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = addDays(from, i);
+      return { date, inPeriod: true, weekday: i };
+    });
+  }
+
+  const first = startOfMonth(p.anchor);
+  const last = endOfMonth(p.anchor);
+  const gridStart = startOfWeek(first);
+  const days = Math.ceil((ms(last) - ms(gridStart)) / DAY + 1);
+
+  return Array.from({ length: Math.ceil(days / 7) * 7 }, (_, i) => {
+    const date = addDays(gridStart, i);
+    return { date, inPeriod: date >= first && date <= last, weekday: i % 7 };
+  });
 }
 
 // ----------------------------------------------------------------- timeline

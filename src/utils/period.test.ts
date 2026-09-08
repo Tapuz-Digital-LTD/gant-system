@@ -15,7 +15,8 @@ import {
   startOfWeek,
   timelineMonths,
   timelineRange,
-  withMode
+  withMode,
+  calendarGrid
 } from './period.ts';
 import type { Period } from './period.ts';
 
@@ -120,5 +121,32 @@ assert.equal(hebrewMonthRange('2029-03'), 'אדר – ניסן תשפ״ט', 'an 
 // Far outside the old hard-coded list, where the product used to go blind.
 assert.equal(timelineMonths(month('2031-05-01'))[0].key, '2031-05', 'a year with no hard-coded entry still works');
 assert.ok(hebrewMonthRange('2031-05').length > 0, 'and still has a Hebrew date');
+
+// ---------- the calendar grid ----------
+{
+  const grid = calendarGrid(month('2026-09-08'));
+  assert.equal(grid.length % 7, 0, 'a month grid is whole weeks');
+  assert.equal(grid[0].weekday, 0, 'it opens on a Sunday');
+  assert.equal(grid[0].date, '2026-08-30', 'September 2026 starts mid-week, so the grid borrows August');
+  assert.equal(grid[0].inPeriod, false, 'a borrowed day is marked as borrowed');
+  assert.equal(grid.filter((d) => d.inPeriod).length, 30, 'September has 30 days');
+  assert.equal(grid.find((d) => d.date === '2026-09-01')?.inPeriod, true);
+
+  // February 2027 begins on a Monday and has 28 days: 5 rows, not 4.
+  const feb = calendarGrid(month('2027-02-10'));
+  assert.equal(feb.filter((d) => d.inPeriod).length, 28);
+  assert.equal(feb[0].date, '2027-01-31', 'and it borrows one day from January');
+
+  // A month that starts on a Sunday borrows nothing at the front.
+  const nov = calendarGrid(month('2026-11-05'));
+  assert.equal(nov[0].date, '2026-11-01');
+  assert.equal(nov[0].inPeriod, true);
+
+  const w = calendarGrid(week('2026-12-31'));
+  assert.equal(w.length, 7, 'a week is seven days');
+  assert.ok(w.every((d) => d.inPeriod), 'a week borrows nothing');
+  assert.equal(w[0].date, '2026-12-27');
+  assert.equal(w[6].date, '2027-01-02', 'and it may run into the next year');
+}
 
 console.log('period: כל הבדיקות עברו ✓');

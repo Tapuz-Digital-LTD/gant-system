@@ -8,7 +8,9 @@ import {
   Flag
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { EventCategory, EventItem, isFloating } from '../types';
+import { EventCategory, EventItem, MilestoneKey, isFloating } from '../types';
+
+export type { MilestoneKey };
 
 /**
  * The one description of every moment in an event's life.
@@ -20,15 +22,6 @@ import { EventCategory, EventItem, isFloating } from '../types';
  *
  * Adding an eighth moment is a column, a row here, and nothing else.
  */
-
-export type MilestoneKey =
-  | 'workStart'
-  | 'review'
-  | 'freeze'
-  | 'kickoff'
-  | 'announce'
-  | 'actual'
-  | 'campaignEnd';
 
 /** The fields on an event that hold a date. */
 export type MilestoneField =

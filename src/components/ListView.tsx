@@ -11,6 +11,8 @@ interface ListViewProps {
   events: EventItem[];
   users: UserAccess[];
   filterState: FilterState;
+  /** Whether anything is filtered, so the empty state can say why. */
+  hasFilters: boolean;
   onOpenEventDetail: (event: EventItem) => void;
   onToggleTaskStatus: (task: TaskItem) => void;
   onOpenAddEvent: () => void;
@@ -21,6 +23,7 @@ export const ListView: React.FC<ListViewProps> = ({
   events,
   users,
   filterState,
+  hasFilters,
   onOpenEventDetail,
   onToggleTaskStatus,
   onOpenAddEvent,
@@ -43,7 +46,7 @@ export const ListView: React.FC<ListViewProps> = ({
   if (filteredEvents.length === 0) {
     return (
       <EmptyState
-        hasFilters={Boolean(filterState.search) || filterState.category !== 'all' || filterState.year !== 'all'}
+        hasFilters={hasFilters}
         canEdit={canAdd}
         onAdd={onOpenAddEvent}
       />

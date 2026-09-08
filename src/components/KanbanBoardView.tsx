@@ -11,6 +11,8 @@ import { EmptyState } from './ListView';
 interface KanbanBoardViewProps {
   events: EventItem[];
   filterState: FilterState;
+  /** Whether anything is filtered, so the empty state can say why. */
+  hasFilters: boolean;
   onOpenEventDetail: (event: EventItem) => void;
   onOpenAddEvent: () => void;
   onMoveEvent: (event: EventItem, status: TaskStatus) => void;
@@ -22,6 +24,7 @@ const COLUMNS: TaskStatus[] = ['todo', 'in_progress', 'ready_kickoff', 'done'];
 export const KanbanBoardView: React.FC<KanbanBoardViewProps> = ({
   events,
   filterState,
+  hasFilters,
   onOpenEventDetail,
   onOpenAddEvent,
   onMoveEvent,
@@ -44,7 +47,7 @@ export const KanbanBoardView: React.FC<KanbanBoardViewProps> = ({
   if (filteredEvents.length === 0) {
     return (
       <EmptyState
-        hasFilters={Boolean(filterState.search) || filterState.category !== 'all' || filterState.year !== 'all'}
+        hasFilters={hasFilters}
         canEdit={canAdd}
         onAdd={onOpenAddEvent}
       />

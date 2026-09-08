@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { EventCategory, MonthMeta } from '../types';
+import { EventCategory } from '../types';
 import type { EventInput } from '../services/api';
-import { CATEGORY_META } from '../utils/eventMeta';
+import { CATEGORY_META, currentMonthKey } from '../utils/eventMeta';
 import { Modal, Button, Field, Input, Textarea, Select } from './ui';
 
 interface AddEventModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddEvent: (input: EventInput) => void;
-  months: MonthMeta[];
   defaultDate?: string;
   defaultMonthKey?: string;
   isSaving?: boolean;
@@ -21,14 +20,13 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
   isOpen,
   onClose,
   onAddEvent,
-  months,
   defaultDate,
   defaultMonthKey,
   isSaving
 }) => {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<EventCategory>('campaign');
-  const [monthKey, setMonthKey] = useState(defaultMonthKey || months[0]?.key || '');
+  const [monthKey, setMonthKey] = useState(defaultMonthKey || currentMonthKey());
   const [exactDate, setExactDate] = useState(Boolean(defaultDate));
   const [kickoffDate, setKickoffDate] = useState(defaultDate || '');
   const [actualDate, setActualDate] = useState(defaultDate || '');
@@ -153,14 +151,13 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
             </Select>
           </Field>
 
-          <Field label="חודש יעד" htmlFor="ae-month">
-            <Select id="ae-month" value={monthKey} onChange={(e) => setMonthKey(e.target.value)}>
-              {months.map((m) => (
-                <option key={m.key} value={m.key}>
-                  {m.title}
-                </option>
-              ))}
-            </Select>
+          <Field label="חודש האירוע" hint="אפשר לבחור כל חודש" htmlFor="ae-month">
+            <Input
+              id="ae-month"
+              type="month"
+              value={monthKey}
+              onChange={(e) => setMonthKey(e.target.value)}
+            />
           </Field>
         </div>
 
