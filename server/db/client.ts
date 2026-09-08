@@ -47,25 +47,44 @@ export async function initDb(): Promise<Database> {
   const client = new PGlite('.data/pg');
   closePglite = () => client.close();
 
-  // Apply every generated migration. `create table` statements are guarded by
-  // the catch so a warm data directory is left exactly as it was.
+  // Same ledger the production runner uses, so a warm data directory picks up
+  // new migrations instead of being frozen at whatever shape it was created in.
   const dir = new URL('./migrations/', import.meta.url);
   const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
-  const applied = await client
-    .query<{ n: number }>(`select count(*)::int as n from information_schema.tables where table_name = 'boards'`)
-    .then((r) => r.rows[0].n > 0)
-    .catch(() => false);
 
-  if (!applied) {
-    for (const file of files) {
-      const sql = readFileSync(new URL(file, dir), 'utf-8');
-      for (const stmt of sql.split('--> statement-breakpoint')) {
-        const s = stmt.trim();
-        if (s) await client.exec(s);
-      }
+  await client.exec(`create table if not exists _migrations (
+    name text primary key,
+    applied_at timestamptz not null default now()
+  )`);
+
+  // A directory created before this ledger existed already has every migration
+  // up to 0005 applied; recording them avoids replaying them onto live tables.
+  const hasBoards = await client
+    .query<{ n: number }>(`select count(*)::int as n from information_schema.tables where table_name = 'boards'`)
+    .then((r) => r.rows[0].n > 0);
+  const ledger = await client.query<{ n: number }>(`select count(*)::int as n from _migrations`);
+  if (hasBoards && ledger.rows[0].n === 0) {
+    for (const file of files.filter((f) => f < '0006')) {
+      await client.query('insert into _migrations (name) values ($1)', [file]);
     }
-    console.log(`▲ PGlite: הוחלו ${files.length} מיגרציות ב-.data/pg`);
   }
+
+  const done = new Set(
+    (await client.query<{ name: string }>('select name from _migrations')).rows.map((r) => r.name)
+  );
+
+  let count = 0;
+  for (const file of files) {
+    if (done.has(file)) continue;
+    const sql = readFileSync(new URL(file, dir), 'utf-8');
+    for (const stmt of sql.split('--> statement-breakpoint')) {
+      const s = stmt.trim();
+      if (s) await client.exec(s);
+    }
+    await client.query('insert into _migrations (name) values ($1)', [file]);
+    count++;
+  }
+  if (count) console.log(`▲ PGlite: הוחלו ${count} מיגרציות ב-.data/pg`);
 
   db = drizzlePglite(client, { schema }) as unknown as Database;
   return db;

@@ -32,6 +32,20 @@ export const boardUpdate = boardCreate.partial().extend({
   archived: z.boolean().optional()
 });
 
+/**
+ * The optional milestones. Each is a day or nothing — never derived from a
+ * sibling, never required. Order between them is a warning shown to the person,
+ * not a rule enforced here: the business rules for it are not settled, and a
+ * server that rejects a legitimate plan is worse than one that lets it through.
+ */
+const milestones = {
+  workStartDate: isoDate.nullish(),
+  reviewDate: isoDate.nullish(),
+  freezeDate: isoDate.nullish(),
+  announceDate: isoDate.nullish(),
+  campaignEndDate: isoDate.nullish()
+};
+
 export const eventCreate = z
   .object({
     title: trimmed(200),
@@ -41,6 +55,7 @@ export const eventCreate = z
     actualDate: isoDate,
     actualPrecision: datePrecision.default('day'),
     prepMonths: z.number().int().min(0).max(12).default(0),
+    ...milestones,
     note: z.string().trim().max(500).nullish(),
     description: z.string().trim().max(5000).nullish()
   })
@@ -57,6 +72,7 @@ export const eventUpdate = z.object({
   actualDate: isoDate.optional(),
   actualPrecision: datePrecision.optional(),
   prepMonths: z.number().int().min(0).max(12).optional(),
+  ...milestones,
   note: z.string().trim().max(500).nullish(),
   description: z.string().trim().max(5000).nullish(),
   /** Required for optimistic locking; a stale value gets 409. */

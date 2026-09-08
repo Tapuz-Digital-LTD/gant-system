@@ -75,12 +75,23 @@ export interface EventItem {
   category: EventCategory;
   /** The event's own state — set by a person, not derived from its tasks. */
   status: TaskStatus;
-  /** Optional milestone inside the work window, not its start. */
-  kickoffDate: string | null;
   /** Always a full YYYY-MM-DD. Month precision anchors to the 1st. */
   actualDate: string;
   actualPrecision: DatePrecision;
   prepMonths: number;
+
+  /* Milestones — all optional, all day-precision, none derived from another.
+     src/data/milestones.ts says what each one means and how it is drawn. */
+  /** Overrides `actualDate - prepMonths` when the exact day is known. */
+  workStartDate: string | null;
+  reviewDate: string | null;
+  freezeDate: string | null;
+  /** The campaign starts reaching customers. */
+  kickoffDate: string | null;
+  /** Internal announcement. Never auto-filled from kickoffDate. */
+  announceDate: string | null;
+  /** Falls after actualDate, so it sits outside the work window. */
+  campaignEndDate: string | null;
   note: string | null;
   description: string | null;
   createdAt: string;

@@ -115,14 +115,33 @@ export const events = pgTable(
      */
     status: eventStatus('status').notNull().default('todo'),
 
-    /** Optional milestone inside the work window, not its start. */
-    kickoffDate: date('kickoff_date'),
     /** When the event itself happens. Resolved from hebrewRule when one exists. */
     actualDate: date('actual_date').notNull(),
     actualPrecision: datePrecision('actual_precision').notNull().default('day'),
 
-    /** Months of preparation before actualDate. Defines the work window. */
+    /** Months of preparation before actualDate. Defines the work window's start
+     *  unless workStartDate says otherwise. */
     prepMonths: integer('prep_months').notNull().default(0),
+
+    /*
+     * Milestones. Every one is optional and day-precision, and none of them is
+     * ever invented from another: a null here means nobody knows the date, not
+     * that it can be derived. src/data/milestones.ts is the single description
+     * of what each one means and how it is drawn.
+     */
+
+    /** Overrides `actualDate - prepMonths` when the exact day is known. */
+    workStartDate: date('work_start_date'),
+    /** Checkpoint meeting: surface risks while there is still time. */
+    reviewDate: date('review_date'),
+    /** No more change requests from here on. Planning only — nothing is blocked. */
+    freezeDate: date('freeze_date'),
+    /** The campaign starts reaching customers. */
+    kickoffDate: date('kickoff_date'),
+    /** Internal announcement to the company. Not the same day as kickoff by rule. */
+    announceDate: date('announce_date'),
+    /** The campaign, and the calls about it, are over. Falls after actualDate. */
+    campaignEndDate: date('campaign_end_date'),
 
     /**
      * Hebrew-calendar anchor, e.g. {"hd":1,"hm":"Tishrei"} or {"holiday":"Rosh Hashana"}.
