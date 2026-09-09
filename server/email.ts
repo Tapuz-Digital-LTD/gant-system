@@ -1,4 +1,4 @@
-import { sendEmail, deliveryMode } from './notifications/inforu.js';
+import { deliveryMode, sendEmail, sendSms } from './notifications/inforu.js';
 
 /**
  * Sending a sign-in code.
@@ -17,7 +17,7 @@ import { sendEmail, deliveryMode } from './notifications/inforu.js';
  * says so plainly. It never claims a mail went out that did not.
  */
 
-/** True when a real sign-in email would actually leave the building. */
+/** True when a real sign-in code — by either route — would leave the building. */
 export function isMailConfigured(): boolean {
   return deliveryMode() !== 'unconfigured' && process.env.GANTT_AUTH_SEND === 'true';
 }
@@ -71,5 +71,32 @@ export async function sendSignInCode(email: string, code: string): Promise<void>
   // Thrown, not swallowed: better-auth turns this into "we could not send the
   // code", which is true, than into a screen that says to check an inbox that
   // will stay empty.
+  if (!result.ok) throw new Error(`sign-in code not sent: ${result.error ?? 'unknown'}`);
+}
+
+/**
+ * The same code, to a phone instead.
+ *
+ * Identical rules to the email path — same switch, same refusal to claim a
+ * delivery that did not happen. A person choosing SMS is choosing where the
+ * code arrives, not choosing a weaker way in: the code, its length, its expiry
+ * and the attempt limit are the same on both routes.
+ */
+export async function sendSignInSms(phone: string, code: string): Promise<void> {
+  if (!isMailConfigured()) {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        msg: 'signin_code_not_sent',
+        channel: 'sms',
+        reason: deliveryMode() === 'unconfigured' ? 'inforu_not_configured' : 'GANTT_AUTH_SEND!=true',
+        phone,
+        code
+      })
+    );
+    return;
+  }
+
+  const result = await sendSms(phone, `${code} — קוד הכניסה שלך לתכנון האירועים. תקף ל-10 דקות.`);
   if (!result.ok) throw new Error(`sign-in code not sent: ${result.error ?? 'unknown'}`);
 }

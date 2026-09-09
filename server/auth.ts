@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { emailOTP } from 'better-auth/plugins';
+import { emailOTP, phoneNumber } from 'better-auth/plugins';
 import { getDb, schema } from './db/client.js';
-import { sendSignInCode, isMailConfigured } from './email.js';
+import { sendSignInCode, sendSignInSms, isMailConfigured } from './email.js';
+import { israeliMobile } from './notifications/inforu.js';
 
 /**
  * Identity only.
@@ -101,6 +102,41 @@ function build() {
         disableSignUp: false,
         async sendVerificationOTP({ email, otp }) {
           await sendSignInCode(email, otp);
+        }
+      }),
+
+      /*
+       * The same code, to a phone.
+       *
+       * A person picks where the code arrives; they do not pick a weaker way
+       * in. Length, expiry and the attempt budget match the email route
+       * exactly, so neither is the soft option.
+       *
+       * `signUpOnVerification` is deliberately absent. This system is
+       * invite-only: proving you hold a phone number proves you hold that
+       * number, not that you belong here. An unknown number fails to sign in,
+       * which is the correct outcome.
+       */
+      phoneNumber({
+        otpLength: 6,
+        expiresIn: 60 * 10,
+        allowedAttempts: 3,
+        // One canonical spelling, so 052-577-0223 and +972525770223 are one
+        // person rather than two accounts that cannot see each other's work.
+        phoneNumberValidator: (input) => israeliMobile(input) !== null,
+        async sendOTP({ phoneNumber: to, code }) {
+          await sendSignInSms(to, code);
+        },
+        // The plugin wants `phone_number`; it is pointed at the column that
+        // already holds the number. Two columns for one fact is how the next
+        // person writes to the wrong one.
+        schema: {
+          user: {
+            fields: {
+              phoneNumber: 'phone',
+              phoneNumberVerified: 'phoneVerified'
+            }
+          }
         }
       })
     ]

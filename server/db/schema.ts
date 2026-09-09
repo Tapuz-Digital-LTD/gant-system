@@ -55,6 +55,8 @@ export const users = pgTable(
      * required field only teaches them to invent a number.
      */
     phone: text('phone'),
+    /** Set once somebody has entered a code sent to that number. */
+    phoneVerified: boolean('phone_verified').notNull().default(false),
     role: memberRole('role').notNull().default('editor'),
     /**
      * The account that owns the workspace. Cannot be removed or demoted by
