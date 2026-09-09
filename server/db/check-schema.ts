@@ -26,11 +26,27 @@ if (!url) {
 }
 
 const pool = new Pool({ connectionString: url, max: 1 });
-await pool.query('set default_transaction_read_only = on');
 
-const rows = await pool.query<{ table_name: string; column_name: string }>(
-  `select table_name, column_name from information_schema.columns where table_schema = 'public'`
-);
+/*
+ * The read-only guard is a transaction, never a SET.
+ *
+ * `SET default_transaction_read_only = on` outside a transaction sticks to the
+ * server connection underneath, and a transaction pooler then hands that same
+ * connection to the next client — including the live application, which then
+ * cannot write. START TRANSACTION READ ONLY ends with the transaction and
+ * cannot escape into anybody else's session.
+ */
+const client = await pool.connect();
+let rows;
+try {
+  await client.query('start transaction read only');
+  rows = await client.query<{ table_name: string; column_name: string }>(
+    `select table_name, column_name from information_schema.columns where table_schema = 'public'`
+  );
+  await client.query('commit');
+} finally {
+  client.release();
+}
 
 const actual = new Map<string, Set<string>>();
 for (const r of rows.rows) {
