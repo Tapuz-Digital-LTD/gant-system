@@ -111,12 +111,6 @@ export default function App() {
   const m = useEventMutations(board?.id, range.from, range.to);
   const boardMutations = useBoardMutations();
 
-  // Remember where this person was, so tomorrow morning is one click.
-  useEffect(() => {
-    if (board && route.view) {
-      rememberPlace({ url, boardId: board.id, boardName: board.name, view: route.view });
-    }
-  }, [url, board, route.view]);
 
   /** What the home screen puts in front of somebody before anything else. */
   const myWork = useMemo(() => {
@@ -171,9 +165,17 @@ export default function App() {
 
   const can = makeCan(me ? currentUser : null);
 
+  // Remember where this person was, so tomorrow morning is one click. Keyed by
+  // user: a shared computer must not offer the previous person's board.
+  useEffect(() => {
+    if (me && board && route.view) {
+      rememberPlace(me.id, { url, boardId: board.id, boardName: board.name, view: route.view });
+    }
+  }, [url, board, route.view, me]);
+
   const signOut = async () => {
     await authClient.signOut({});
-    forgetPlace();
+    forgetPlace(currentUser.id);
     qc.clear();
     navigate('/');
     await meQuery.refetch();
@@ -397,7 +399,7 @@ export default function App() {
           <Button
             variant="primary"
             onClick={() => {
-              forgetPlace();
+              forgetPlace(currentUser.id);
               navigate('/');
             }}
           >
@@ -449,6 +451,7 @@ export default function App() {
         onOpenEvent={openEvent}
         onOpenAssistant={() => setIsAssistantOpen(true)}
         onOpenMyTasks={() => navigate('/my')}
+        onOpenNotificationLink={(link) => navigate(link)}
         onSignOut={signOut}
         isFetching={eventsQuery.isFetching}
         {...shared}

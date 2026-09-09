@@ -27,6 +27,7 @@ import type { MilestoneKey } from '../data/milestones';
 import type { Can } from '../hooks/useCan';
 import { ViewName } from '../utils/routes';
 import { SearchBox } from './SearchBox';
+import { NotificationsBell } from './NotificationsBell';
 import { Badge, Button, Field, Menu, MenuItem, MenuSeparator, Popover, Select, Tooltip, cn } from './ui';
 
 interface BoardHeaderProps {
@@ -48,6 +49,7 @@ interface BoardHeaderProps {
   onDuplicateBoard: () => void;
   onOpenAssistant: () => void;
   onOpenMyTasks: () => void;
+  onOpenNotificationLink: (link: string) => void;
   onSignOut: () => void;
   isFetching?: boolean;
 }
@@ -102,6 +104,7 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
   onDuplicateBoard,
   onOpenAssistant,
   onOpenMyTasks,
+  onOpenNotificationLink,
   onSignOut,
   isFetching
 }) => {
@@ -149,6 +152,8 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
         <div className="hidden flex-1 sm:block" />
 
         <SearchBox boardId={board.id} onOpenEvent={onOpenEvent} />
+
+        <NotificationsBell onOpenLink={onOpenNotificationLink} />
 
         {can('event.create') && (
           <Button variant="primary" onClick={onAddEvent}>

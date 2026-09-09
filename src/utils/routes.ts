@@ -107,10 +107,18 @@ export function boardRoute(boardId: string, view?: ViewName, mode: PeriodMode = 
 
 /**
  * The last place someone was, so the home screen can offer to put them back.
+ *
  * Deliberately in the browser, not on the server: it is a convenience for this
  * person on this device, and it must never decide what anyone is allowed to see.
+ *
+ * Keyed by user, because a shared computer is a real thing: without it, the
+ * next person to sign in is offered the previous one's board by name.
  */
 const LAST_PLACE = 'xtra:last-place';
+
+function placeKey(userId: string): string {
+  return `${LAST_PLACE}:${userId}`;
+}
 
 export interface LastPlace {
   url: string;
@@ -120,17 +128,17 @@ export interface LastPlace {
   savedAt: string;
 }
 
-export function rememberPlace(place: Omit<LastPlace, 'savedAt'>): void {
+export function rememberPlace(userId: string, place: Omit<LastPlace, 'savedAt'>): void {
   try {
-    localStorage.setItem(LAST_PLACE, JSON.stringify({ ...place, savedAt: new Date().toISOString() }));
+    localStorage.setItem(placeKey(userId), JSON.stringify({ ...place, savedAt: new Date().toISOString() }));
   } catch {
     // A browser with storage switched off simply does not get the shortcut.
   }
 }
 
-export function recallPlace(): LastPlace | null {
+export function recallPlace(userId: string): LastPlace | null {
   try {
-    const raw = localStorage.getItem(LAST_PLACE);
+    const raw = localStorage.getItem(placeKey(userId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LastPlace;
     return parsed?.url && parsed?.boardId ? parsed : null;
@@ -139,8 +147,10 @@ export function recallPlace(): LastPlace | null {
   }
 }
 
-export function forgetPlace(): void {
+export function forgetPlace(userId: string): void {
   try {
+    localStorage.removeItem(placeKey(userId));
+    // Anything left by the version that did not key on a user.
     localStorage.removeItem(LAST_PLACE);
   } catch {
     /* nothing to clean up */

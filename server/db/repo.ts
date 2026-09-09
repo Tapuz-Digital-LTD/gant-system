@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './client.js';
-import { boards, boardMembers, events, tasks, checklistItems, comments, users, activity, rolePermissions } from './schema.js';
+import { boards, boardMembers, events, tasks, checklistItems, comments, users, activity, notifications, rolePermissions } from './schema.js';
 import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permissions.js';
 
 /** Thrown when a write carries a stale `version`. Routes turn this into 409. */
@@ -550,6 +550,140 @@ export function createRepo(db: Database) {
       return rows;
     },
 
+    // ---------------- notifications ----------------
+
+    /**
+     * Tells one person one thing, once.
+     *
+     * The unique index on (user, dedupeKey) does the work: a caller states what
+     * it is saying and about what, and a second attempt is silently dropped.
+     * Callers do not check first and then write — that race is exactly how
+     * duplicates appear under load.
+     *
+     * Never throws. Failing to record the news must not undo the thing that
+     * happened.
+     */
+    async notify(input: {
+      userId: string;
+      kind: string;
+      title: string;
+      body?: string | null;
+      link?: string | null;
+      entity?: string | null;
+      entityId?: string | null;
+      dedupeKey: string;
+    }): Promise<boolean> {
+      try {
+        const rows = await db
+          .insert(notifications)
+          .values({
+            userId: input.userId,
+            kind: input.kind,
+            title: input.title,
+            body: input.body ?? null,
+            link: input.link ?? null,
+            entity: input.entity ?? null,
+            entityId: input.entityId ?? null,
+            dedupeKey: input.dedupeKey
+          })
+          .onConflictDoNothing()
+          .returning({ id: notifications.id });
+        return rows.length > 0;
+      } catch (err) {
+        console.error(JSON.stringify({ level: 'warn', msg: 'notify_failed', kind: input.kind, error: String(err) }));
+        return false;
+      }
+    },
+
+    async listNotifications(userId: string, limit = 40) {
+      const rows = await db
+        .select()
+        .from(notifications)
+        .where(eq(notifications.userId, userId))
+        .orderBy(sql`${notifications.createdAt} desc`)
+        .limit(limit);
+
+      const [counted] = await db
+        .select({ unread: sql<number>`count(*)::int` })
+        .from(notifications)
+        .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+
+      return { items: rows, unread: counted?.unread ?? 0 };
+    },
+
+    /** One, or all of them. Always scoped to the person asking. */
+    async markNotificationsRead(userId: string, id?: string) {
+      await db
+        .update(notifications)
+        .set({ readAt: new Date() })
+        .where(
+          id
+            ? and(eq(notifications.userId, userId), eq(notifications.id, id))
+            : and(eq(notifications.userId, userId), isNull(notifications.readAt))
+        );
+    },
+
+    /** Notifications are news, not records. A person may throw one away. */
+    async deleteNotification(userId: string, id: string) {
+      await db
+        .delete(notifications)
+        .where(and(eq(notifications.userId, userId), eq(notifications.id, id)));
+    },
+
+    /**
+     * Where a task lives, in words and as a link — what a notification about it
+     * has to say to be worth opening.
+     */
+    async taskContext(taskId: string) {
+      const [row] = await db
+        .select({
+          taskTitle: tasks.title,
+          dueDate: tasks.dueDate,
+          eventId: events.id,
+          eventTitle: events.title,
+          eventDate: events.actualDate,
+          boardId: events.boardId,
+          boardName: boards.name
+        })
+        .from(tasks)
+        .innerJoin(events, eq(tasks.eventId, events.id))
+        .innerJoin(boards, eq(events.boardId, boards.id))
+        .where(eq(tasks.id, taskId));
+      return row ?? null;
+    },
+
+    /**
+     * "This task is yours now."
+     *
+     * Called only where the owner actually changed. Saving a task without
+     * touching its owner says nothing, which is the difference between a
+     * notification somebody reads and one they learn to ignore.
+     *
+     * Assigning work to yourself is not news, so it is not sent.
+     */
+    async notifyAssignment(taskId: string, assigneeId: string, actorId: string | null) {
+      if (assigneeId === actorId) return false;
+
+      const ctx = await this.taskContext(taskId);
+      if (!ctx) return false;
+
+      // The campaign and the deadline. The board name is org structure, and it
+      // was pushing the one actionable part of the line off the end.
+      const due = ctx.dueDate ? ` · עד ${ctx.dueDate.split('-').reverse().join('.')}` : '';
+      return this.notify({
+        userId: assigneeId,
+        kind: 'task_assigned',
+        title: `משימה חדשה: ${ctx.taskTitle}`,
+        body: `${ctx.eventTitle}${due}`,
+        link: `/b/${ctx.boardId}/calendar?d=${ctx.eventDate}&e=${ctx.eventId}`,
+        entity: 'task',
+        entityId: taskId,
+        // No date in the key: being handed a task is said once, ever. Handing
+        // it away and back does not make it news again.
+        dedupeKey: `task_assigned:${taskId}:${assigneeId}`
+      });
+    },
+
     async createTask(eventId: string, input: Omit<NewTask, 'eventId'>, actorId: string | null) {
       const [event] = await db.select({ id: events.id }).from(events).where(eq(events.id, eventId));
       if (!event) throw new NotFoundError('לא מצאנו את האירוע. רענן את הדף ונסה שוב');
@@ -564,6 +698,8 @@ export function createRepo(db: Database) {
         .values({ ...input, eventId, position: next })
         .returning();
       await log(db, actorId, 'task', row.id, 'created', null, row);
+
+      if (row.assigneeId) await this.notifyAssignment(row.id, row.assigneeId, actorId);
       return row;
     },
 
@@ -593,6 +729,19 @@ export function createRepo(db: Database) {
       if (!row) throw new ConflictError(before.version);
 
       await log(db, actorId, 'task', id, 'updated', before, row);
+
+      /*
+       * Only a real change of hands.
+       *
+       * The unique index already stops a second copy while the first still
+       * exists — but a person may throw a notification away, and then nothing
+       * in the database prevents the same news being written again. Without
+       * this check, every later save of the task would put it back in their
+       * inbox, which is exactly how an inbox becomes something people ignore.
+       */
+      if (row.assigneeId && row.assigneeId !== before.assigneeId) {
+        await this.notifyAssignment(id, row.assigneeId, actorId);
+      }
       return row;
     },
 

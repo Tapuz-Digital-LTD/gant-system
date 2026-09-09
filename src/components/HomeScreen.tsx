@@ -4,6 +4,7 @@ import { GanttBoard, UserAccess } from '../types';
 import type { Can } from '../hooks/useCan';
 import { boardRoute, recallPlace } from '../utils/routes';
 import { todayISO, monthName } from '../utils/period';
+import { NotificationsBell } from './NotificationsBell';
 import { Button, cn } from './ui';
 
 interface HomeScreenProps {
@@ -77,7 +78,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onSignOut
 }) => {
   // Only offer to go back somewhere that still exists and is still allowed.
-  const remembered = recallPlace();
+  const remembered = recallPlace(currentUser.id);
   const lastBoard = remembered && boards.find((b) => b.id === remembered.boardId);
 
   const firstName = currentUser.name?.split(' ')[0] || '';
@@ -95,6 +96,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <span className="text-md font-bold tracking-tight text-ink">תכנון אירועים</span>
 
           <div className="flex-1" />
+
+          <NotificationsBell onOpenLink={onOpen} />
 
           {can('people.manage') && (
             <Button variant="ghost" size="sm" onClick={onOpenPeople}>

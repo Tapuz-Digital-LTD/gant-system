@@ -122,6 +122,26 @@ export interface EventComment {
   authorEmail: string | null;
 }
 
+export type NotificationKind =
+  | 'task_assigned'
+  | 'task_due_soon'
+  | 'task_overdue'
+  | 'task_stalled'
+  | 'milestone_soon';
+
+export interface AppNotification {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string | null;
+  /** An in-app path. Clicking goes straight to the thing it is about. */
+  link: string | null;
+  entity: string | null;
+  entityId: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
 export interface GanttBoard {
   id: string;
   name: string;

@@ -234,6 +234,30 @@ export function createApiRouter(
     res.json({ data: await req.repo.listTasksForAssignee(actor.id, boardIds) });
   }));
 
+  // ---------------- notifications ----------------
+
+  /**
+   * Always the caller's own. There is no user id in any of these paths, so
+   * there is nothing for anyone to change to somebody else's.
+   */
+  api.get('/notifications', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    res.json({ data: await req.repo.listNotifications(actor.id) });
+  }));
+
+  api.post('/notifications/read', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const input = v.notificationRead.parse(req.body ?? {});
+    await req.repo.markNotificationsRead(actor.id, input.id ?? undefined);
+    res.status(204).end();
+  }));
+
+  api.delete('/notifications/:id', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    await req.repo.deleteNotification(actor.id, id(req.params.id));
+    res.status(204).end();
+  }));
+
   // ---------------- tasks ----------------
 
   api.post('/events/:id/tasks', asyncRoute(async (req, res) => {

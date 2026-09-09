@@ -231,6 +231,41 @@ export const comments = pgTable(
   (t) => [index('comments_event_idx').on(t.eventId, t.createdAt)]
 );
 
+/**
+ * What a person is told, inside the system.
+ *
+ * `dedupeKey` is the whole design. Every writer states what it is saying and
+ * about what — "this task is yours", "this one is late today" — and the unique
+ * index makes saying it twice impossible. A notification system does not become
+ * noise because it says too much; it becomes noise because it repeats.
+ *
+ * Recurring news puts a date in the key, so it can be said once a day and never
+ * more. One-off news leaves the date out, so it is said exactly once, ever.
+ */
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    body: text('body'),
+    /** Where clicking goes. A full in-app path, built when the row is written. */
+    link: text('link'),
+    entity: text('entity'),
+    entityId: uuid('entity_id'),
+    dedupeKey: text('dedupe_key').notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex('notifications_dedupe_idx').on(t.userId, t.dedupeKey),
+    index('notifications_inbox_idx').on(t.userId, t.readAt, t.createdAt)
+  ]
+);
+
 export const activity = pgTable(
   'activity',
   {

@@ -206,6 +206,108 @@ assert.ok(
   'archived boards drop out of reads'
 );
 
+// ---------- notifications: told once, and only when it is news ----------
+const [dana] = (
+  await pg.query<{ id: string }>(
+    `insert into users (email, name, role, is_guest) values ('dana@xtra.co.il', 'דנה', 'editor', false) returning id`
+  )
+).rows;
+const [yoni] = (
+  await pg.query<{ id: string }>(
+    `insert into users (email, name, role, is_guest) values ('yoni@xtra.co.il', 'יוני', 'editor', false) returning id`
+  )
+).rows;
+
+const noticeBoard = await repo.createBoard({ name: 'לוח התראות', description: '' }, null);
+const noticeEvent = await repo.createEvent(
+  noticeBoard.id,
+  { title: 'מבצע פסח', category: 'campaign', actualDate: '2027-04-01', prepMonths: 2 },
+  null
+);
+
+// Handing work to somebody is news, and it carries where the work lives.
+const handed = await repo.createTask(
+  noticeEvent.id,
+  { title: 'הכנת דיוור', assigneeId: dana.id, dueDate: '2027-03-20' },
+  yoni.id
+);
+let inbox = await repo.listNotifications(dana.id);
+assert.equal(inbox.unread, 1, 'the new owner is told');
+assert.equal(inbox.items[0].kind, 'task_assigned');
+assert.ok(inbox.items[0].title.includes('הכנת דיוור'), 'the notification names the task');
+assert.ok(inbox.items[0].body?.includes('מבצע פסח'), 'and the campaign it belongs to');
+assert.ok(inbox.items[0].body?.includes('20.03.2027'), 'and when it is due');
+assert.ok(
+  !inbox.items[0].body?.includes('לוח התראות'),
+  'and not the board name, which pushed the deadline off the end of the line'
+);
+assert.ok((inbox.items[0].body ?? '').length < 60, 'the line is short enough to read in a dropdown');
+assert.ok(inbox.items[0].link?.includes(noticeEvent.id), 'and links straight to it');
+
+// Saving the task again, without touching the owner, says nothing.
+const touched = await repo.updateTask(handed.id, handed.version, { dueDate: '2027-03-25' }, yoni.id);
+await repo.updateTask(touched.id, touched.version, { status: 'in_progress' }, yoni.id);
+inbox = await repo.listNotifications(dana.id);
+assert.equal(inbox.items.length, 1, 'a save that left the owner alone is not news');
+
+// The case that actually needs the check rather than the index.
+//
+// Once Dana throws the notification away the unique row is gone, so nothing in
+// the database stops it being written again. Only "the owner did not change"
+// does. Without it, every later save of this task would put the same news back
+// in her inbox — which is precisely how people learn to ignore an inbox.
+const toDismiss = (await repo.listNotifications(dana.id)).items[0];
+await repo.deleteNotification(dana.id, toDismiss.id);
+assert.equal((await repo.listNotifications(dana.id)).items.length, 0, 'she threw it away');
+
+const afterDismiss = await repo.updateTask(touched.id, touched.version + 1, { dueDate: '2027-03-26' }, yoni.id);
+assert.equal(
+  (await repo.listNotifications(dana.id)).items.length,
+  0,
+  'editing the task does not put a dismissed notification back'
+);
+
+// And she is told again only when the task genuinely changes hands.
+await repo.updateTask(afterDismiss.id, afterDismiss.version, { assigneeId: yoni.id }, dana.id);
+const backToDana = await repo.updateTask(afterDismiss.id, afterDismiss.version + 1, { assigneeId: dana.id }, yoni.id);
+assert.equal(
+  (await repo.listNotifications(dana.id)).items.length,
+  1,
+  'handed back after she cleared it, she is told again'
+);
+assert.ok(backToDana.id);
+
+// The other owner heard about it when it was briefly his, and only then.
+assert.equal((await repo.listNotifications(yoni.id)).items.length, 1, 'the other owner was told once');
+
+// Giving yourself a task is not news.
+const own = await repo.createTask(noticeEvent.id, { title: 'משימה לעצמי', assigneeId: yoni.id }, yoni.id);
+assert.ok(own.id);
+assert.equal(
+  (await repo.listNotifications(yoni.id)).items.length,
+  1,
+  'assigning work to yourself tells you nothing you did not know'
+);
+
+// A task with no owner tells nobody anything.
+await repo.createTask(noticeEvent.id, { title: 'משימה ללא אחראי' }, yoni.id);
+assert.equal((await repo.listNotifications(dana.id)).unread, 1);
+
+// Reading and clearing are scoped to the person asking.
+await repo.markNotificationsRead(dana.id);
+assert.equal((await repo.listNotifications(dana.id)).unread, 0, 'marking read clears the count');
+assert.equal((await repo.listNotifications(yoni.id)).unread, 1, "and does not touch anyone else's");
+
+const mine = (await repo.listNotifications(dana.id)).items[0];
+await repo.deleteNotification(yoni.id, mine.id);
+assert.equal(
+  (await repo.listNotifications(dana.id)).items.length,
+  1,
+  'one person cannot delete another person\'s notification'
+);
+await repo.deleteNotification(dana.id, mine.id);
+assert.equal((await repo.listNotifications(dana.id)).items.length, 0, 'their own, they may throw away');
+
 // ---------- permanent deletion ----------
 // The archive is the only door: an event has to be in it before it can go.
 const purgeBoard = await repo.createBoard({ name: 'לוח מחיקה', description: '' }, null);

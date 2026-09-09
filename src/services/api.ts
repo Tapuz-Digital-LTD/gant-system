@@ -3,6 +3,7 @@ import {
   EventItem,
   TaskItem,
   MyTask,
+  AppNotification,
   UserAccess,
   EventComment,
   ActivityEntry,
@@ -143,6 +144,13 @@ export const api = {
     list: (eventId: string) => request<EventComment[]>(`/events/${eventId}/comments`),
     create: (eventId: string, input: { body: string; taskId?: string | null }) =>
       request<EventComment>(`/events/${eventId}/comments`, { method: 'POST', ...body(input) })
+  },
+
+  notifications: {
+    list: () => request<{ items: AppNotification[]; unread: number }>('/notifications'),
+    markRead: (id?: string) =>
+      request<void>('/notifications/read', { method: 'POST', ...body(id ? { id } : {}) }),
+    remove: (id: string) => request<void>(`/notifications/${id}`, { method: 'DELETE' })
   },
 
   users: {

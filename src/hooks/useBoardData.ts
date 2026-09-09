@@ -6,6 +6,7 @@ import { EventItem, MyTask, TaskItem, TaskStatus } from '../types';
 export const keys = {
   boards: ['boards'] as const,
   myTasks: ['my-tasks'] as const,
+  notifications: ['notifications'] as const,
   users: ['users'] as const,
   events: (boardId: string, from: string, to: string) => ['events', boardId, from, to] as QueryKey,
   comments: (eventId: string) => ['comments', eventId] as QueryKey,
@@ -56,6 +57,30 @@ export function useMyTaskMutations() {
         qc.invalidateQueries({ queryKey: ['events'] });
       }
     })
+  };
+}
+
+/**
+ * The inbox. Polled rather than pushed: a person who leaves a tab open all
+ * morning should still see that work arrived, and a minute of delay on that is
+ * nobody's problem. A socket would be a second thing to keep alive for it.
+ */
+export function useNotifications(enabled = true) {
+  return useQuery({
+    queryKey: keys.notifications,
+    queryFn: api.notifications.list,
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000
+  });
+}
+
+export function useNotificationMutations() {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.notifications });
+  return {
+    markRead: useMutation({ mutationFn: (id?: string) => api.notifications.markRead(id), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: api.notifications.remove, onSuccess: refresh })
   };
 }
 

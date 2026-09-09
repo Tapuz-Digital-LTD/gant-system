@@ -137,3 +137,8 @@ export const permissionUpdate = z.object({
 });
 
 export const searchQuery = z.object({ q: z.string().trim().min(2, 'צריך לפחות 2 תווים').max(100) });
+
+/** Marking one as read, or all of them when no id is given. */
+export const notificationRead = z.object({
+  id: z.string().uuid().nullish()
+});
