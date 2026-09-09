@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import { requireActor } from './access.js';
 
 /**
  * Task suggestions for a campaign.
@@ -88,6 +89,20 @@ export function createAiRouter(): Router {
   const ai = Router();
 
   ai.post('/suggest-tasks', async (req: Request, res: Response) => {
+    /*
+     * Signed in, at minimum.
+     *
+     * This endpoint spends money on somebody else's bill every time it is
+     * called. The per-instance throttle guards against a stuck client; it does
+     * nothing about an open URL, and an open URL that bills the owner is not a
+     * throttling problem.
+     */
+    try {
+      requireActor(req.actor);
+    } catch {
+      return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'צריך להתחבר' } });
+    }
+
     const parsed = suggestInput.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: 'קלט לא תקין' } });
