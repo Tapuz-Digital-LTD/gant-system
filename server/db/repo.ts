@@ -1,6 +1,8 @@
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './client.js';
-import { boards, boardMembers, events, tasks, checklistItems, comments, users, activity, notifications, rolePermissions } from './schema.js';
+import { boards, boardMembers, events, tasks, checklistItems, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions } from './schema.js';
+import { DEFAULT_PREFS, readPrefs, type NotificationPrefs } from '../notifications/prefs.js';
+import { MILESTONE_LABELS } from '../notifications/milestone-labels.js';
 import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permissions.js';
 
 /** Thrown when a write carries a stale `version`. Routes turn this into 409. */
@@ -549,6 +551,133 @@ export function createRepo(db: Database) {
         .orderBy(sql`${tasks.dueDate} asc nulls last`, asc(tasks.position));
 
       return rows;
+    },
+
+    // ---------------- notification settings ----------------
+
+    /** The organisation's defaults, under which every person's own choices sit. */
+    async workspaceNotificationDefaults(): Promise<Partial<NotificationPrefs>> {
+      const [row] = await db.select().from(workspaceSettings).limit(1);
+      return row ? readPrefs(row.notificationDefaults) : {};
+    },
+
+    async saveWorkspaceNotificationDefaults(prefs: Partial<NotificationPrefs>, actorId: string | null) {
+      const clean = readPrefs(prefs);
+      await db
+        .insert(workspaceSettings)
+        .values({ id: true, notificationDefaults: clean })
+        .onConflictDoUpdate({
+          target: workspaceSettings.id,
+          set: { notificationDefaults: clean, updatedAt: new Date() }
+        });
+      await log(db, actorId, 'settings', actorId ?? 'workspace', 'notifications_updated', null, clean);
+      return clean;
+    },
+
+    /**
+     * One person's settings: the defaults, with the organisation's opinion on
+     * top of those, with their own choices on top of that.
+     */
+    async notificationPrefsFor(userId: string): Promise<NotificationPrefs> {
+      const [orgDefaults, [row]] = await Promise.all([
+        this.workspaceNotificationDefaults(),
+        db.select().from(notificationPrefs).where(eq(notificationPrefs.userId, userId)).limit(1)
+      ]);
+      return readPrefs(row?.prefs, orgDefaults);
+    },
+
+    async saveNotificationPrefs(userId: string, prefs: Partial<NotificationPrefs>) {
+      const orgDefaults = await this.workspaceNotificationDefaults();
+      const clean = readPrefs(prefs, orgDefaults);
+      await db
+        .insert(notificationPrefs)
+        .values({ userId, prefs: clean })
+        .onConflictDoUpdate({
+          target: notificationPrefs.userId,
+          set: { prefs: clean, updatedAt: new Date() }
+        });
+      return clean;
+    },
+
+    /** Everybody the daily job has to consider. Guests included: they own work too. */
+    async peopleForDigest() {
+      return db
+        .select({ id: users.id, name: users.name, email: users.email, role: users.role, isGuest: users.isGuest })
+        .from(users);
+    },
+
+    /**
+     * Campaign dates coming up on the boards this person can reach.
+     *
+     * The columns are unpivoted here rather than in SQL: six nullable dates on
+     * one row is a shape the database is bad at reshaping and TypeScript is
+     * good at.
+     */
+    async upcomingMilestones(boardIds: string[] | null, from: string, to: string) {
+      if (boardIds && boardIds.length === 0) return [];
+
+      const rows = await db
+        .select()
+        .from(events)
+        .where(
+          and(
+            isNull(events.archivedAt),
+            boardIds ? inArray(events.boardId, boardIds) : undefined,
+            sql`least(${events.reviewDate}, ${events.freezeDate}, ${events.kickoffDate},
+                      ${events.announceDate}, ${events.campaignEndDate}) <= ${to}`,
+            sql`greatest(${events.reviewDate}, ${events.freezeDate}, ${events.kickoffDate},
+                         ${events.announceDate}, ${events.campaignEndDate}) >= ${from}`
+          )
+        );
+
+      return rows.flatMap((event) =>
+        MILESTONE_LABELS.flatMap((meta) => {
+          const date = event[meta.field];
+          if (!date || date < from || date > to) return [];
+          return [
+            {
+              eventId: event.id,
+              eventTitle: event.title,
+              eventDate: event.actualDate,
+              boardId: event.boardId,
+              key: meta.key,
+              label: meta.short,
+              date
+            }
+          ];
+        })
+      );
+    },
+
+    /** Every live task on the boards given, with its owner. For the daily job. */
+    async liveTasksForDigest(boardIds: string[] | null) {
+      if (boardIds && boardIds.length === 0) return [];
+
+      return db
+        .select({
+          id: tasks.id,
+          title: tasks.title,
+          status: tasks.status,
+          dueDate: tasks.dueDate,
+          assigneeId: tasks.assigneeId,
+          assignedAt: tasks.assignedAt,
+          eventId: events.id,
+          eventTitle: events.title,
+          eventDate: events.actualDate,
+          boardId: events.boardId
+        })
+        .from(tasks)
+        .innerJoin(events, eq(tasks.eventId, events.id))
+        .innerJoin(boards, eq(events.boardId, boards.id))
+        .where(
+          and(
+            sql`${tasks.status} <> 'done'`,
+            isNotNull(tasks.assigneeId),
+            isNull(events.archivedAt),
+            isNull(boards.archivedAt),
+            boardIds ? inArray(events.boardId, boardIds) : undefined
+          )
+        );
     },
 
     // ---------------- notifications ----------------

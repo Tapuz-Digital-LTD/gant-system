@@ -4,6 +4,8 @@ import {
   TaskItem,
   MyTask,
   AppNotification,
+  NotificationPrefs,
+  DigestPreview,
   UserAccess,
   EventComment,
   ActivityEntry,
@@ -148,6 +150,14 @@ export const api = {
 
   notifications: {
     list: () => request<{ items: AppNotification[]; unread: number }>('/notifications'),
+    prefs: () => request<NotificationPrefs>('/my/notification-prefs'),
+    savePrefs: (prefs: Partial<NotificationPrefs>) =>
+      request<NotificationPrefs>('/my/notification-prefs', { method: 'PUT', ...body(prefs) }),
+    /** What today's digest would say. Reads only; sends nothing. */
+    preview: () => request<DigestPreview>('/my/digest-preview'),
+    orgDefaults: () => request<Partial<NotificationPrefs>>('/settings/notification-defaults'),
+    saveOrgDefaults: (prefs: Partial<NotificationPrefs>) =>
+      request<Partial<NotificationPrefs>>('/settings/notification-defaults', { method: 'PUT', ...body(prefs) }),
     markRead: (id?: string) =>
       request<void>('/notifications/read', { method: 'POST', ...body(id ? { id } : {}) }),
     remove: (id: string) => request<void>(`/notifications/${id}`, { method: 'DELETE' })

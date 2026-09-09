@@ -142,3 +142,16 @@ export const searchQuery = z.object({ q: z.string().trim().min(2, 'צריך לפ
 export const notificationRead = z.object({
   id: z.string().uuid().nullish()
 });
+
+/** Notification preferences, as a screen sends them. Values are clamped on read. */
+export const notificationPrefsInput = z.object({
+  email: z.enum(['digest', 'off']).optional(),
+  sms: z.enum(['off', 'urgent']).optional(),
+  digestHour: z.number().int().min(0).max(23).optional(),
+  digestDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  stalledAfterDays: z.number().int().min(0).max(30).optional(),
+  dueBeforeDays: z.number().int().min(0).max(14).optional(),
+  overdue: z.boolean().optional(),
+  milestoneBeforeDays: z.number().int().min(0).max(30).optional(),
+  managerScope: z.enum(['none', 'team', 'all']).optional()
+});

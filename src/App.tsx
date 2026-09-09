@@ -17,6 +17,7 @@ import { Period, addDays, monthKey, periodRange, timelineRange, todayISO } from 
 import { ViewName, boardRoute, buildRoute, forgetPlace, rememberPlace } from './utils/routes';
 import { HomeScreen } from './components/HomeScreen';
 import { MyTasksView } from './components/MyTasksView';
+import { SettingsScreen } from './components/SettingsScreen';
 import { BoardHub } from './components/BoardHub';
 import { BoardHeader, SecondaryViewNote } from './components/BoardHeader';
 import { PeriodBar } from './components/PeriodBar';
@@ -338,6 +339,17 @@ export default function App() {
     </>
   );
 
+  // ----------------------------------------------------------- settings
+
+  if (route.settings) {
+    return (
+      <>
+        <SettingsScreen currentUser={currentUser} can={can} onBackHome={() => navigate('/')} />
+        {dialogs}
+      </>
+    );
+  }
+
   // --------------------------------------------------------- my own work
 
   if (route.myTasks) {
@@ -380,6 +392,7 @@ export default function App() {
           onOpen={(next) => navigate(next)}
           onCreateBoard={() => setIsManageBoardsOpen(true)}
           onOpenPeople={() => setIsPermissionsOpen(true)}
+          onOpenSettings={() => navigate('/settings')}
           onSignOut={signOut}
         />
         {dialogs}
@@ -451,6 +464,7 @@ export default function App() {
         onOpenEvent={openEvent}
         onOpenAssistant={() => setIsAssistantOpen(true)}
         onOpenMyTasks={() => navigate('/my')}
+        onOpenSettings={() => navigate('/settings')}
         onOpenNotificationLink={(link) => navigate(link)}
         onSignOut={signOut}
         isFetching={eventsQuery.isFetching}

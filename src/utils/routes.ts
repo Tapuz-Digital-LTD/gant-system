@@ -28,6 +28,8 @@ export interface Route {
    * place of its own rather than a value of `view`.
    */
   myTasks: boolean;
+  /** The settings area. Like "my tasks", it belongs to a person, not a board. */
+  settings: boolean;
   /** null on the home screen. */
   boardId: string | null;
   /** null on the board hub, before a view is chosen. */
@@ -51,6 +53,7 @@ export function parseRoute(url: string): Route {
   const params = new URLSearchParams(query);
 
   const myTasks = segments[0] === 'my';
+  const settings = segments[0] === 'settings';
   const boardId = segments[0] === 'b' && segments[1] ? segments[1] : null;
   const rawView = boardId ? segments[2] : undefined;
   const view = rawView && isView(rawView) ? rawView : null;
@@ -65,6 +68,7 @@ export function parseRoute(url: string): Route {
 
   return {
     myTasks,
+    settings,
     boardId,
     view,
     period,
@@ -74,7 +78,9 @@ export function parseRoute(url: string): Route {
 }
 
 export function buildRoute(route: Partial<Route>): string {
-  const { myTasks = false, boardId = null, view = null, period, eventId = null, creating = false } = route;
+  const { myTasks = false, settings = false, boardId = null, view = null, period, eventId = null, creating = false } = route;
+
+  if (settings) return '/settings';
 
   if (myTasks) {
     const params = new URLSearchParams();

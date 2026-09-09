@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, ArrowLeft, CalendarDays, LayoutGrid, ListChecks, Plus, RotateCcw, Users } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, BellRing, CalendarDays, LayoutGrid, ListChecks, Plus, RotateCcw, Users } from 'lucide-react';
 import { GanttBoard, UserAccess } from '../types';
 import type { Can } from '../hooks/useCan';
 import { boardRoute, recallPlace } from '../utils/routes';
@@ -17,6 +17,7 @@ interface HomeScreenProps {
   onOpen: (url: string) => void;
   onCreateBoard: () => void;
   onOpenPeople: () => void;
+  onOpenSettings: () => void;
   onSignOut: () => void;
 }
 
@@ -75,6 +76,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpen,
   onCreateBoard,
   onOpenPeople,
+  onOpenSettings,
   onSignOut
 }) => {
   // Only offer to go back somewhere that still exists and is still allowed.
@@ -98,6 +100,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <div className="flex-1" />
 
           <NotificationsBell onOpenLink={onOpen} />
+
+          <Button variant="ghost" size="sm" onClick={onOpenSettings}>
+            <BellRing className="h-4.5 w-4.5" />
+            <span className="hidden sm:inline">התראות</span>
+          </Button>
 
           {can('people.manage') && (
             <Button variant="ghost" size="sm" onClick={onOpenPeople}>

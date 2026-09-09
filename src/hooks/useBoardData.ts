@@ -7,6 +7,8 @@ export const keys = {
   boards: ['boards'] as const,
   myTasks: ['my-tasks'] as const,
   notifications: ['notifications'] as const,
+  notificationPrefs: ['notification-prefs'] as const,
+  digestPreview: ['digest-preview'] as const,
   users: ['users'] as const,
   events: (boardId: string, from: string, to: string) => ['events', boardId, from, to] as QueryKey,
   comments: (eventId: string) => ['comments', eventId] as QueryKey,
@@ -82,6 +84,26 @@ export function useNotificationMutations() {
     markRead: useMutation({ mutationFn: (id?: string) => api.notifications.markRead(id), onSuccess: refresh }),
     remove: useMutation({ mutationFn: api.notifications.remove, onSuccess: refresh })
   };
+}
+
+export function useNotificationPrefs(enabled = true) {
+  return useQuery({ queryKey: keys.notificationPrefs, queryFn: api.notifications.prefs, enabled });
+}
+
+/** What would be sent today. Refetched after a change, so the preview follows it. */
+export function useDigestPreview(enabled = true) {
+  return useQuery({ queryKey: keys.digestPreview, queryFn: api.notifications.preview, enabled });
+}
+
+export function useNotificationPrefMutations() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.notifications.savePrefs,
+    onSuccess: (saved) => {
+      qc.setQueryData(keys.notificationPrefs, saved);
+      qc.invalidateQueries({ queryKey: keys.digestPreview });
+    }
+  });
 }
 
 export function useComments(eventId: string | undefined) {

@@ -6,6 +6,8 @@ import * as v from './validation.js';
 import { createAiRouter } from './ai.js';
 import { PERMISSIONS, ROLE_LABELS, type Role } from './permissions.js';
 import { holidaysBetween } from './holidays.js';
+import { digestFor, digestText, hasAnything } from './notifications/digest.js';
+import { israelNow } from './notifications/prefs.js';
 import {
   type Actor,
   ForbiddenError,
@@ -232,6 +234,60 @@ export function createApiRouter(
     const actor = requireActor(req.actor);
     const boardIds = await req.repo.visibleBoardIds(actor);
     res.json({ data: await req.repo.listTasksForAssignee(actor.id, boardIds) });
+  }));
+
+  // ---------------- notification settings ----------------
+
+  api.get('/my/notification-prefs', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    res.json({ data: await req.repo.notificationPrefsFor(actor.id) });
+  }));
+
+  api.put('/my/notification-prefs', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const input = v.notificationPrefsInput.parse(req.body);
+
+    // Reaching past your own work is a permission, not a preference. Somebody
+    // who cannot see the activity log does not get a digest about other people
+    // by ticking a box.
+    if (input.managerScope && input.managerScope !== 'none') {
+      const allowed = actor.isOwner || (await req.repo.can(actor.role, 'activity.view'));
+      if (!allowed) throw new ForbiddenError('רק מי שמורשה לראות נתוני צוות יכול לקבל סיכום על אחרים');
+    }
+
+    res.json({ data: await req.repo.saveNotificationPrefs(actor.id, input) });
+  }));
+
+  /**
+   * What today's digest would say, for this person, right now.
+   *
+   * The whole point of it is that nothing has to be switched on to find out.
+   * It reads; it never writes and never sends.
+   */
+  api.get('/my/digest-preview', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const prefs = await req.repo.notificationPrefsFor(actor.id);
+    const digest = await digestFor(req.repo, actor, prefs);
+    res.json({
+      data: {
+        date: israelNow().date,
+        hasAnything: hasAnything(digest),
+        sections: digest.sections,
+        team: digest.team,
+        text: digestText(digest, `בוקר טוב ${actor.name} — מה דורש טיפול היום`)
+      }
+    });
+  }));
+
+  api.get('/settings/notification-defaults', asyncRoute(async (req, res) => {
+    await requirePermission(req.repo, req.actor, 'permissions.manage', 'הגדרות התראות');
+    res.json({ data: await req.repo.workspaceNotificationDefaults() });
+  }));
+
+  api.put('/settings/notification-defaults', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'permissions.manage', 'הגדרות התראות');
+    const input = v.notificationPrefsInput.parse(req.body);
+    res.json({ data: await req.repo.saveWorkspaceNotificationDefaults(input, actor.id) });
   }));
 
   // ---------------- notifications ----------------

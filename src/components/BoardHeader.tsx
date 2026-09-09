@@ -2,6 +2,7 @@ import React from 'react';
 import {
   Archive,
   ArrowRight,
+  BellRing,
   BarChart3,
   CalendarDays,
   Copy,
@@ -49,6 +50,7 @@ interface BoardHeaderProps {
   onDuplicateBoard: () => void;
   onOpenAssistant: () => void;
   onOpenMyTasks: () => void;
+  onOpenSettings: () => void;
   onOpenNotificationLink: (link: string) => void;
   onSignOut: () => void;
   isFetching?: boolean;
@@ -104,6 +106,7 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
   onDuplicateBoard,
   onOpenAssistant,
   onOpenMyTasks,
+  onOpenSettings,
   onOpenNotificationLink,
   onSignOut,
   isFetching
@@ -184,6 +187,10 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
           <MenuItem onSelect={onOpenMyTasks}>
             <ListChecks className="h-5 w-5" />
             המשימות שלי
+          </MenuItem>
+          <MenuItem onSelect={onOpenSettings}>
+            <BellRing className="h-5 w-5" />
+            התראות והגדרות
           </MenuItem>
           {can('people.manage') && (
             <MenuItem onSelect={onOpenPeople}>

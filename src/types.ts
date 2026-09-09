@@ -144,6 +144,45 @@ export interface AppNotification {
   createdAt: string;
 }
 
+/**
+ * Notification preferences. Mirrors server/notifications/prefs.ts, which is
+ * the authority — a test there fails if the two sets of defaults drift apart.
+ */
+export interface NotificationPrefs {
+  email: 'digest' | 'off';
+  sms: 'off' | 'urgent';
+  digestHour: number;
+  digestDays: number[];
+  stalledAfterDays: number;
+  dueBeforeDays: number;
+  overdue: boolean;
+  milestoneBeforeDays: number;
+  managerScope: 'none' | 'team' | 'all';
+}
+
+export interface DigestItem {
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  link: string;
+  severity: 1 | 2 | 3;
+}
+
+export interface DigestSection {
+  heading: string;
+  severity: 1 | 2 | 3;
+  items: DigestItem[];
+}
+
+/** What today's digest would say, without anything being switched on. */
+export interface DigestPreview {
+  date: string;
+  hasAnything: boolean;
+  sections: DigestSection[];
+  team: DigestSection[];
+  text: string;
+}
+
 export interface GanttBoard {
   id: string;
   name: string;
