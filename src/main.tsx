@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Direction } from 'radix-ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
-import { TooltipProvider, ToastProvider } from './components/ui';
+import { TooltipProvider, ToastProvider, BusyBar } from './components/ui';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -25,6 +25,7 @@ createRoot(document.getElementById('root')!).render(
       <Direction.DirectionProvider dir="rtl">
         <TooltipProvider delayDuration={300}>
           <ToastProvider>
+            <BusyBar />
             <App />
           </ToastProvider>
         </TooltipProvider>

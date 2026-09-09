@@ -10,3 +10,4 @@ export { Menu, MenuItem, MenuLabel, MenuSeparator } from './Menu';
 export { Tooltip, TooltipProvider } from './Tooltip';
 export { Popover, PopoverClose } from './Popover';
 export { ToastProvider, useToast } from './Toast';
+export { BusyBar } from './BusyBar';

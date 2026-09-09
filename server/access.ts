@@ -24,6 +24,8 @@ export interface Actor {
   /** The workspace owner bypasses every permission check and cannot be removed. */
   isOwner: boolean;
   role: Role;
+  /** Israeli mobile, or null. Only ever this person's own. */
+  phone?: string | null;
 }
 
 export class UnauthenticatedError extends Error {
@@ -84,7 +86,10 @@ export async function loadActor(db: Database, userId: string): Promise<Actor | n
       name: users.name,
       isGuest: users.isGuest,
       isOwner: users.isOwner,
-      role: users.role
+      role: users.role,
+      // Carried here rather than fetched again: /api/me runs on every page load
+      // and was doing a second round trip for one column.
+      phone: users.phone
     })
     .from(users)
     .where(and(eq(users.id, userId), isNull(users.deletedAt)));

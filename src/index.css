@@ -198,3 +198,28 @@ time,
     min-width: 44px;
   }
 }
+
+/*
+ * The busy bar's sweep.
+ *
+ * A moving segment rather than a percentage: the app does not know how far
+ * along a request is, and a fake progress bar that jumps to 90% and waits is a
+ * lie people learn to distrust.
+ */
+@keyframes busy-sweep {
+  0% { transform: translateX(120%); }
+  100% { transform: translateX(-320%); }
+}
+
+.animate-busy {
+  animation: busy-sweep 1.1s ease-in-out infinite;
+}
+
+/* A person who asked for less motion still needs to know something is happening. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-busy {
+    animation: none;
+    width: 100%;
+    opacity: 0.7;
+  }
+}

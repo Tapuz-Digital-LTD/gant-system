@@ -8,6 +8,7 @@ import { PERMISSIONS, ROLE_LABELS, type Role } from './permissions.js';
 import { holidaysBetween } from './holidays.js';
 import { digestFor, digestText, hasAnything } from './notifications/digest.js';
 import { cronAuthorised, cronConfigured, runDigestJob } from './notifications/cron.js';
+import { deliveryMode } from './notifications/inforu.js';
 import { israeliMobile } from './notifications/inforu.js';
 import { israelNow } from './notifications/prefs.js';
 import {
@@ -96,11 +97,8 @@ export function createApiRouter(
 
   api.get('/me', asyncRoute(async (req, res) => {
     if (!req.actor) return res.json({ data: null });
-    const [permissions, person] = await Promise.all([
-      req.repo.effectivePermissions(req.actor),
-      req.repo.findUserByEmail(req.actor.email)
-    ]);
-    res.json({ data: { ...req.actor, permissions, phone: person?.phone ?? null } });
+    const permissions = await req.repo.effectivePermissions(req.actor);
+    res.json({ data: { ...req.actor, permissions } });
   }));
 
   /**
@@ -332,7 +330,15 @@ export function createApiRouter(
         hasAnything: hasAnything(digest),
         sections: digest.sections,
         team: digest.team,
-        text: digestText(digest, `בוקר טוב ${actor.name} — מה דורש טיפול היום`)
+        text: digestText(digest, `בוקר טוב ${actor.name} — מה דורש טיפול היום`),
+        /*
+         * What would actually happen, rather than what a hardcoded sentence
+         * says would happen. The screen used to carry a fixed warning that mail
+         * "is not connected yet", which stayed on the screen after it was — a
+         * settings page that describes a state nobody has checked since it was
+         * written is worse than no warning at all.
+         */
+        delivery: deliveryMode('notification')
       }
     });
   }));

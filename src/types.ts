@@ -182,6 +182,12 @@ export interface DigestPreview {
   sections: DigestSection[];
   team: DigestSection[];
   text: string;
+  /**
+   * What would happen to an email right now.
+   * 'send' — it goes out · 'log' — connected, but sending is off ·
+   * 'unconfigured' — no provider.
+   */
+  delivery: 'send' | 'log' | 'unconfigured';
 }
 
 export interface GanttBoard {

@@ -12,7 +12,7 @@ import {
   Smartphone,
   Users
 } from 'lucide-react';
-import { NotificationPrefs, UserAccess } from '../types';
+import { DigestPreview, NotificationPrefs, UserAccess } from '../types';
 import type { Can } from '../hooks/useCan';
 import {
   useDigestPreview,
@@ -239,11 +239,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
 
               {prefs.sms !== 'off' && <PhoneRow currentPhone={currentUser.phone ?? null} />}
 
-              <p className="flex items-start gap-2 rounded-lg bg-progress-soft px-3 py-2.5 text-base text-ink">
-                <AlertTriangle className="mt-0.5 h-4.5 w-4.5 shrink-0 text-progress" aria-hidden="true" />
-                מייל ו-SMS עדיין לא מופעלים במערכת. ההגדרות כאן נשמרות, ויתחילו לפעול כשהחיבור לספק
-                יופעל.
-              </p>
+              {/*
+                What is actually true, asked of the server.
+                
+                This was a fixed sentence saying mail "is not connected yet",
+                and it stayed on the screen after it was connected. A settings
+                page describing a state nobody has rechecked since it was
+                written is worse than no notice at all — it teaches people that
+                the screen does not know.
+              */}
+              <DeliveryNotice delivery={preview.data?.delivery} />
             </Card>
 
             {mayManage && (
@@ -288,6 +293,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
         )}
       </main>
     </div>
+  );
+};
+
+/**
+ * Where things stand with sending, in one honest line.
+ *
+ * Silent when everything is on: a green banner saying "working" is a thing to
+ * read every time you open the screen, and it says nothing you needed.
+ */
+const DeliveryNotice: React.FC<{ delivery: DigestPreview['delivery'] | undefined }> = ({ delivery }) => {
+  if (!delivery || delivery === 'send') return null;
+
+  const connected = delivery === 'log';
+  return (
+    <p className="flex items-start gap-2 rounded-lg bg-progress-soft px-3 py-2.5 text-base text-ink">
+      <AlertTriangle className="mt-0.5 h-4.5 w-4.5 shrink-0 text-progress" aria-hidden="true" />
+      <span>
+        {connected
+          ? 'החיבור לספק מוכן, אבל שליחת מייל ו-SMS עדיין לא הופעלה. ההתראות מופיעות בינתיים בפעמון שלמעלה, וההגדרות כאן נשמרות.'
+          : 'שליחת מייל ו-SMS עדיין לא מחוברת. ההתראות מופיעות בינתיים בפעמון שלמעלה, וההגדרות כאן נשמרות.'}
+      </span>
+    </p>
   );
 };
 
