@@ -8,6 +8,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { createApiRouter } from './api.ts';
 import { israelNow } from './notifications/prefs.ts';
 import { createRepo } from './db/repo.ts';
+import { loadActor } from './access.ts';
 import type { Database } from './db/client.ts';
 import * as schema from './db/schema.ts';
 
@@ -32,7 +33,15 @@ const actor = { id: staff.id, email: staff.email, name: staff.name, isGuest: fal
 
 const app = express();
 app.use(express.json());
-app.use('/api', createApiRouter(() => repo, async () => actor));
+/*
+ * Resolved from the database on every request, exactly as production does.
+ *
+ * A frozen object here would pass tests that production fails: anything the
+ * actor carries — the phone number, the role — would be whatever it was when
+ * the suite started, and a change made through the API would appear not to
+ * have happened.
+ */
+app.use('/api', createApiRouter(() => repo, async () => (await loadActor(db, staff.id)) ?? actor));
 const server = app.listen(0);
 const port = (server.address() as { port: number }).port;
 const base = `http://127.0.0.1:${port}/api`;
@@ -245,9 +254,14 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
     stalledAfterDays: 0,
     milestoneBeforeDays: 0
   });
+  // Today's digest is already marked handled by the runs above, so the job
+  // would skip this person entirely. Clearing the mark makes them due again,
+  // which is what this assertion is actually about.
+  await pg.query('update notification_prefs set last_digest_on = null');
+
   r = await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secret' });
   assert.equal(r.json.data.due, 1, 'still their hour');
-  assert.equal(r.json.data.logged, 0, 'but nothing worth saying is nothing sent');
+  assert.equal(r.json.data.logged, 0, 'but every rule off is nothing worth saying, and nothing sent');
 
 
 
