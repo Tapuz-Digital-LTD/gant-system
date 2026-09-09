@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, CalendarDays, LayoutGrid, Plus, RotateCcw, Users } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarDays, LayoutGrid, ListChecks, Plus, RotateCcw, Users } from 'lucide-react';
 import { GanttBoard, UserAccess } from '../types';
 import type { Can } from '../hooks/useCan';
 import { boardRoute, recallPlace } from '../utils/routes';
@@ -10,6 +10,9 @@ interface HomeScreenProps {
   boards: GanttBoard[];
   currentUser: UserAccess;
   can: Can;
+  /** Counts for "what do I have to do", or null while they load. */
+  myWork: { open: number; late: number; soon: number } | null;
+  onOpenMyTasks: () => void;
   onOpen: (url: string) => void;
   onCreateBoard: () => void;
   onOpenPeople: () => void;
@@ -66,6 +69,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   boards,
   currentUser,
   can,
+  myWork,
+  onOpenMyTasks,
   onOpen,
   onCreateBoard,
   onOpenPeople,
@@ -113,7 +118,83 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           {todayLine()}
         </p>
 
-        {lastBoard && remembered && (
+        {/*
+          The two questions somebody actually arrives with: what do I have to
+          do, and where was I. Both are answered before the list of boards,
+          because both are asked far more often than "which board".
+        */}
+        <section className="mt-7 grid gap-3 sm:grid-cols-2">
+          <button
+            onClick={onOpenMyTasks}
+            className={cn(
+              'group flex items-center gap-4 rounded-xl border-2 bg-surface p-4 text-start shadow-card transition-all',
+              'hover:shadow-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+              myWork && myWork.late > 0 ? 'border-late/40 hover:border-late' : 'border-line hover:border-primary'
+            )}
+          >
+            <span
+              className={cn(
+                'grid h-11 w-11 shrink-0 place-items-center rounded-lg',
+                myWork && myWork.late > 0 ? 'bg-late-soft text-late' : 'bg-primary-soft text-primary'
+              )}
+            >
+              <ListChecks className="h-6 w-6" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-md font-bold text-ink">המשימות שלי</span>
+              <span className="block text-base text-ink-secondary">{workLine(myWork)}</span>
+            </span>
+            {myWork && myWork.late > 0 && (
+              <span className="flex shrink-0 items-center gap-1 rounded-md bg-late-soft px-2 py-1 text-sm font-bold text-late">
+                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                <span className="tnum">{myWork.late}</span>
+              </span>
+            )}
+            <ArrowLeft
+              className="h-5 w-5 shrink-0 text-ink-tertiary transition-transform group-hover:-translate-x-0.5"
+              aria-hidden="true"
+            />
+          </button>
+
+          {lastBoard && remembered ? (
+            <button
+              onClick={() => onOpen(remembered.url)}
+              className={cn(
+                'group flex items-center gap-4 rounded-xl border-2 bg-surface p-4 text-start',
+                'border-primary/30 shadow-card transition-all',
+                'hover:border-primary hover:shadow-raised',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
+              )}
+            >
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary">
+                <RotateCcw className="h-6 w-6" aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-md font-bold text-ink">
+                  להמשיך: {lastBoard.name}
+                </span>
+                <span className="block truncate text-base text-ink-secondary">
+                  {viewLabel(remembered.view)}
+                </span>
+              </span>
+              <ArrowLeft
+                className="h-5 w-5 shrink-0 text-primary transition-transform group-hover:-translate-x-0.5"
+                aria-hidden="true"
+              />
+            </button>
+          ) : (
+            <div className="flex items-center gap-4 rounded-xl border border-dashed border-line-strong p-4">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-subtle text-ink-disabled">
+                <CalendarDays className="h-6 w-6" aria-hidden="true" />
+              </span>
+              <span className="text-base text-ink-secondary">
+                בחר לוח מלמטה, ובפעם הבאה תוכל לחזור אליו מכאן בקליק אחד.
+              </span>
+            </div>
+          )}
+        </section>
+
+        {false && lastBoard && remembered && (
           <section className="mt-7">
             <h2 className="mb-2 text-sm font-semibold text-ink-tertiary">להמשיך מאיפה שהפסקת</h2>
             <button
@@ -144,7 +225,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
         <section className="mt-8">
           <h2 className="mb-3 text-sm font-semibold text-ink-tertiary">
-            {lastBoard ? 'או פתח לוח אחר' : 'הלוחות שלך'}
+            מה מתוכנן — הלוחות שלך
           </h2>
 
           {boards.length === 0 ? (
@@ -168,6 +249,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     </div>
   );
 };
+
+/** What the card says under its title, in the words of the day ahead. */
+function workLine(work: { open: number; late: number; soon: number } | null): string {
+  if (!work) return 'טוען…';
+  if (work.open === 0) return 'אין משימות פתוחות על שמך';
+  if (work.late > 0 && work.soon > 0) return `${work.late} באיחור, ${work.soon} לשבוע הקרוב`;
+  if (work.late > 0) return `${work.late} משימות באיחור`;
+  if (work.soon > 0) return `${work.soon} משימות לשבוע הקרוב`;
+  return `${work.open} משימות פתוחות`;
+}
 
 function viewLabel(view: string | null): string {
   if (view === 'calendar') return 'לוח שנה';

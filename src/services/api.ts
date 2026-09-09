@@ -2,6 +2,7 @@ import {
   GanttBoard,
   EventItem,
   TaskItem,
+  MyTask,
   UserAccess,
   EventComment,
   ActivityEntry,
@@ -129,6 +130,8 @@ export const api = {
   },
 
   tasks: {
+    /** The signed-in person's own work, across every board they can reach. */
+    mine: () => request<MyTask[]>('/my/tasks'),
     create: (eventId: string, input: TaskInput) =>
       request<TaskItem>(`/events/${eventId}/tasks`, { method: 'POST', ...body(input) }),
     update: (id: string, version: number, changes: Partial<TaskInput>) =>

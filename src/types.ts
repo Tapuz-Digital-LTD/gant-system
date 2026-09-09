@@ -99,6 +99,18 @@ export interface EventItem {
   tasks: TaskItem[];
 }
 
+/**
+ * A task as it looks on "my tasks": the work plus the two things that make it
+ * mean something — which event it belongs to and when that event happens.
+ */
+export interface MyTask extends TaskItem {
+  eventTitle: string;
+  eventDate: string;
+  eventPrecision: DatePrecision;
+  boardId: string;
+  boardName: string;
+}
+
 export interface EventComment {
   id: string;
   eventId: string;

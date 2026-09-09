@@ -497,6 +497,59 @@ export function createRepo(db: Database) {
 
     // ---------------- tasks ----------------
 
+    /**
+     * One person's work, across every board they can reach.
+     *
+     * A task on its own says little — "עיצוב באנרים" is meaningless without the
+     * event it belongs to and when that event happens. So the event and the
+     * board come back with it, and the caller never has to fetch them again.
+     *
+     * `boardIds` is null for staff (every board) and a list for a guest. It is
+     * the same scope the board list uses, so nobody sees work on a board they
+     * could not open.
+     */
+    async listTasksForAssignee(assigneeId: string, boardIds: string[] | null) {
+      if (boardIds && boardIds.length === 0) return [];
+
+      const rows = await db
+        .select({
+          id: tasks.id,
+          eventId: tasks.eventId,
+          title: tasks.title,
+          description: tasks.description,
+          status: tasks.status,
+          priority: tasks.priority,
+          assigneeId: tasks.assigneeId,
+          startDate: tasks.startDate,
+          endDate: tasks.endDate,
+          dueDate: tasks.dueDate,
+          position: tasks.position,
+          completedAt: tasks.completedAt,
+          version: tasks.version,
+          eventTitle: events.title,
+          eventDate: events.actualDate,
+          eventPrecision: events.actualPrecision,
+          boardId: events.boardId,
+          boardName: boards.name
+        })
+        .from(tasks)
+        .innerJoin(events, eq(tasks.eventId, events.id))
+        .innerJoin(boards, eq(events.boardId, boards.id))
+        .where(
+          and(
+            eq(tasks.assigneeId, assigneeId),
+            // Work on something archived is not work anybody should be chased for.
+            isNull(events.archivedAt),
+            isNull(boards.archivedAt),
+            boardIds ? inArray(events.boardId, boardIds) : undefined
+          )
+        )
+        // Undated work sorts last: a task with a date is the one that can be late.
+        .orderBy(sql`${tasks.dueDate} asc nulls last`, asc(tasks.position));
+
+      return rows;
+    },
+
     async createTask(eventId: string, input: Omit<NewTask, 'eventId'>, actorId: string | null) {
       const [event] = await db.select({ id: events.id }).from(events).where(eq(events.id, eventId));
       if (!event) throw new NotFoundError('לא מצאנו את האירוע. רענן את הדף ונסה שוב');

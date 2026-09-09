@@ -8,12 +8,15 @@ import {
   useEvents,
   useEventMutations,
   useBoardMutations,
+  useMyTasks,
+  useMyTaskMutations,
   describeError
 } from './hooks/useBoardData';
 import { useRoute, navigate } from './hooks/useRoute';
-import { Period, monthKey, periodRange, timelineRange } from './utils/period';
+import { Period, addDays, monthKey, periodRange, timelineRange, todayISO } from './utils/period';
 import { ViewName, boardRoute, buildRoute, forgetPlace, rememberPlace } from './utils/routes';
 import { HomeScreen } from './components/HomeScreen';
+import { MyTasksView } from './components/MyTasksView';
 import { BoardHub } from './components/BoardHub';
 import { BoardHeader, SecondaryViewNote } from './components/BoardHeader';
 import { PeriodBar } from './components/PeriodBar';
@@ -66,6 +69,9 @@ export default function App() {
 
   const boardsQuery = useBoards(Boolean(me));
   const usersQuery = useUsers();
+  // Loaded on the home screen too: its first card is the count of open work.
+  const myTasksQuery = useMyTasks(Boolean(me) && (route.myTasks || !route.boardId));
+  const myTaskMutations = useMyTaskMutations();
 
   const [filterState, setFilterState] = useState<FilterState>({
     search: '',
@@ -111,6 +117,18 @@ export default function App() {
       rememberPlace({ url, boardId: board.id, boardName: board.name, view: route.view });
     }
   }, [url, board, route.view]);
+
+  /** What the home screen puts in front of somebody before anything else. */
+  const myWork = useMemo(() => {
+    if (!myTasksQuery.data) return null;
+    const today = todayISO();
+    const open = myTasksQuery.data.filter((t) => t.status !== 'done');
+    return {
+      open: open.length,
+      late: open.filter((t) => t.dueDate && t.dueDate < today).length,
+      soon: open.filter((t) => t.dueDate && t.dueDate >= today && t.dueDate <= addDays(today, 7)).length
+    };
+  }, [myTasksQuery.data]);
 
   const detailEvent = events.find((e) => e.id === route.eventId) ?? null;
 
@@ -318,6 +336,34 @@ export default function App() {
     </>
   );
 
+  // --------------------------------------------------------- my own work
+
+  if (route.myTasks) {
+    return (
+      <>
+        <MyTasksView
+          tasks={myTasksQuery.data ?? []}
+          isLoading={myTasksQuery.isLoading}
+          onBackHome={() => navigate('/')}
+          onOpenTask={(task) =>
+            navigate(
+              buildRoute({
+                boardId: task.boardId,
+                view: 'calendar',
+                period: { mode: 'month', anchor: task.eventDate },
+                eventId: task.eventId
+              })
+            )
+          }
+          onMove={(task, status) =>
+            run(myTaskMutations.move.mutateAsync({ id: task.id, version: task.version, status }))
+          }
+        />
+        {dialogs}
+      </>
+    );
+  }
+
   // ------------------------------------------------------------ home screen
 
   if (!route.boardId) {
@@ -327,6 +373,8 @@ export default function App() {
           boards={boards}
           currentUser={currentUser}
           can={can}
+          myWork={myWork}
+          onOpenMyTasks={() => navigate('/my')}
           onOpen={(next) => navigate(next)}
           onCreateBoard={() => setIsManageBoardsOpen(true)}
           onOpenPeople={() => setIsPermissionsOpen(true)}
@@ -400,6 +448,7 @@ export default function App() {
         onAddEvent={() => openAddEvent()}
         onOpenEvent={openEvent}
         onOpenAssistant={() => setIsAssistantOpen(true)}
+        onOpenMyTasks={() => navigate('/my')}
         onSignOut={signOut}
         isFetching={eventsQuery.isFetching}
         {...shared}

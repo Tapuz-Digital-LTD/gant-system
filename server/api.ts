@@ -224,6 +224,16 @@ export function createApiRouter(
     res.json({ data: await req.repo.restoreEvent(eventId, actor.id) });
   }));
 
+  /**
+   * The signed-in person's own work. No id in the path: you can only ask for
+   * yours, so there is no parameter for anyone to tamper with.
+   */
+  api.get('/my/tasks', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const boardIds = await req.repo.visibleBoardIds(actor);
+    res.json({ data: await req.repo.listTasksForAssignee(actor.id, boardIds) });
+  }));
+
   // ---------------- tasks ----------------
 
   api.post('/events/:id/tasks', asyncRoute(async (req, res) => {

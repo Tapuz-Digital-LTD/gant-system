@@ -8,6 +8,7 @@ import {
   Download,
   GanttChartSquare,
   KanbanSquare,
+  ListChecks,
   ListTodo,
   Loader2,
   LogOut,
@@ -46,6 +47,7 @@ interface BoardHeaderProps {
   onManageBoards: () => void;
   onDuplicateBoard: () => void;
   onOpenAssistant: () => void;
+  onOpenMyTasks: () => void;
   onSignOut: () => void;
   isFetching?: boolean;
 }
@@ -99,6 +101,7 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
   onManageBoards,
   onDuplicateBoard,
   onOpenAssistant,
+  onOpenMyTasks,
   onSignOut,
   isFetching
 }) => {
@@ -173,6 +176,10 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
             <div className="truncate text-xs text-ink-tertiary">{currentUser.email}</div>
           </div>
           <MenuSeparator />
+          <MenuItem onSelect={onOpenMyTasks}>
+            <ListChecks className="h-5 w-5" />
+            המשימות שלי
+          </MenuItem>
           {can('people.manage') && (
             <MenuItem onSelect={onOpenPeople}>
               <Users className="h-5 w-5" />

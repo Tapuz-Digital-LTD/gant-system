@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { api, ApiError, type EventInput, type TaskInput } from '../services/api';
-import { EventItem, TaskItem } from '../types';
+import { EventItem, MyTask, TaskItem, TaskStatus } from '../types';
 
 /** Query keys in one place so a mutation can never invalidate the wrong cache entry. */
 export const keys = {
   boards: ['boards'] as const,
+  myTasks: ['my-tasks'] as const,
   users: ['users'] as const,
   events: (boardId: string, from: string, to: string) => ['events', boardId, from, to] as QueryKey,
   comments: (eventId: string) => ['comments', eventId] as QueryKey,
@@ -27,6 +28,35 @@ export function useEvents(boardId: string | undefined, from: string, to: string)
     // Keep the previous window on screen while the next one loads — no flash.
     placeholderData: (prev) => prev
   });
+}
+
+/**
+ * The signed-in person's own work, across every board.
+ *
+ * Moving a card writes through to the server and rewrites this cache from the
+ * response, so a column change that failed does not stay on screen looking
+ * like it worked.
+ */
+export function useMyTasks(enabled = true) {
+  return useQuery({ queryKey: keys.myTasks, queryFn: api.tasks.mine, enabled, staleTime: 15_000 });
+}
+
+export function useMyTaskMutations() {
+  const qc = useQueryClient();
+
+  return {
+    move: useMutation({
+      mutationFn: (v: { id: string; version: number; status: TaskStatus }) =>
+        api.tasks.update(v.id, v.version, { status: v.status }),
+      onSuccess: (updated) => {
+        qc.setQueryData<MyTask[]>(keys.myTasks, (prev) =>
+          prev?.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
+        );
+        // The event's own copy of this task is now stale.
+        qc.invalidateQueries({ queryKey: ['events'] });
+      }
+    })
+  };
 }
 
 export function useComments(eventId: string | undefined) {

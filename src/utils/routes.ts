@@ -23,6 +23,11 @@ export type ViewName = 'calendar' | 'timeline' | 'list' | 'status' | 'overview';
 export const VIEW_NAMES: ViewName[] = ['calendar', 'timeline', 'list', 'status', 'overview'];
 
 export interface Route {
+  /**
+   * "My tasks" is not a view of a board — it crosses all of them — so it is a
+   * place of its own rather than a value of `view`.
+   */
+  myTasks: boolean;
   /** null on the home screen. */
   boardId: string | null;
   /** null on the board hub, before a view is chosen. */
@@ -45,6 +50,7 @@ export function parseRoute(url: string): Route {
   const segments = path.split('/').filter(Boolean);
   const params = new URLSearchParams(query);
 
+  const myTasks = segments[0] === 'my';
   const boardId = segments[0] === 'b' && segments[1] ? segments[1] : null;
   const rawView = boardId ? segments[2] : undefined;
   const view = rawView && isView(rawView) ? rawView : null;
@@ -58,6 +64,7 @@ export function parseRoute(url: string): Route {
   };
 
   return {
+    myTasks,
     boardId,
     view,
     period,
@@ -67,7 +74,14 @@ export function parseRoute(url: string): Route {
 }
 
 export function buildRoute(route: Partial<Route>): string {
-  const { boardId = null, view = null, period, eventId = null, creating = false } = route;
+  const { myTasks = false, boardId = null, view = null, period, eventId = null, creating = false } = route;
+
+  if (myTasks) {
+    const params = new URLSearchParams();
+    if (eventId) params.set('e', eventId);
+    const query = params.toString();
+    return query ? `/my?${query}` : '/my';
+  }
 
   if (!boardId) return '/';
 
