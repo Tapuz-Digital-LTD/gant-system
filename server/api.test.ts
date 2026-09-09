@@ -163,6 +163,44 @@ assert.ok(!body.includes('at '), 'no stack frames in responses');
 r = await call('GET', `/events/${event.id}/activity`);
 assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
 
+/*
+ * ---------- the assistant answers, even when it fails ----------
+ *
+ * This endpoint hung in production for every single call. `req.repo` was never
+ * attached — the database middleware skipped /ai deliberately, back when the
+ * route touched no data — and the resulting throw became an unhandled
+ * rejection, so no response was ever written and the button spun forever.
+ *
+ * Two things are pinned here: the route reaches the database, and a failure
+ * arrives as a reply rather than as silence.
+ */
+{
+  assert.equal(
+    (await call('POST', '/ai/suggest-tasks', { eventTitle: 'מבצע' })).status,
+    503,
+    'with no key configured it says so, promptly'
+  );
+
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-not-a-real-key';
+  r = await call('POST', '/ai/suggest-tasks', { eventTitle: 'מבצע חנוכה', category: 'campaign' });
+  delete process.env.ANTHROPIC_API_KEY;
+
+  // A bad key means the model call fails — which is the point: it got past the
+  // usage check, so `req.repo` was there, and it answered instead of hanging.
+  assert.equal(r.status, 502, 'a failing model call is a reply, not a hang');
+  assert.equal(r.json.aiGenerated, false);
+
+  const { rows } = await pg.query<{ calls: number }>('select calls from ai_usage');
+  assert.equal(rows.length, 1, 'and the attempt was counted');
+  assert.equal(Number(rows[0].calls), 1, 'a failed call still spends the allowance');
+
+  assert.equal(
+    (await call('POST', '/ai/suggest-tasks', {})).status,
+    400,
+    'and bad input is still bad input'
+  );
+}
+
 // ---------- a phone number is your own, and is normalised ----------
 {
   r = await call('PUT', '/my/phone', { phone: '052-577-0223' });

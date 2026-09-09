@@ -64,7 +64,14 @@ export function createApiRouter(
 
   // Without a database the API says so plainly instead of pretending to work.
   api.use((req, res, next) => {
-    if (req.path === '/health' || req.path.startsWith('/ai/')) return next();
+    /*
+     * `/ai` used to be exempt here, on the grounds that suggestions are
+     * optional and should not need a database. That stopped being true the day
+     * the endpoint started checking who is asking and what they have already
+     * spent — and because the exemption skipped this middleware entirely,
+     * `req.repo` was never attached and the route threw on every call.
+     */
+    if (req.path === '/health') return next();
     if (!getRepo && !isDatabaseReady()) {
       return res.status(503).json({
         error: { code: 'DATABASE_NOT_CONFIGURED', message: 'משהו לא עובד כרגע. נסה שוב בעוד רגע' }
@@ -86,7 +93,6 @@ export function createApiRouter(
       .catch(next);
   });
 
-  // AI is optional and never gated on the database.
   api.use('/ai', createAiRouter());
 
   api.get('/health', (_req, res) => {

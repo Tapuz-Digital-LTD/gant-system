@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { requireActor } from './access.js';
@@ -109,72 +109,88 @@ const SYSTEM = `אתה עוזר התכנון של מערכת ניהול הקמפ
 export function createAiRouter(): Router {
   const ai = Router();
 
-  ai.post('/suggest-tasks', async (req: Request, res: Response) => {
-    /*
-     * Signed in, at minimum.
-     *
-     * This endpoint spends money on somebody else's bill every time it is
-     * called. The per-instance throttle guards against a stuck client; it does
-     * nothing about an open URL, and an open URL that bills the owner is not a
-     * throttling problem.
-     */
-    let actor;
-    try {
-      actor = requireActor(req.actor);
-    } catch {
-      return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'צריך להתחבר' } });
-    }
+  /*
+   * Wrapped, so a throw becomes a reply.
+   *
+   * Express 4 does not catch a rejected promise from an async handler: it
+   * becomes an unhandled rejection, no response is ever written, and the
+   * browser spins until somebody gives up. That is exactly how a missing
+   * `req.repo` presented — not as an error on screen, but as a button that
+   * never finished.
+   */
+  ai.post('/suggest-tasks', (req: Request, res: Response, next: NextFunction) => {
+    suggestTasks(req, res).catch(next);
+  });
 
-    const parsed = suggestInput.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: 'קלט לא תקין' } });
-    }
+  return ai;
+}
 
-    if (!aiConfigured()) {
-      return res.status(503).json({
-        aiGenerated: false,
-        error: { code: 'AI_UNAVAILABLE', message: 'שירות ההצעות אינו מוגדר' }
-      });
-    }
+async function suggestTasks(req: Request, res: Response) {
+  /*
+   * Signed in, at minimum.
+   *
+   * This endpoint spends money on somebody else's bill every time it is
+   * called. The per-instance throttle guards against a stuck client; it does
+   * nothing about an open URL, and an open URL that bills the owner is not a
+   * throttling problem.
+   */
+  let actor;
+  try {
+    actor = requireActor(req.actor);
+  } catch {
+    return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'צריך להתחבר' } });
+  }
 
-    const claim = await req.repo.claimAiCall(actor.id, perPersonPerDay(), perWorkspacePerDay());
-    if (!claim.allowed) {
-      console.warn(
-        JSON.stringify({ level: 'warn', msg: 'ai_limit_reached', scope: claim.reason, used: claim.used })
-      );
-      return res.status(429).json({
-        aiGenerated: false,
-        error: {
-          code: 'RATE_LIMITED',
-          message:
-            claim.reason === 'person'
-              ? 'הגעת למכסת ההצעות היומית. אפשר להוסיף משימות ידנית, ומחר המכסה מתאפסת.'
-              : 'המערכת הגיעה למכסת ההצעות היומית. אפשר להוסיף משימות ידנית.'
-        }
-      });
-    }
+  const parsed = suggestInput.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: 'קלט לא תקין' } });
+  }
 
-    const { eventTitle, category, kickoffDate, actualDate, prepMonths } = parsed.data;
+  if (!aiConfigured()) {
+    return res.status(503).json({
+      aiGenerated: false,
+      error: { code: 'AI_UNAVAILABLE', message: 'שירות ההצעות אינו מוגדר' }
+    });
+  }
 
-    try {
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: TIMEOUT_MS });
+  const claim = await req.repo.claimAiCall(actor.id, perPersonPerDay(), perWorkspacePerDay());
+  if (!claim.allowed) {
+    console.warn(
+      JSON.stringify({ level: 'warn', msg: 'ai_limit_reached', scope: claim.reason, used: claim.used })
+    );
+    return res.status(429).json({
+      aiGenerated: false,
+      error: {
+        code: 'RATE_LIMITED',
+        message:
+          claim.reason === 'person'
+            ? 'הגעת למכסת ההצעות היומית. אפשר להוסיף משימות ידנית, ומחר המכסה מתאפסת.'
+            : 'המערכת הגיעה למכסת ההצעות היומית. אפשר להוסיף משימות ידנית.'
+      }
+    });
+  }
 
-      const response = await client.messages.create({
-        model: AI_MODEL,
-        max_tokens: MAX_TOKENS,
-        system: SYSTEM,
-        /*
-         * The user's text is fenced and labelled as data.
-         *
-         * An event can legitimately be called anything, including something
-         * shaped like an instruction. The system prompt already says to treat
-         * it as data; the fence is what makes that boundary visible rather than
-         * a matter of the model's judgement about where a field ends.
-         */
-        messages: [
-          {
-            role: 'user',
-            content: `הפק רשימת משימות מומלצת לאירוע הבא.
+  const { eventTitle, category, kickoffDate, actualDate, prepMonths } = parsed.data;
+
+  try {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: TIMEOUT_MS });
+
+    const response = await client.messages.create({
+      model: AI_MODEL,
+      max_tokens: MAX_TOKENS,
+      system: SYSTEM,
+      /*
+       * The user's text is fenced and labelled as data.
+       *
+       * An event can legitimately be called anything, including something
+       * shaped like an instruction. The system prompt already says to treat
+       * it as data; the fence is what makes that boundary visible rather than
+       * a matter of the model's judgement about where a field ends.
+       */
+      messages: [
+        {
+          role: 'user',
+          content: `הפק רשימת משימות מומלצת לאירוע הבא.
 
 <פרטי_האירוע>
 שם: ${eventTitle}
@@ -186,50 +202,47 @@ export function createAiRouter(): Router {
 
 החזר JSON תקין בלבד, בלי טקסט לפניו או אחריו, במבנה:
 {"recommendedTasks":[{"title":"","description":"","priority":"low|medium|high|urgent","suggestedRole":""}],"strategicTips":[""]}`
-          }
-        ]
-      });
+        }
+      ]
+    });
 
-      /*
-       * What it actually cost, from the provider rather than from a guess.
-       *
-       * Recorded after the fact and never blocking: a failure to write the
-       * number must not fail a request the person already paid for.
-       */
-      void req.repo
-        .recordAiTokens(actor.id, response.usage?.input_tokens ?? 0, response.usage?.output_tokens ?? 0)
-        .catch(() => undefined);
+    /*
+     * What it actually cost, from the provider rather than from a guess.
+     *
+     * Recorded after the fact and never blocking: a failure to write the
+     * number must not fail a request the person already paid for.
+     */
+    void req.repo
+      .recordAiTokens(actor.id, response.usage?.input_tokens ?? 0, response.usage?.output_tokens ?? 0)
+      .catch(() => undefined);
 
-      const text = response.content
-        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-        .map((block) => block.text)
-        .join('')
-        .trim();
+    const text = response.content
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map((block) => block.text)
+      .join('')
+      .trim();
 
-      /*
-       * Validated, not trusted.
-       *
-       * A model asked for JSON usually returns JSON. "Usually" is not a
-       * contract, and the difference lands as a broken screen — so the reply
-       * goes through the same Zod schema everything else does. A malformed
-       * answer is a failed request, not a half-rendered list.
-       */
-      const data = suggestOutput.safeParse(JSON.parse(stripFence(text)));
-      if (!data.success || data.data.recommendedTasks.length === 0) {
-        throw new Error('unexpected shape');
-      }
-
-      return res.json({ aiGenerated: true, data: data.data });
-    } catch (err) {
-      console.error(JSON.stringify({ level: 'error', msg: 'ai_suggest_failed', error: String(err) }));
-      return res.status(502).json({
-        aiGenerated: false,
-        error: { code: 'AI_FAILED', message: 'ייצור ההצעות נכשל. נסה שוב או הוסף משימות ידנית.' }
-      });
+    /*
+     * Validated, not trusted.
+     *
+     * A model asked for JSON usually returns JSON. "Usually" is not a
+     * contract, and the difference lands as a broken screen — so the reply
+     * goes through the same Zod schema everything else does. A malformed
+     * answer is a failed request, not a half-rendered list.
+     */
+    const data = suggestOutput.safeParse(JSON.parse(stripFence(text)));
+    if (!data.success || data.data.recommendedTasks.length === 0) {
+      throw new Error('unexpected shape');
     }
-  });
 
-  return ai;
+    return res.json({ aiGenerated: true, data: data.data });
+  } catch (err) {
+    console.error(JSON.stringify({ level: 'error', msg: 'ai_suggest_failed', error: String(err) }));
+    return res.status(502).json({
+      aiGenerated: false,
+      error: { code: 'AI_FAILED', message: 'ייצור ההצעות נכשל. נסה שוב או הוסף משימות ידנית.' }
+    });
+  }
 }
 
 /** Models wrap JSON in a code fence often enough to be worth one line. */
