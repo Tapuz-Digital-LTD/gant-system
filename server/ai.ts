@@ -43,16 +43,21 @@ const suggestOutput = z.object({
 });
 
 /*
- * Haiku, not Sonnet.
+ * Sonnet, and the slower answer is the right trade.
  *
- * XTRA Sign runs Sonnet because its assistant reasons across tools and
- * approvals. This asks for six short lines of Hebrew in a fixed shape, which is
- * not the same job — and on Sonnet it took 22 seconds warm and 45 cold, which
- * is a person watching a spinner and deciding the feature is broken.
+ * Haiku was tried against production and is 2.3× faster — 9.6s against 22.6s.
+ * Its Hebrew was the problem: "הכן קרוואן שיווקי", "התאם גרוף משימות",
+ * "החליט היכן תשדרו". For a product whose whole premise is that a
+ * non-technical employee reads natural Hebrew and understands it immediately,
+ * a fast answer in broken Hebrew is worse than a slow one, because somebody has
+ * to rewrite every line before it is usable.
  *
- * Overridable, so a bad answer is a variable to change rather than a deploy.
+ * The speed came from the prompt instead: six tasks rather than ten, one
+ * sentence each rather than a paragraph, two tips at most.
+ *
+ * Overridable, so this is a variable to change and not a deploy.
  */
-export const AI_MODEL = process.env.GANTT_AI_MODEL ?? 'claude-haiku-4-5-20251001';
+export const AI_MODEL = process.env.GANTT_AI_MODEL ?? 'claude-sonnet-5';
 
 // Enough for six tasks and two tips in Hebrew, which is token-expensive. The
 // cap is a stop, not a target: the prompt asks for less than this.
