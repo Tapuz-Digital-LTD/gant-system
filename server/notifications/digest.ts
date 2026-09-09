@@ -45,9 +45,28 @@ export async function digestFor(
   });
 
   const mine = tasks.filter((t) => t.assigneeId === person.id).map(asReminderTask);
+
+  /*
+   * Campaign dates go to the people running that campaign.
+   *
+   * They used to go to everyone who could see the board, which is every member
+   * of staff — so on the morning of any go-live, all eight employees received
+   * the same email about an event none of them were working on. That is the
+   * flood that teaches an organisation to filter these into a folder.
+   *
+   * "Running it" means holding a task on it. Somebody who is watching a
+   * campaign without any of the work is watching, and can look.
+   *
+   * A manager who asked for the wider view still gets all of them: that is what
+   * they turned the setting on for.
+   */
+  const involved = new Set(tasks.filter((t) => t.assigneeId === person.id).map((t) => t.eventId));
+  const relevant =
+    prefs.managerScope === 'none' ? milestones.filter((m) => involved.has(m.eventId)) : milestones;
+
   const reminders = [
     ...remindersForTasks(mine, prefs, today),
-    ...remindersForMilestones(milestones, prefs, today)
+    ...remindersForMilestones(relevant, prefs, today)
   ];
 
   /*

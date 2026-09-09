@@ -450,6 +450,65 @@ assert.ok(actions.includes('archived'), 'archiving is recorded');
 const update = trail.find((a) => a.action === 'updated');
 assert.ok(update?.before && update?.after, 'the trail keeps both sides of a change');
 
+/*
+ * ---------- a campaign date is not everybody's news ----------
+ *
+ * Found by running the real job against production and reading what it sent:
+ * eight people, eight identical emails about a go-live on an event none of
+ * them were working on. A milestone reaches the people holding tasks on that
+ * campaign, and the managers who asked for the wider view.
+ */
+{
+  const { digestFor } = await import('../notifications/digest.ts');
+  const { DEFAULT_PREFS, readPrefs } = await import('../notifications/prefs.ts');
+
+  const [worker] = (
+    await pg.query<{ id: string }>(
+      `insert into users (email, name, role, is_guest) values ('worker@xtra.co.il', 'עובדת', 'editor', false) returning id`
+    )
+  ).rows;
+  const [bystander] = (
+    await pg.query<{ id: string }>(
+      `insert into users (email, name, role, is_guest) values ('bystander@xtra.co.il', 'עובד אחר', 'editor', false) returning id`
+    )
+  ).rows;
+
+  const soon = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const later = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+  const campaignBoard = await repo.createBoard({ name: 'לוח קמפיינים' }, null);
+  const campaign = await repo.createEvent(
+    campaignBoard.id,
+    { title: 'מבצע ראש השנה', actualDate: later, kickoffDate: soon, prepMonths: 1 },
+    null
+  );
+  await repo.createTask(campaign.id, { title: 'הכנת באנרים', assigneeId: worker.id }, null);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const forWorker = await digestFor(repo, { id: worker.id, isGuest: false }, DEFAULT_PREFS, today);
+  const forBystander = await digestFor(repo, { id: bystander.id, isGuest: false }, DEFAULT_PREFS, today);
+
+  assert.ok(
+    forWorker.reminders.some((r) => r.kind === 'milestone_soon'),
+    'the person doing the work is told the campaign date is coming'
+  );
+  assert.deepEqual(
+    forBystander.reminders.filter((r) => r.kind === 'milestone_soon'),
+    [],
+    'somebody with no task on it is not — that is the flood this prevents'
+  );
+
+  const forManager = await digestFor(
+    repo,
+    { id: bystander.id, isGuest: false },
+    readPrefs({ managerScope: 'all' }),
+    today
+  );
+  assert.ok(
+    forManager.reminders.some((r) => r.kind === 'milestone_soon'),
+    'unless they asked for the wider view, which is what that setting is for'
+  );
+}
+
 // ---------- what the assistant may cost in a day ----------
 {
   const [spender] = (
