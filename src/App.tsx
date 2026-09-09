@@ -35,6 +35,8 @@ import { AIAssistantModal } from './components/AIAssistantModal';
 import { ArchiveModal } from './components/ArchiveModal';
 import { SignIn } from './components/SignIn';
 import { fetchAuthConfig, fetchMe, authClient } from './services/auth';
+import { ApiError } from './services/api';
+import { focusFirstBadField } from './utils/fieldErrors';
 import { Button, useToast } from './components/ui';
 import { makeCan } from './hooks/useCan';
 import { NoPermission } from './components/NoPermission';
@@ -155,7 +157,16 @@ export default function App() {
       if (okMessage) notify('success', okMessage);
       return result;
     } catch (error) {
-      notify('error', describeError(error));
+      /*
+       * Say what is wrong, and go there.
+       *
+       * The server names the field it rejected. A message in the corner throws
+       * away the useful half — the person is told something is wrong and left
+       * to find it in a form that may be scrolled somewhere else entirely.
+       */
+      const details = error instanceof ApiError ? error.details : undefined;
+      const landed = focusFirstBadField(details);
+      notify('error', landed ? `${describeError(error)} — סימנתי לך את השדה` : describeError(error));
       return undefined;
     }
   };

@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx src/utils/csv.test.ts && tsx src/utils/filterEvents.test.ts && tsx src/data/milestones.test.ts && tsx src/utils/period.test.ts && tsx src/utils/routes.test.ts && tsx src/utils/notificationGroups.test.ts && tsx server/db/migrate.test.ts && tsx server/db/schema.test.ts && tsx server/notifications/reminders.test.ts && tsx server/notifications/milestone-labels.test.ts && tsx server/notifications/inforu.test.ts && tsx server/ai.test.ts && tsx server/db/repo.test.ts && tsx server/api.test.ts && tsx server/access.test.ts",
+    "test": "tsx src/utils/csv.test.ts && tsx src/utils/filterEvents.test.ts && tsx src/data/milestones.test.ts && tsx src/utils/period.test.ts && tsx src/utils/routes.test.ts && tsx src/utils/notificationGroups.test.ts && tsx server/db/migrate.test.ts && tsx server/db/schema.test.ts && tsx server/notifications/reminders.test.ts && tsx server/notifications/milestone-labels.test.ts && tsx server/notifications/inforu.test.ts && tsx server/ai.test.ts && tsx server/validation.test.ts && tsx server/db/repo.test.ts && tsx server/api.test.ts && tsx server/access.test.ts",
     "check": "npm run lint && npm run test && npm run build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx server/db/migrate-run.ts",

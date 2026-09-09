@@ -59,10 +59,38 @@ export const eventCreate = z
     note: z.string().trim().max(500).nullish(),
     description: z.string().trim().max(5000).nullish()
   })
-  .refine((v) => !v.kickoffDate || v.kickoffDate <= v.actualDate, {
-    message: 'תאריך העלייה לאוויר לא יכול להיות אחרי תאריך האירוע',
+  .refine((v) => kickoffFitsEvent(v.kickoffDate, v.actualDate, v.actualPrecision), {
+    message:
+      'תאריך העלייה לאוויר מאוחר מתאריך האירוע. אפשר להקדים את העלייה לאוויר, או לדחות את תאריך האירוע.',
     path: ['kickoffDate']
   });
+
+/*
+ * "During September" ends on the thirtieth, not on the first.
+ *
+ * A month-precision event is stored as the first of the month because a date
+ * column needs a day. Comparing a go-live against that day rejected every
+ * campaign going live after the 1st of its own month — which is most of them,
+ * and which is a legitimate plan the server was calling an error.
+ *
+ * So the comparison is against the last day the event could still happen. With
+ * a real day chosen, that is the day itself and the rule is unchanged.
+ */
+export function kickoffFitsEvent(
+  kickoffDate: string | null | undefined,
+  actualDate: string,
+  precision: 'day' | 'month' = 'day'
+): boolean {
+  if (!kickoffDate) return true;
+  return kickoffDate <= lastPossibleDay(actualDate, precision);
+}
+
+function lastPossibleDay(date: string, precision: 'day' | 'month'): string {
+  if (precision !== 'month') return date;
+  const [y, m] = date.split('-').map(Number);
+  // Day 0 of the next month is the last day of this one, leap years included.
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
 
 export const eventUpdate = z.object({
   title: trimmed(200).optional(),
@@ -77,7 +105,16 @@ export const eventUpdate = z.object({
   description: z.string().trim().max(5000).nullish(),
   /** Required for optimistic locking; a stale value gets 409. */
   version: z.number().int().positive()
-});
+}).refine(
+  // Only when the request actually carries both. A patch that touches neither
+  // date has nothing to disagree about.
+  (v) => v.actualDate === undefined || kickoffFitsEvent(v.kickoffDate, v.actualDate, v.actualPrecision),
+  {
+    message:
+      'תאריך העלייה לאוויר מאוחר מתאריך האירוע. אפשר להקדים את העלייה לאוויר, או לדחות את תאריך האירוע.',
+    path: ['kickoffDate']
+  }
+);
 
 export const taskCreate = z.object({
   title: trimmed(200),
