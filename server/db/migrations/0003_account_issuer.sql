@@ -1,1 +1,1 @@
-ALTER TABLE "accounts" ADD COLUMN "issuer" text;
+ALTER TABLE "accounts" ADD COLUMN IF NOT EXISTS "issuer" text;

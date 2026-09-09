@@ -1,4 +1,4 @@
-import { EventItem, FilterState, monthKeyOf } from '../types';
+import { EventItem, FilterState } from '../types';
 
 // One implementation for every view. Previously each of the four views carried
 // its own copy and honoured a different subset, so the same filter chip produced
@@ -18,17 +18,14 @@ function matchesSearch(ev: EventItem, query: string): boolean {
   return haystack.some((field) => field?.toLowerCase().includes(q));
 }
 
-/** An event matches a year if any of its three dates falls in it. */
-function matchesYear(ev: EventItem, year: string): boolean {
-  if (year === 'all') return true;
-  return [monthKeyOf(ev), ev.kickoffDate, ev.actualDate].some((d) => d?.startsWith(year));
-}
-
 export function filterEvents(events: EventItem[], filter: FilterState): EventItem[] {
   return events.filter((ev) => {
     if (!matchesSearch(ev, filter.search)) return false;
     if (filter.category !== 'all' && ev.category !== filter.category) return false;
-    if (!matchesYear(ev, filter.year)) return false;
+
+    // Time is not a filter any more. Which period is on screen is navigation,
+    // and the server already returns only what overlaps it; a second, invisible
+    // year filter on top of that was how events went missing.
 
     // Status and assignee describe tasks, so an event matches when any task does.
     if (filter.status !== 'all') {

@@ -7,8 +7,7 @@ export const authClient = createAuthClient({
 });
 
 export interface AuthConfig {
-  google: boolean;
-  emailOtp: boolean;
+  /** False means codes are only written to the server log, not emailed. */
   mailConfigured: boolean;
   staffDomain: string | null;
 }
@@ -27,6 +26,8 @@ export interface Me {
   isGuest: boolean;
   isOwner: boolean;
   role: 'admin' | 'editor' | 'viewer';
+  /** Israeli mobile, or null. Only ever this person's own. */
+  phone: string | null;
   /** Resolved on the server — the client never infers capability from the role. */
   permissions: string[];
 }

@@ -52,6 +52,25 @@
   --color-cat-operational: #0f9b8e;
   --color-cat-other: #7a8296;
 
+  /* --- milestones: the seven moments in an event's life.
+         Colour is never the only signal — an icon and a word always come with
+         it — but a distinct hue lets the eye group a timeline at a glance.
+         None of these is the action indigo; that stays reserved for buttons. --- */
+  --color-ms-workstart: #15803d;
+  --color-ms-workstart-soft: #e3f5e9;
+  --color-ms-review: #b45309;
+  --color-ms-review-soft: #fdf0dc;
+  --color-ms-freeze: #0e7490;
+  --color-ms-freeze-soft: #dff2f6;
+  --color-ms-kickoff: #e2445c;
+  --color-ms-kickoff-soft: #fdebed;
+  --color-ms-announce: #7c3aed;
+  --color-ms-announce-soft: #f0e9fe;
+  --color-ms-actual: #1a1f33;
+  --color-ms-actual-soft: #e9ebf2;
+  --color-ms-end: #6b7280;
+  --color-ms-end-soft: #eef0f6;
+
   /* --- type: comfortable. 12px is the floor, and it is metadata only. --- */
   --font-sans: 'Assistant', 'Rubik', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
@@ -150,5 +169,32 @@ time,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * A finger is not a mouse pointer.
+ *
+ * 36px is comfortable density under a cursor and a miss under a thumb — and
+ * the people this is built for are reading it on a phone, at arm's length,
+ * without much patience for a second attempt. Raised only where the pointer is
+ * actually coarse, so desktop density is untouched.
+ *
+ * Height only. Forcing a minimum WIDTH would stretch every pill to the width of
+ * the longest one and turn a tidy row of choices into a column of slabs.
+ */
+@media (pointer: coarse) {
+  button,
+  [role='button'],
+  select,
+  textarea,
+  input:not([type='checkbox']):not([type='radio']):not([type='range']) {
+    min-height: 44px;
+  }
+
+  /* Square by intent — an icon button or a day cell stays square. */
+  button.aspect-square,
+  [role='button'].aspect-square {
+    min-width: 44px;
   }
 }

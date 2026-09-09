@@ -2,6 +2,10 @@ import {
   GanttBoard,
   EventItem,
   TaskItem,
+  MyTask,
+  AppNotification,
+  NotificationPrefs,
+  DigestPreview,
   UserAccess,
   EventComment,
   ActivityEntry,
@@ -67,10 +71,16 @@ export interface EventInput {
   title: string;
   category?: EventCategory;
   status?: TaskStatus;
-  kickoffDate?: string | null;
   actualDate: string;
   actualPrecision?: DatePrecision;
   prepMonths?: number;
+  /* Milestones — every one optional, none derived from another. */
+  workStartDate?: string | null;
+  reviewDate?: string | null;
+  freezeDate?: string | null;
+  kickoffDate?: string | null;
+  announceDate?: string | null;
+  campaignEndDate?: string | null;
   note?: string | null;
   description?: string | null;
 }
@@ -114,10 +124,17 @@ export const api = {
     archive: (id: string) => request<void>(`/events/${id}`, { method: 'DELETE' }),
     listArchived: (boardId: string) => request<EventItem[]>(`/boards/${boardId}/archive`),
     restore: (id: string) => request<EventItem>(`/events/${id}/restore`, { method: 'POST' }),
+    /** Irreversible, and only for an event already in the archive. */
+    purge: (id: string) =>
+      request<{ id: string; title: string; taskCount: number }>(`/events/${id}/permanent`, {
+        method: 'DELETE'
+      }),
     activity: (id: string) => request<ActivityEntry[]>(`/events/${id}/activity`)
   },
 
   tasks: {
+    /** The signed-in person's own work, across every board they can reach. */
+    mine: () => request<MyTask[]>('/my/tasks'),
     create: (eventId: string, input: TaskInput) =>
       request<TaskItem>(`/events/${eventId}/tasks`, { method: 'POST', ...body(input) }),
     update: (id: string, version: number, changes: Partial<TaskInput>) =>
@@ -129,6 +146,24 @@ export const api = {
     list: (eventId: string) => request<EventComment[]>(`/events/${eventId}/comments`),
     create: (eventId: string, input: { body: string; taskId?: string | null }) =>
       request<EventComment>(`/events/${eventId}/comments`, { method: 'POST', ...body(input) })
+  },
+
+  notifications: {
+    list: () => request<{ items: AppNotification[]; unread: number }>('/notifications'),
+    prefs: () => request<NotificationPrefs>('/my/notification-prefs'),
+    savePrefs: (prefs: Partial<NotificationPrefs>) =>
+      request<NotificationPrefs>('/my/notification-prefs', { method: 'PUT', ...body(prefs) }),
+    /** What today's digest would say. Reads only; sends nothing. */
+    preview: () => request<DigestPreview>('/my/digest-preview'),
+    orgDefaults: () => request<Partial<NotificationPrefs>>('/settings/notification-defaults'),
+    saveOrgDefaults: (prefs: Partial<NotificationPrefs>) =>
+      request<Partial<NotificationPrefs>>('/settings/notification-defaults', { method: 'PUT', ...body(prefs) }),
+    markRead: (id?: string) =>
+      request<void>('/notifications/read', { method: 'POST', ...body(id ? { id } : {}) }),
+    remove: (id: string) => request<void>(`/notifications/${id}`, { method: 'DELETE' }),
+    /** Your own mobile. Normalised on the server, or refused there. */
+    savePhone: (phone: string | null) =>
+      request<{ phone: string | null }>('/my/phone', { method: 'PUT', ...body({ phone }) })
   },
 
   users: {

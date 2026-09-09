@@ -32,6 +32,20 @@ export const boardUpdate = boardCreate.partial().extend({
   archived: z.boolean().optional()
 });
 
+/**
+ * The optional milestones. Each is a day or nothing — never derived from a
+ * sibling, never required. Order between them is a warning shown to the person,
+ * not a rule enforced here: the business rules for it are not settled, and a
+ * server that rejects a legitimate plan is worse than one that lets it through.
+ */
+const milestones = {
+  workStartDate: isoDate.nullish(),
+  reviewDate: isoDate.nullish(),
+  freezeDate: isoDate.nullish(),
+  announceDate: isoDate.nullish(),
+  campaignEndDate: isoDate.nullish()
+};
+
 export const eventCreate = z
   .object({
     title: trimmed(200),
@@ -41,11 +55,12 @@ export const eventCreate = z
     actualDate: isoDate,
     actualPrecision: datePrecision.default('day'),
     prepMonths: z.number().int().min(0).max(12).default(0),
+    ...milestones,
     note: z.string().trim().max(500).nullish(),
     description: z.string().trim().max(5000).nullish()
   })
   .refine((v) => !v.kickoffDate || v.kickoffDate <= v.actualDate, {
-    message: 'תאריך תאריך התנעה לא יכול להיות אחרי תאריך אמת',
+    message: 'תאריך העלייה לאוויר לא יכול להיות אחרי תאריך האירוע',
     path: ['kickoffDate']
   });
 
@@ -57,6 +72,7 @@ export const eventUpdate = z.object({
   actualDate: isoDate.optional(),
   actualPrecision: datePrecision.optional(),
   prepMonths: z.number().int().min(0).max(12).optional(),
+  ...milestones,
   note: z.string().trim().max(500).nullish(),
   description: z.string().trim().max(5000).nullish(),
   /** Required for optimistic locking; a stale value gets 409. */
@@ -107,6 +123,9 @@ export const personUpdate = z.object({
   role: memberRole.optional()
 });
 
+/** Empty string clears it — a person taking their number back out is a save, not a delete. */
+export const phoneInput = z.object({ phone: z.string().trim().max(30).nullable() });
+
 export const boardGrant = z.object({
   userId: z.string().uuid(),
   role: boardRole.default('viewer')
@@ -121,3 +140,21 @@ export const permissionUpdate = z.object({
 });
 
 export const searchQuery = z.object({ q: z.string().trim().min(2, 'צריך לפחות 2 תווים').max(100) });
+
+/** Marking one as read, or all of them when no id is given. */
+export const notificationRead = z.object({
+  id: z.string().uuid().nullish()
+});
+
+/** Notification preferences, as a screen sends them. Values are clamped on read. */
+export const notificationPrefsInput = z.object({
+  email: z.enum(['digest', 'off']).optional(),
+  sms: z.enum(['off', 'urgent']).optional(),
+  digestHour: z.number().int().min(0).max(23).optional(),
+  digestDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  stalledAfterDays: z.number().int().min(0).max(30).optional(),
+  dueBeforeDays: z.number().int().min(0).max(14).optional(),
+  overdue: z.boolean().optional(),
+  milestoneBeforeDays: z.number().int().min(0).max(30).optional(),
+  managerScope: z.enum(['none', 'team', 'all']).optional()
+});

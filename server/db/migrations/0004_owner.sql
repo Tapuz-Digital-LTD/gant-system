@@ -1,1 +1,1 @@
-ALTER TABLE "users" ADD COLUMN "is_owner" boolean DEFAULT false NOT NULL;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "is_owner" boolean DEFAULT false NOT NULL;

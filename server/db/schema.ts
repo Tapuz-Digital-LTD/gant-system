@@ -48,6 +48,13 @@ export const users = pgTable(
     name: text('name').notNull(),
     /** Staff sign in with SSO; guests arrive through an invite and have no domain. */
     isGuest: boolean('is_guest').notNull().default(false),
+    /**
+     * Israeli mobile, stored as `05XXXXXXXX`.
+     *
+     * Optional for good: most people here never want a text message, and a
+     * required field only teaches them to invent a number.
+     */
+    phone: text('phone'),
     role: memberRole('role').notNull().default('editor'),
     /**
      * The account that owns the workspace. Cannot be removed or demoted by
@@ -115,14 +122,33 @@ export const events = pgTable(
      */
     status: eventStatus('status').notNull().default('todo'),
 
-    /** Optional milestone inside the work window, not its start. */
-    kickoffDate: date('kickoff_date'),
     /** When the event itself happens. Resolved from hebrewRule when one exists. */
     actualDate: date('actual_date').notNull(),
     actualPrecision: datePrecision('actual_precision').notNull().default('day'),
 
-    /** Months of preparation before actualDate. Defines the work window. */
+    /** Months of preparation before actualDate. Defines the work window's start
+     *  unless workStartDate says otherwise. */
     prepMonths: integer('prep_months').notNull().default(0),
+
+    /*
+     * Milestones. Every one is optional and day-precision, and none of them is
+     * ever invented from another: a null here means nobody knows the date, not
+     * that it can be derived. src/data/milestones.ts is the single description
+     * of what each one means and how it is drawn.
+     */
+
+    /** Overrides `actualDate - prepMonths` when the exact day is known. */
+    workStartDate: date('work_start_date'),
+    /** Checkpoint meeting: surface risks while there is still time. */
+    reviewDate: date('review_date'),
+    /** No more change requests from here on. Planning only — nothing is blocked. */
+    freezeDate: date('freeze_date'),
+    /** The campaign starts reaching customers. */
+    kickoffDate: date('kickoff_date'),
+    /** Internal announcement to the company. Not the same day as kickoff by rule. */
+    announceDate: date('announce_date'),
+    /** The campaign, and the calls about it, are over. Falls after actualDate. */
+    campaignEndDate: date('campaign_end_date'),
 
     /**
      * Hebrew-calendar anchor, e.g. {"hd":1,"hm":"Tishrei"} or {"holiday":"Rosh Hashana"}.
@@ -163,6 +189,8 @@ export const tasks = pgTable(
     status: taskStatus('status').notNull().default('todo'),
     priority: taskPriority('priority').notNull().default('medium'),
     assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
+    /** When it last changed hands. The clock a "not started yet" reminder uses. */
+    assignedAt: timestamp('assigned_at', { withTimezone: true }),
 
     /** Day-resolution range. Always civil, even when the parent event is Hebrew-anchored. */
     startDate: date('start_date'),
@@ -211,6 +239,70 @@ export const comments = pgTable(
   },
   (t) => [index('comments_event_idx').on(t.eventId, t.createdAt)]
 );
+
+/**
+ * What a person is told, inside the system.
+ *
+ * `dedupeKey` is the whole design. Every writer states what it is saying and
+ * about what — "this task is yours", "this one is late today" — and the unique
+ * index makes saying it twice impossible. A notification system does not become
+ * noise because it says too much; it becomes noise because it repeats.
+ *
+ * Recurring news puts a date in the key, so it can be said once a day and never
+ * more. One-off news leaves the date out, so it is said exactly once, ever.
+ */
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    body: text('body'),
+    /** Where clicking goes. A full in-app path, built when the row is written. */
+    link: text('link'),
+    entity: text('entity'),
+    entityId: uuid('entity_id'),
+    dedupeKey: text('dedupe_key').notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex('notifications_dedupe_idx').on(t.userId, t.dedupeKey),
+    index('notifications_inbox_idx').on(t.userId, t.readAt, t.createdAt)
+  ]
+);
+
+/**
+ * What one person wants to hear about, and how.
+ *
+ * Held as JSON rather than columns because these are preferences, not facts:
+ * they are read as a whole, written as a whole, and gain a key whenever a new
+ * kind of news is invented. `server/notifications/prefs.ts` is the shape, and
+ * reads it leniently — somebody who has never opened the settings screen has
+ * every default and nothing stored.
+ */
+export const notificationPrefs = pgTable('notification_prefs', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  prefs: jsonb('prefs').notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+/**
+ * The organisation's own defaults, edited by an admin.
+ *
+ * Exactly one row: the primary key is a boolean that may only be true, so a
+ * second row is a constraint violation rather than a bug nobody notices.
+ */
+export const workspaceSettings = pgTable('workspace_settings', {
+  id: boolean('id').primaryKey().default(true),
+  notificationDefaults: jsonb('notification_defaults').notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
 
 export const activity = pgTable(
   'activity',

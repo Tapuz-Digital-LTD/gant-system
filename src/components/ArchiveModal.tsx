@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArchiveRestore, Archive, Loader2, AlertCircle } from 'lucide-react';
+import { ArchiveRestore, Archive, Loader2, AlertCircle, Trash2, TriangleAlert } from 'lucide-react';
 import { api } from '../services/api';
 import { EventItem, isFloating } from '../types';
 import { formatDate } from '../utils/dateHelpers';
@@ -14,13 +14,17 @@ export function ArchiveModal({
   isOpen,
   onClose,
   boardId,
-  canEdit
+  canEdit,
+  canPurge
 }: {
   isOpen: boolean;
   onClose: () => void;
   boardId: string;
   canEdit: boolean;
+  /** Deleting for good is its own capability, off for editors by default. */
+  canPurge: boolean;
 }) {
+  const [confirming, setConfirming] = useState<string | null>(null);
   const qc = useQueryClient();
   const { notify } = useToast();
 
@@ -41,6 +45,17 @@ export function ArchiveModal({
     onError: (e) => notify('error', describeError(e))
   });
 
+  const purge = useMutation({
+    mutationFn: api.events.purge,
+    onSuccess: (result) => {
+      setConfirming(null);
+      qc.invalidateQueries({ queryKey: ['archive', boardId] });
+      qc.invalidateQueries({ queryKey: ['boards'] });
+      notify('success', `«${result.title}» נמחק לצמיתות`);
+    },
+    onError: (e) => notify('error', describeError(e))
+  });
+
   const items: EventItem[] = archived.data ?? [];
 
   return (
@@ -48,7 +63,11 @@ export function ArchiveModal({
       open={isOpen}
       onOpenChange={(o) => !o && onClose()}
       title="ארכיון"
-      description="כאן נמצאים אירועים שהעברת לארכיון. אפשר לשחזר אותם בכל זמן"
+      description={
+        canPurge
+          ? 'כאן נמצאים אירועים שהעברת לארכיון. אפשר לשחזר אותם, או למחוק לצמיתות'
+          : 'כאן נמצאים אירועים שהעברת לארכיון. אפשר לשחזר אותם בכל זמן'
+      }
       footer={
         <Button variant="secondary" onClick={onClose}>
           סגור
@@ -81,28 +100,85 @@ export function ArchiveModal({
         <ul className="flex flex-col gap-1.5">
           {items.map((ev) => {
             const cat = CATEGORY_META[ev.category];
+            const isConfirming = confirming === ev.id;
+
             return (
               <li
                 key={ev.id}
-                className="flex items-center gap-3 rounded-lg border border-line px-3 py-2.5"
+                className={cn(
+                  'flex flex-col gap-2 rounded-lg border px-3 py-2.5',
+                  isConfirming ? 'border-late bg-late-soft' : 'border-line'
+                )}
               >
-                <Dot className={cn('shrink-0', cat.dot)} />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-base font-semibold text-ink">{ev.title}</span>
-                  <span className="text-sm text-ink-tertiary tnum">
-                    {isFloating(ev) ? `${ev.actualDate.slice(0, 7)} · במהלך החודש` : formatDate(ev.actualDate)}
-                  </span>
+                <div className="flex items-center gap-3">
+                  <Dot className={cn('shrink-0', cat.dot)} />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-base font-semibold text-ink">{ev.title}</span>
+                    <span className="text-sm text-ink-tertiary tnum">
+                      {isFloating(ev) ? `${ev.actualDate.slice(0, 7)} · במהלך החודש` : formatDate(ev.actualDate)}
+                    </span>
+                  </div>
+
+                  {!isConfirming && canEdit && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => restore.mutate(ev.id)}
+                      disabled={restore.isPending || purge.isPending}
+                    >
+                      <ArchiveRestore className="h-5 w-5" />
+                      שחזור
+                    </Button>
+                  )}
+
+                  {!isConfirming && canPurge && (
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => setConfirming(ev.id)}
+                      disabled={restore.isPending || purge.isPending}
+                      aria-label={`מחק לצמיתות את ${ev.title}`}
+                    >
+                      <Trash2 className="h-5 w-5" />
+                      <span className="hidden sm:inline">מחק לצמיתות</span>
+                    </Button>
+                  )}
                 </div>
-                {canEdit && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => restore.mutate(ev.id)}
-                    disabled={restore.isPending}
-                  >
-                    <ArchiveRestore className="h-5 w-5" />
-                    שחזור
-                  </Button>
+
+                {/*
+                  The confirmation says what goes with it. "Are you sure?" is not
+                  a question anybody can answer — this one names the event and
+                  the things that disappear alongside it.
+                */}
+                {isConfirming && (
+                  <div className="flex flex-col gap-2 border-t border-late/30 pt-2">
+                    <div className="flex items-start gap-2">
+                      <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-late" aria-hidden="true" />
+                      <p className="text-base text-ink">
+                        למחוק את <b>«{ev.title}»</b> לצמיתות? יימחקו איתו גם המשימות והתגובות שלו.{' '}
+                        <b className="text-late">אי אפשר לשחזר.</b>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => purge.mutate(ev.id)}
+                        disabled={purge.isPending}
+                      >
+                        <Trash2 className="h-5 w-5" />
+                        {purge.isPending ? 'מוחק…' : 'כן, מחק לצמיתות'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setConfirming(null)}
+                        disabled={purge.isPending}
+                      >
+                        ביטול
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </li>
             );

@@ -12,6 +12,7 @@ export const PERMISSIONS = [
   { key: 'event.edit', label: 'עריכת אירועים', group: 'אירועים' },
   { key: 'event.delete', label: 'מחיקת אירועים', group: 'אירועים' },
   { key: 'event.restore', label: 'שחזור מהארכיון', group: 'אירועים' },
+  { key: 'event.purge', label: 'מחיקה סופית מהארכיון (אין שחזור)', group: 'אירועים' },
 
   { key: 'task.create', label: 'הוספת משימות', group: 'משימות' },
   { key: 'task.edit', label: 'עריכת משימות ושינוי סטטוס', group: 'משימות' },
@@ -19,10 +20,10 @@ export const PERMISSIONS = [
 
   { key: 'comment.create', label: 'כתיבת תגובות', group: 'תקשורת' },
 
-  { key: 'board.create', label: 'יצירת בחר לוח', group: 'בחר לוח' },
-  { key: 'board.edit', label: 'שנה שם ותיאור של לוח', group: 'בחר לוח' },
-  { key: 'board.duplicate', label: 'שכפול בחר לוח', group: 'בחר לוח' },
-  { key: 'board.delete', label: 'מחיקת בחר לוח', group: 'בחר לוח' },
+  { key: 'board.create', label: 'יצירת לוח', group: 'לוחות' },
+  { key: 'board.edit', label: 'שנה שם ותיאור של לוח', group: 'לוחות' },
+  { key: 'board.duplicate', label: 'שכפול לוח', group: 'לוחות' },
+  { key: 'board.delete', label: 'מחיקת לוח', group: 'לוחות' },
 
   { key: 'export.run', label: 'הורדה והדפסה לאקסל וגיבוי', group: 'נתונים' },
   { key: 'activity.view', label: 'צפייה בלבד ביומן הפעילות', group: 'נתונים' },
@@ -42,6 +43,9 @@ export const DEFAULTS: Record<Role, PermissionKey[]> = {
     'event.edit',
     'event.delete',
     'event.restore',
+    // 'event.purge' is deliberately absent: an editor may archive, and an
+    // archive that anyone can empty is not an archive. An admin can grant it.
+
     'task.create',
     'task.edit',
     'task.delete',

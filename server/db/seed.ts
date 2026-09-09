@@ -19,7 +19,7 @@ const db = await initDb();
 
 const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(boards);
 if (count > 0 && !force) {
-  console.error(`בסיס הנתונים כבר מכיל ${count} בחר לוח. הרץ עם --force כדי לדרוס.`);
+  console.error(`בסיס הנתונים כבר מכיל ${count} לוחות. הרץ עם --force כדי לדרוס.`);
   await closeDb();
   process.exit(1);
 }
@@ -57,7 +57,7 @@ await db.transaction(async (tx) => {
 });
 
 console.log(
-  `נטענו: ${rows.boards.length} בחר לוח · ${rows.events.length} אירועים · ` +
+  `נטענו: ${rows.boards.length} לוחות · ${rows.events.length} אירועים · ` +
     `${rows.tasks.length} משימות · ${rows.users.length} אנשים`
 );
 if (warnings.length) console.log(`${warnings.length} אזהרות (ראה migrate.test.ts לפירוט)`);

@@ -1,28 +1,25 @@
-import nodemailer from 'nodemailer';
+import { sendEmail, deliveryMode } from './notifications/inforu.js';
 
 /**
  * Sending a sign-in code.
  *
- * Two supported transports, checked in this order:
+ * One provider, Inforu, for every message this system sends. There is no SMTP
+ * fallback and no second mail service: a fallback nobody tests is a path that
+ * fails on the day the first one does, and two providers means two sender
+ * reputations, two quotas and two places to look when a code does not arrive.
  *
- *  1. SMTP (SMTP_USER + SMTP_PASS) — sends from a mailbox you already own, so
- *     it needs no DNS changes. With Gmail this means an App Password.
- *  2. Resend (RESEND_API_KEY) — needs a verified domain, but scales properly.
+ * A sign-in code has its own switch, separate from the reminders one, because
+ * the two carry different risk. Somebody staring at the login screen asked for
+ * this message thirty seconds ago; a reminder at eight in the morning did not.
+ * Turning on login mail must not turn on everything else, and vice versa.
  *
- * With neither configured the code is logged and the sign-in screen says so.
- * It never claims a mail went out that didn't.
+ * With the switch off the code is written to the log and the sign-in screen
+ * says so plainly. It never claims a mail went out that did not.
  */
 
-type Transport = 'smtp' | 'resend' | 'none';
-
-function activeTransport(): Transport {
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) return 'smtp';
-  if (process.env.RESEND_API_KEY) return 'resend';
-  return 'none';
-}
-
+/** True when a real sign-in email would actually leave the building. */
 export function isMailConfigured(): boolean {
-  return activeTransport() !== 'none';
+  return deliveryMode() !== 'unconfigured' && process.env.GANTT_AUTH_SEND === 'true';
 }
 
 function codeEmail(code: string): string {
@@ -44,91 +41,35 @@ function codeEmail(code: string): string {
 </body></html>`;
 }
 
-let smtp: nodemailer.Transporter | undefined;
-
-function smtpTransport(): nodemailer.Transporter {
-  if (smtp) return smtp;
-  const port = Number(process.env.SMTP_PORT ?? 465);
-  smtp = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
-    port,
-    secure: port === 465,
-    auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASS! },
-    // Reuse one connection: opening a fresh session per message is what makes
-    // Gmail drop the handshake ("Greeting never received") under quick bursts.
-    pool: true,
-    maxConnections: 1,
-    maxMessages: 50,
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout: 20_000
-  });
-  return smtp;
-}
-
-/**
- * A dropped SMTP handshake is transient and common. Retrying once — on a fresh
- * connection — is the difference between a person getting their code and being
- * locked out for no reason.
- */
-async function sendWithRetry(message: nodemailer.SendMailOptions): Promise<void> {
-  try {
-    await smtpTransport().sendMail(message);
-  } catch (first) {
-    console.warn(JSON.stringify({ level: 'warn', msg: 'smtp_retry', error: String(first) }));
-    smtp?.close();
-    smtp = undefined;
-    await new Promise((r) => setTimeout(r, 700));
-    await smtpTransport().sendMail(message);
-  }
-}
-
-function fromAddress(): string {
-  if (process.env.MAIL_FROM) return process.env.MAIL_FROM;
-  if (process.env.SMTP_USER) return `XTRA <${process.env.SMTP_USER}>`;
-  return 'XTRA <onboarding@resend.dev>';
-}
-
 export async function sendSignInCode(email: string, code: string): Promise<void> {
-  const subject = `${code} — קוד הכניסה שלך`;
-  const html = codeEmail(code);
-
-  switch (activeTransport()) {
-    case 'smtp':
-      await sendWithRetry({ from: fromAddress(), to: email, subject, html });
-      return;
-
-    case 'resend': {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ from: fromAddress(), to: [email], subject, html })
-      });
-      if (!res.ok) {
-        const detail = await res.text();
-        console.error(JSON.stringify({ level: 'error', msg: 'otp_email_failed', status: res.status, detail }));
-        throw new Error('failed to send sign-in code');
-      }
-      return;
-    }
-
-    default:
-      console.log(JSON.stringify({ level: 'warn', msg: 'otp_not_emailed', email, code }));
+  if (!isMailConfigured()) {
+    /*
+     * Not sent, and said so.
+     *
+     * Printed at `warn` and unmissably, because a developer who misses this
+     * line spends the next twenty minutes looking in a mailbox.
+     */
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        msg: 'signin_code_not_sent',
+        reason: deliveryMode() === 'unconfigured' ? 'inforu_not_configured' : 'GANTT_AUTH_SEND!=true',
+        email,
+        code
+      })
+    );
+    return;
   }
-}
 
-/** Proves the configured transport can actually send, before people depend on it. */
-export async function verifyMailTransport(): Promise<{ transport: Transport; ok: boolean; error?: string }> {
-  const transport = activeTransport();
-  if (transport === 'none') return { transport, ok: false, error: 'no transport configured' };
-  if (transport === 'resend') return { transport, ok: true };
-  try {
-    await smtpTransport().verify();
-    return { transport, ok: true };
-  } catch (err) {
-    return { transport, ok: false, error: String(err) };
-  }
+  const result = await sendEmail({
+    to: email,
+    subject: `${code} — קוד הכניסה שלך`,
+    html: codeEmail(code),
+    text: `קוד הכניסה שלך לתכנון האירועים: ${code}. תקף ל-10 דקות.`
+  });
+
+  // Thrown, not swallowed: better-auth turns this into "we could not send the
+  // code", which is true, than into a screen that says to check an inbox that
+  // will stay empty.
+  if (!result.ok) throw new Error(`sign-in code not sent: ${result.error ?? 'unknown'}`);
 }

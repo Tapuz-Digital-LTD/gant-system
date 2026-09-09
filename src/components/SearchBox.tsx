@@ -61,7 +61,7 @@ export function SearchBox({
   };
 
   return (
-    <div ref={boxRef} className="relative">
+    <div ref={boxRef} className="relative min-w-0 flex-1 sm:flex-none">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -69,7 +69,7 @@ export function SearchBox({
         }}
         className="flex items-center gap-1.5"
       >
-        <div className="relative w-48 sm:w-64">
+        <div className="relative w-full sm:w-64">
           <Search
             className="pointer-events-none absolute inset-y-0 start-3 my-auto h-5 w-5 text-ink-tertiary"
             aria-hidden="true"

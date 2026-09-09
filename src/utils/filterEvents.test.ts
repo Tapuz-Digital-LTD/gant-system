@@ -8,9 +8,7 @@ const base: FilterState = {
   category: 'all',
   status: 'all',
   assignee: 'all',
-  showKickoffs: true,
-  showActuals: true,
-  year: 'all'
+  hiddenMilestones: []
 };
 
 const DANA = '00000000-0000-4000-8000-00000000dana'.slice(0, 36);
@@ -24,6 +22,7 @@ const task = (over: Partial<TaskItem> = {}): TaskItem => ({
   status: 'todo',
   priority: 'medium',
   assigneeId: DANA,
+  assignedAt: null,
   startDate: null,
   endDate: null,
   dueDate: null,
@@ -39,10 +38,15 @@ const event = (over: Partial<EventItem> = {}): EventItem => ({
   title: 'ראש השנה',
   category: 'holiday',
   status: 'todo',
-  kickoffDate: '2026-08-15',
   actualDate: '2026-09-11',
   actualPrecision: 'day',
   prepMonths: 4,
+  workStartDate: null,
+  reviewDate: null,
+  freezeDate: null,
+  kickoffDate: '2026-08-15',
+  announceDate: null,
+  campaignEndDate: null,
   note: 'שיתוף פעולה עם ועדי עובדים',
   description: 'קמפיין תווי שי לחג',
   tasks: [],
@@ -79,13 +83,13 @@ assert.deepEqual(
 assert.deepEqual(only([event()], { category: 'holiday' }), ['e1']);
 assert.deepEqual(only([event()], { category: 'social' }), []);
 
-// --- year: the regression that made views disagree ---
-assert.deepEqual(only([event()], { year: '2026' }), ['e1'], 'matches via the derived month key');
-assert.deepEqual(only([event()], { year: '2027' }), [], 'wrong year excluded');
+// --- time is navigation, not a filter ---
+// The year filter used to live here. It hid events that the period on screen
+// was showing, which is how the same board looked different on two tabs.
 assert.deepEqual(
-  only([event({ actualDate: '2027-01-05', kickoffDate: null })], { year: '2027' }),
+  only([event({ actualDate: '2031-01-05' })], {}),
   ['e1'],
-  'an event dated in the new year matches it'
+  'an event far outside any period is still a match; which period is on screen is the caller\'s business'
 );
 
 // --- status / assignee: event matches when any task matches ---
@@ -102,8 +106,8 @@ assert.deepEqual(only([event()], { status: 'done' }), [], 'taskless event fails 
 assert.deepEqual(only([event()], { assignee: DANA }), [], 'taskless event fails assignee filter');
 
 // --- filters combine with AND ---
-assert.deepEqual(only([withTasks], { category: 'holiday', year: '2026', status: 'done' }), ['e1']);
-assert.deepEqual(only([withTasks], { category: 'social', year: '2026', status: 'done' }), []);
+assert.deepEqual(only([withTasks], { category: 'holiday', status: 'done' }), ['e1']);
+assert.deepEqual(only([withTasks], { category: 'social', status: 'done' }), []);
 
 // --- input safety ---
 assert.deepEqual(only([event({ tasks: undefined as unknown as TaskItem[] })], { search: 'ראש' }), ['e1'], 'missing tasks array must not throw');

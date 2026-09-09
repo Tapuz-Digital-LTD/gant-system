@@ -1,6 +1,8 @@
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './client.js';
-import { boards, boardMembers, events, tasks, checklistItems, comments, users, activity, rolePermissions } from './schema.js';
+import { boards, boardMembers, events, tasks, checklistItems, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions } from './schema.js';
+import { DEFAULT_PREFS, readPrefs, type NotificationPrefs } from '../notifications/prefs.js';
+import { MILESTONE_LABELS } from '../notifications/milestone-labels.js';
 import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permissions.js';
 
 /** Thrown when a write carries a stale `version`. Routes turn this into 409. */
@@ -139,10 +141,15 @@ export function createRepo(db: Database) {
               title: ev.title,
               category: ev.category,
               status: ev.status,
-              kickoffDate: ev.kickoffDate,
               actualDate: ev.actualDate,
               actualPrecision: ev.actualPrecision,
               prepMonths: ev.prepMonths,
+              workStartDate: ev.workStartDate,
+              reviewDate: ev.reviewDate,
+              freezeDate: ev.freezeDate,
+              kickoffDate: ev.kickoffDate,
+              announceDate: ev.announceDate,
+              campaignEndDate: ev.campaignEndDate,
               hebrewRule: ev.hebrewRule,
               note: ev.note,
               description: ev.description,
@@ -188,11 +195,25 @@ export function createRepo(db: Database) {
 
     /**
      * The windowed read the whole product depends on: one board, one date range.
-     * An event is in the window when its work window overlaps it — the bar spans
-     * `actual_date - prep_months` to `actual_date`, so a long prep period must
-     * still appear in months where no date literally falls.
+     *
+     * An event belongs to the window when *anything about it* overlaps: the work
+     * window, any milestone, or the campaign tail that runs past the event date.
+     * Filtering on `actual_date` alone used to drop an event whose go-live day
+     * was on screen but whose event date was not — it vanished with no message,
+     * which reads as data loss rather than as a filter.
+     *
+     * LEAST and GREATEST ignore NULLs, so an unset milestone simply does not
+     * widen the span.
      */
     async listEvents(boardId: string, from: string, to: string) {
+      const spanStart = sql`least(
+        coalesce(${events.workStartDate},
+                 (${events.actualDate} - make_interval(months => ${events.prepMonths}))::date),
+        ${events.reviewDate}, ${events.freezeDate},
+        ${events.kickoffDate}, ${events.announceDate}
+      )`;
+      const spanEnd = sql`greatest(${events.actualDate}, ${events.campaignEndDate})`;
+
       const rows = await db
         .select()
         .from(events)
@@ -200,8 +221,8 @@ export function createRepo(db: Database) {
           and(
             eq(events.boardId, boardId),
             isNull(events.archivedAt),
-            lte(sql`${events.actualDate} - make_interval(months => ${events.prepMonths})`, to),
-            gte(events.actualDate, from)
+            lte(spanStart, to),
+            gte(spanEnd, from)
           )
         )
         .orderBy(asc(events.actualDate));
@@ -368,6 +389,39 @@ export function createRepo(db: Database) {
         .limit(200);
     },
 
+    /**
+     * Deletes an event for good, with its tasks, checklists and comments — the
+     * schema cascades those. Only from the archive: an event has to be archived
+     * first, so nothing can be erased in a single click from the calendar.
+     *
+     * The activity row survives, because `activity.entity_id` is a plain column
+     * and not a foreign key: who removed what, and the whole row as it was, are
+     * still in the database afterwards.
+     *
+     * They are not reachable over the API, though. `GET /events/:id/activity`
+     * decides board access by looking the event up, so once the event is gone
+     * the route answers 404. Reading a deleted event's history needs either a
+     * board-level activity route or a look at the table directly. Nobody has
+     * asked for one yet; this note is here so the next person is not surprised.
+     */
+    async purgeEvent(id: string, actorId: string | null) {
+      const [before] = await db.select().from(events).where(eq(events.id, id));
+      if (!before) throw new NotFoundError('לא מצאנו את האירוע. ייתכן שכבר נמחק');
+      if (!before.archivedAt) {
+        throw new ConflictExistsError('אפשר למחוק לצמיתות רק אירוע שנמצא בארכיון');
+      }
+
+      const [{ tasks: taskCount }] = await db
+        .select({ tasks: sql<number>`count(*)::int` })
+        .from(tasks)
+        .where(eq(tasks.eventId, id));
+
+      // Logged before the delete: afterwards there is nothing left to describe.
+      await log(db, actorId, 'event', id, 'purged', { ...before, taskCount }, null);
+      await db.delete(events).where(eq(events.id, id));
+      return { id, title: before.title, taskCount };
+    },
+
     async restoreEvent(id: string, actorId: string | null) {
       const [row] = await db
         .update(events)
@@ -445,6 +499,321 @@ export function createRepo(db: Database) {
 
     // ---------------- tasks ----------------
 
+    /**
+     * One person's work, across every board they can reach.
+     *
+     * A task on its own says little — "עיצוב באנרים" is meaningless without the
+     * event it belongs to and when that event happens. So the event and the
+     * board come back with it, and the caller never has to fetch them again.
+     *
+     * `boardIds` is null for staff (every board) and a list for a guest. It is
+     * the same scope the board list uses, so nobody sees work on a board they
+     * could not open.
+     */
+    async listTasksForAssignee(assigneeId: string, boardIds: string[] | null) {
+      if (boardIds && boardIds.length === 0) return [];
+
+      const rows = await db
+        .select({
+          id: tasks.id,
+          eventId: tasks.eventId,
+          title: tasks.title,
+          description: tasks.description,
+          status: tasks.status,
+          priority: tasks.priority,
+          assigneeId: tasks.assigneeId,
+          assignedAt: tasks.assignedAt,
+          startDate: tasks.startDate,
+          endDate: tasks.endDate,
+          dueDate: tasks.dueDate,
+          position: tasks.position,
+          completedAt: tasks.completedAt,
+          version: tasks.version,
+          eventTitle: events.title,
+          eventDate: events.actualDate,
+          eventPrecision: events.actualPrecision,
+          boardId: events.boardId,
+          boardName: boards.name
+        })
+        .from(tasks)
+        .innerJoin(events, eq(tasks.eventId, events.id))
+        .innerJoin(boards, eq(events.boardId, boards.id))
+        .where(
+          and(
+            eq(tasks.assigneeId, assigneeId),
+            // Work on something archived is not work anybody should be chased for.
+            isNull(events.archivedAt),
+            isNull(boards.archivedAt),
+            boardIds ? inArray(events.boardId, boardIds) : undefined
+          )
+        )
+        // Undated work sorts last: a task with a date is the one that can be late.
+        .orderBy(sql`${tasks.dueDate} asc nulls last`, asc(tasks.position));
+
+      return rows;
+    },
+
+    // ---------------- notification settings ----------------
+
+    /** The organisation's defaults, under which every person's own choices sit. */
+    async workspaceNotificationDefaults(): Promise<Partial<NotificationPrefs>> {
+      const [row] = await db.select().from(workspaceSettings).limit(1);
+      return row ? readPrefs(row.notificationDefaults) : {};
+    },
+
+    async saveWorkspaceNotificationDefaults(prefs: Partial<NotificationPrefs>, actorId: string | null) {
+      const clean = readPrefs(prefs);
+      await db
+        .insert(workspaceSettings)
+        .values({ id: true, notificationDefaults: clean })
+        .onConflictDoUpdate({
+          target: workspaceSettings.id,
+          set: { notificationDefaults: clean, updatedAt: new Date() }
+        });
+      await log(db, actorId, 'settings', actorId ?? 'workspace', 'notifications_updated', null, clean);
+      return clean;
+    },
+
+    /**
+     * One person's settings: the defaults, with the organisation's opinion on
+     * top of those, with their own choices on top of that.
+     */
+    async notificationPrefsFor(userId: string): Promise<NotificationPrefs> {
+      const [orgDefaults, [row]] = await Promise.all([
+        this.workspaceNotificationDefaults(),
+        db.select().from(notificationPrefs).where(eq(notificationPrefs.userId, userId)).limit(1)
+      ]);
+      return readPrefs(row?.prefs, orgDefaults);
+    },
+
+    async saveNotificationPrefs(userId: string, prefs: Partial<NotificationPrefs>) {
+      const orgDefaults = await this.workspaceNotificationDefaults();
+      const clean = readPrefs(prefs, orgDefaults);
+      await db
+        .insert(notificationPrefs)
+        .values({ userId, prefs: clean })
+        .onConflictDoUpdate({
+          target: notificationPrefs.userId,
+          set: { prefs: clean, updatedAt: new Date() }
+        });
+      return clean;
+    },
+
+    /** Everybody the daily job has to consider. Guests included: they own work too. */
+    async peopleForDigest() {
+      return db
+        .select({ id: users.id, name: users.name, email: users.email, role: users.role, isGuest: users.isGuest })
+        .from(users);
+    },
+
+    /**
+     * Campaign dates coming up on the boards this person can reach.
+     *
+     * The columns are unpivoted here rather than in SQL: six nullable dates on
+     * one row is a shape the database is bad at reshaping and TypeScript is
+     * good at.
+     */
+    async upcomingMilestones(boardIds: string[] | null, from: string, to: string) {
+      if (boardIds && boardIds.length === 0) return [];
+
+      const rows = await db
+        .select()
+        .from(events)
+        .where(
+          and(
+            isNull(events.archivedAt),
+            boardIds ? inArray(events.boardId, boardIds) : undefined,
+            sql`least(${events.reviewDate}, ${events.freezeDate}, ${events.kickoffDate},
+                      ${events.announceDate}, ${events.campaignEndDate}) <= ${to}`,
+            sql`greatest(${events.reviewDate}, ${events.freezeDate}, ${events.kickoffDate},
+                         ${events.announceDate}, ${events.campaignEndDate}) >= ${from}`
+          )
+        );
+
+      return rows.flatMap((event) =>
+        MILESTONE_LABELS.flatMap((meta) => {
+          const date = event[meta.field];
+          if (!date || date < from || date > to) return [];
+          return [
+            {
+              eventId: event.id,
+              eventTitle: event.title,
+              eventDate: event.actualDate,
+              boardId: event.boardId,
+              key: meta.key,
+              label: meta.short,
+              date
+            }
+          ];
+        })
+      );
+    },
+
+    /** Every live task on the boards given, with its owner. For the daily job. */
+    async liveTasksForDigest(boardIds: string[] | null) {
+      if (boardIds && boardIds.length === 0) return [];
+
+      return db
+        .select({
+          id: tasks.id,
+          title: tasks.title,
+          status: tasks.status,
+          dueDate: tasks.dueDate,
+          assigneeId: tasks.assigneeId,
+          assignedAt: tasks.assignedAt,
+          eventId: events.id,
+          eventTitle: events.title,
+          eventDate: events.actualDate,
+          boardId: events.boardId
+        })
+        .from(tasks)
+        .innerJoin(events, eq(tasks.eventId, events.id))
+        .innerJoin(boards, eq(events.boardId, boards.id))
+        .where(
+          and(
+            sql`${tasks.status} <> 'done'`,
+            isNotNull(tasks.assigneeId),
+            isNull(events.archivedAt),
+            isNull(boards.archivedAt),
+            boardIds ? inArray(events.boardId, boardIds) : undefined
+          )
+        );
+    },
+
+    // ---------------- notifications ----------------
+
+    /**
+     * Tells one person one thing, once.
+     *
+     * The unique index on (user, dedupeKey) does the work: a caller states what
+     * it is saying and about what, and a second attempt is silently dropped.
+     * Callers do not check first and then write — that race is exactly how
+     * duplicates appear under load.
+     *
+     * Never throws. Failing to record the news must not undo the thing that
+     * happened.
+     */
+    async notify(input: {
+      userId: string;
+      kind: string;
+      title: string;
+      body?: string | null;
+      link?: string | null;
+      entity?: string | null;
+      entityId?: string | null;
+      dedupeKey: string;
+    }): Promise<boolean> {
+      try {
+        const rows = await db
+          .insert(notifications)
+          .values({
+            userId: input.userId,
+            kind: input.kind,
+            title: input.title,
+            body: input.body ?? null,
+            link: input.link ?? null,
+            entity: input.entity ?? null,
+            entityId: input.entityId ?? null,
+            dedupeKey: input.dedupeKey
+          })
+          .onConflictDoNothing()
+          .returning({ id: notifications.id });
+        return rows.length > 0;
+      } catch (err) {
+        console.error(JSON.stringify({ level: 'warn', msg: 'notify_failed', kind: input.kind, error: String(err) }));
+        return false;
+      }
+    },
+
+    async listNotifications(userId: string, limit = 40) {
+      const rows = await db
+        .select()
+        .from(notifications)
+        .where(eq(notifications.userId, userId))
+        .orderBy(sql`${notifications.createdAt} desc`)
+        .limit(limit);
+
+      const [counted] = await db
+        .select({ unread: sql<number>`count(*)::int` })
+        .from(notifications)
+        .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+
+      return { items: rows, unread: counted?.unread ?? 0 };
+    },
+
+    /** One, or all of them. Always scoped to the person asking. */
+    async markNotificationsRead(userId: string, id?: string) {
+      await db
+        .update(notifications)
+        .set({ readAt: new Date() })
+        .where(
+          id
+            ? and(eq(notifications.userId, userId), eq(notifications.id, id))
+            : and(eq(notifications.userId, userId), isNull(notifications.readAt))
+        );
+    },
+
+    /** Notifications are news, not records. A person may throw one away. */
+    async deleteNotification(userId: string, id: string) {
+      await db
+        .delete(notifications)
+        .where(and(eq(notifications.userId, userId), eq(notifications.id, id)));
+    },
+
+    /**
+     * Where a task lives, in words and as a link — what a notification about it
+     * has to say to be worth opening.
+     */
+    async taskContext(taskId: string) {
+      const [row] = await db
+        .select({
+          taskTitle: tasks.title,
+          dueDate: tasks.dueDate,
+          eventId: events.id,
+          eventTitle: events.title,
+          eventDate: events.actualDate,
+          boardId: events.boardId,
+          boardName: boards.name
+        })
+        .from(tasks)
+        .innerJoin(events, eq(tasks.eventId, events.id))
+        .innerJoin(boards, eq(events.boardId, boards.id))
+        .where(eq(tasks.id, taskId));
+      return row ?? null;
+    },
+
+    /**
+     * "This task is yours now."
+     *
+     * Called only where the owner actually changed. Saving a task without
+     * touching its owner says nothing, which is the difference between a
+     * notification somebody reads and one they learn to ignore.
+     *
+     * Assigning work to yourself is not news, so it is not sent.
+     */
+    async notifyAssignment(taskId: string, assigneeId: string, actorId: string | null) {
+      if (assigneeId === actorId) return false;
+
+      const ctx = await this.taskContext(taskId);
+      if (!ctx) return false;
+
+      // The campaign and the deadline. The board name is org structure, and it
+      // was pushing the one actionable part of the line off the end.
+      const due = ctx.dueDate ? ` · עד ${ctx.dueDate.split('-').reverse().join('.')}` : '';
+      return this.notify({
+        userId: assigneeId,
+        kind: 'task_assigned',
+        title: `משימה חדשה: ${ctx.taskTitle}`,
+        body: `${ctx.eventTitle}${due}`,
+        link: `/b/${ctx.boardId}/calendar?d=${ctx.eventDate}&e=${ctx.eventId}`,
+        entity: 'task',
+        entityId: taskId,
+        // No date in the key: being handed a task is said once, ever. Handing
+        // it away and back does not make it news again.
+        dedupeKey: `task_assigned:${taskId}:${assigneeId}`
+      });
+    },
+
     async createTask(eventId: string, input: Omit<NewTask, 'eventId'>, actorId: string | null) {
       const [event] = await db.select({ id: events.id }).from(events).where(eq(events.id, eventId));
       if (!event) throw new NotFoundError('לא מצאנו את האירוע. רענן את הדף ונסה שוב');
@@ -456,9 +825,16 @@ export function createRepo(db: Database) {
 
       const [row] = await db
         .insert(tasks)
-        .values({ ...input, eventId, position: next })
+        .values({
+          ...input,
+          eventId,
+          position: next,
+          assignedAt: input.assigneeId ? new Date() : null
+        })
         .returning();
       await log(db, actorId, 'task', row.id, 'created', null, row);
+
+      if (row.assigneeId) await this.notifyAssignment(row.id, row.assigneeId, actorId);
       return row;
     },
 
@@ -479,15 +855,37 @@ export function createRepo(db: Database) {
             ? (before.completedAt ?? new Date())
             : null;
 
+      // The handover clock restarts only on a real handover, so a task edited
+      // ten times still counts its days from when somebody was given it.
+      const assignedAt =
+        changes.assigneeId === undefined || changes.assigneeId === before.assigneeId
+          ? before.assignedAt
+          : changes.assigneeId
+            ? new Date()
+            : null;
+
       const [row] = await db
         .update(tasks)
-        .set({ ...changes, completedAt, version: before.version + 1, updatedAt: new Date() })
+        .set({ ...changes, assignedAt, completedAt, version: before.version + 1, updatedAt: new Date() })
         .where(and(eq(tasks.id, id), eq(tasks.version, version)))
         .returning();
 
       if (!row) throw new ConflictError(before.version);
 
       await log(db, actorId, 'task', id, 'updated', before, row);
+
+      /*
+       * Only a real change of hands.
+       *
+       * The unique index already stops a second copy while the first still
+       * exists — but a person may throw a notification away, and then nothing
+       * in the database prevents the same news being written again. Without
+       * this check, every later save of the task would put it back in their
+       * inbox, which is exactly how an inbox becomes something people ignore.
+       */
+      if (row.assigneeId && row.assigneeId !== before.assigneeId) {
+        await this.notifyAssignment(id, row.assigneeId, actorId);
+      }
       return row;
     },
 
@@ -541,6 +939,16 @@ export function createRepo(db: Database) {
         .from(users)
         .where(isNull(users.deletedAt))
         .orderBy(asc(users.name));
+    },
+
+    /** Somebody's own number, normalised by the caller or cleared outright. */
+    async saveOwnPhone(userId: string, phone: string | null) {
+      const [row] = await db
+        .update(users)
+        .set({ phone, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .returning({ phone: users.phone });
+      return row ?? { phone: null };
     },
 
     async findUserByEmail(email: string) {

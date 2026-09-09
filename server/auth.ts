@@ -22,12 +22,6 @@ import { sendSignInCode, isMailConfigured } from './email.js';
  * silently disabled Google sign-in no matter how the keys were set.
  */
 const staffDomain = () => process.env.AUTH_STAFF_DOMAIN;
-const googleId = () => process.env.GOOGLE_CLIENT_ID;
-const googleSecret = () => process.env.GOOGLE_CLIENT_SECRET;
-
-export function isGoogleConfigured(): boolean {
-  return Boolean(googleId() && googleSecret() && staffDomain());
-}
 
 function resolveBaseUrl(): string {
   if (process.env.NODE_ENV === 'production') {
@@ -87,18 +81,14 @@ function build() {
       }
     },
 
-    socialProviders: isGoogleConfigured()
-      ? {
-          google: {
-            clientId: googleId()!,
-            clientSecret: googleSecret()!,
-            // Better Auth verifies the `hd` claim on the returned ID token.
-            // Passing hd to Google alone is only a UI hint and is bypassable.
-            hd: staffDomain()!
-          }
-        }
-      : undefined,
-
+    /*
+     * One way in: a six-digit code to the address you already have.
+     *
+     * No social provider. A second route into an account is a second thing to
+     * secure, a second thing to explain to somebody who does not know what
+     * OAuth is, and a second reason for a login to fail on a morning when
+     * nobody has time for it.
+     */
     plugins: [
       emailOTP({
         otpLength: 6,
@@ -106,6 +96,9 @@ function build() {
         // Three tries, then the code is dead — brute-forcing six digits must not
         // be a matter of patience.
         allowedAttempts: 3,
+        // A code that is still valid after it has been used is a code somebody
+        // can reuse from a forwarded email.
+        disableSignUp: false,
         async sendVerificationOTP({ email, otp }) {
           await sendSignInCode(email, otp);
         }
@@ -124,8 +117,6 @@ export function getAuth(): ReturnType<typeof build> {
 }
 
 export interface AuthDescription {
-  google: boolean;
-  emailOtp: boolean;
   /** False means codes are only written to the server log, not emailed. */
   mailConfigured: boolean;
   staffDomain: string | null;
@@ -133,8 +124,6 @@ export interface AuthDescription {
 
 export function describeAuth(): AuthDescription {
   return {
-    google: isGoogleConfigured(),
-    emailOtp: true,
     mailConfigured: isMailConfigured(),
     staffDomain: staffDomain() ?? null
   };

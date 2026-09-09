@@ -1,0 +1,14 @@
+-- Removes `events.launch_date`.
+--
+-- It was never declared in schema.ts, never read or written by any code, and
+-- never created by any migration in this repository — it arrived on production
+-- through a hand-applied file (`0006_campaign_stages.sql`) that was never
+-- committed. Its 36 values were generated sample data and have since been
+-- cleared along with the rest.
+--
+-- What it looked like it meant is now `kickoff_date` ("עלייה לאוויר"), which is
+-- declared, tested, and shown to people. Two columns for one idea is how the
+-- next person writes to the wrong one.
+--
+-- IF EXISTS because most databases never had it: only production did.
+ALTER TABLE "events" DROP COLUMN IF EXISTS "launch_date";

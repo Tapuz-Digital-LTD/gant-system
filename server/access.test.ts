@@ -97,6 +97,33 @@ assert.equal(
   'the role is checked before the row is even looked up'
 );
 
+// ================= permanent deletion is its own capability =================
+// An archive that any editor can empty is not an archive.
+const toPurge = await repo.createEvent(openBoard.id, { title: 'למחיקה', actualDate: '2027-06-01' }, admin.id);
+await repo.archiveEvent(toPurge.id, admin.id);
+
+r = await call('viewer', 'DELETE', `/events/${toPurge.id}/permanent`);
+assert.equal(r.status, 403, 'a viewer may not delete for good');
+
+r = await call('editor', 'DELETE', `/events/${toPurge.id}/permanent`);
+assert.equal(r.status, 403, 'an editor may not delete for good by default');
+
+r = await call('editor', 'POST', `/events/${toPurge.id}/restore`);
+assert.equal(r.status, 200, 'though the same editor may still restore it');
+r = await call('editor', 'DELETE', `/events/${toPurge.id}`);
+assert.equal(r.status, 204, 'and archive it again');
+
+r = await call('admin', 'DELETE', `/events/${toPurge.id}/permanent`);
+assert.equal(r.status, 200, 'an admin may');
+r = await call('admin', 'GET', `/events/${toPurge.id}`);
+assert.equal(r.status, 404, 'and afterwards it is gone');
+
+// A guest is confined to their own boards here as everywhere else.
+const guestBoardEvent = await repo.createEvent(secretBoard.id, { title: 'לא שלהם', actualDate: '2027-06-01' }, admin.id);
+await repo.archiveEvent(guestBoardEvent.id, admin.id);
+r = await call('guest', 'DELETE', `/events/${guestBoardEvent.id}/permanent`);
+assert.ok(r.status === 403 || r.status === 404, 'a guest cannot reach a board they were not invited to');
+
 // ================= editor: full access to every staff board =================
 assert.equal((await call('editor', 'GET', '/boards')).json.data.length, 2, 'staff see every board');
 r = await call('editor', 'POST', `/boards/${secretBoard.id}/events`, { title: 'חדש', actualDate: '2027-03-01' });

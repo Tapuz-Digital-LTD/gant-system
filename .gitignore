@@ -8,3 +8,8 @@ coverage/
 !.env.example
 .vercel
 .data/
+
+# screenshots taken while checking work in the browser
+/*.png
+.playwright-mcp/
+.backups/

@@ -9,6 +9,8 @@ import {
   ListChecks,
   Info,
   AlertTriangle,
+  UserPlus,
+  UserMinus,
   X
 } from 'lucide-react';
 import { EventItem, TaskItem, UserAccess, TaskStatus, EventCategory, isFloating } from '../types';
@@ -26,9 +28,14 @@ import {
   Input,
   Textarea,
   Select,
+  Menu,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
   Tooltip,
   cn
 } from './ui';
+import { EventDatesEditor, EventDatesSummary } from './EventDates';
 import { AIAssistantModal } from './AIAssistantModal';
 
 interface EventDetailModalProps {
@@ -107,10 +114,10 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
         size="lg"
         title={event.title}
         description={`${cat.label} · ${
-          event.kickoffDate ? `תאריך תאריך התנעה: ${formatDate(event.kickoffDate)}` : 'אין תאריך תאריך התנעה'
+          event.kickoffDate ? `עלייה לאוויר: ${formatDate(event.kickoffDate)}` : 'אין תאריך עלייה לאוויר'
         }${
           event.actualDate
-            ? ` · תאריך אמת ${isFloating(event) ? 'במהלך החודש' : formatDate(event.actualDate)}`
+            ? ` · תאריך האירוע ${isFloating(event) ? 'במהלך החודש' : formatDate(event.actualDate)}`
             : ''
         }`}
         footer={
@@ -120,7 +127,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div className="me-auto flex items-center gap-2">
                   <span className="text-sm text-ink-secondary">להעביר את האירוע לארכיון?</span>
                   <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
-                    בטל שינוי בשם הלוח
+                    ביטול
                   </Button>
                   <Button
                     variant="danger"
@@ -281,18 +288,20 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <StatusPill fill={STATUS_META[task.status].fill}>{STATUS_META[task.status].label}</StatusPill>
                     )}
 
-                    {task.assigneeId && (
-                      <Tooltip label={userNames.get(task.assigneeId) ?? 'המצב לא ידוע'}>
-                        <span
-                          className={cn(
-                            'grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold text-white',
-                            avatarColor(task.assigneeId)
-                          )}
-                        >
-                          {(userNames.get(task.assigneeId) ?? '?').charAt(0)}
-                        </span>
-                      </Tooltip>
-                    )}
+                    {/*
+                      Who is on this. The row stays as short as it was: the
+                      picker is behind the avatar rather than beside it, so a
+                      task that already has an owner costs no extra width.
+                    */}
+                    <AssigneePicker
+                      users={users}
+                      assigneeId={task.assigneeId}
+                      canEdit={canEdit}
+                      taskTitle={task.title}
+                      onChange={(assigneeId) =>
+                        onUpdateTask(task.id, task.version, { assigneeId })
+                      }
+                    />
 
                     {task.dueDate && (
                       <span className={cn('w-16 shrink-0 text-sm tnum', late ? 'font-semibold text-late' : 'text-ink-tertiary')}>
@@ -338,33 +347,10 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       ))}
                     </Select>
                   </Field>
-                  <Field label="חודשי הכנה" hint="חודשי הכנה" htmlFor="ev-prep">
-                    <Input
-                      id="ev-prep"
-                      type="number"
-                      min={0}
-                      max={12}
-                      value={event.prepMonths}
-                      onChange={(e) => onUpdateEvent({ prepMonths: Number(e.target.value) || 0 })}
-                    />
-                  </Field>
-                  <Field label="תאריך תאריך התנעה" hint="עלייה לאוויר" htmlFor="ev-kick">
-                    <Input
-                      id="ev-kick"
-                      type="date"
-                      defaultValue={event.kickoffDate ?? ''}
-                      onChange={(e) => onUpdateEvent({ kickoffDate: e.target.value || null })}
-                    />
-                  </Field>
-                  <Field label="תאריך אמת" hint="מועד האירוע" htmlFor="ev-actual">
-                    <Input
-                      id="ev-actual"
-                      type="date"
-                      defaultValue={isFloating(event) ? '' : event.actualDate}
-                      onChange={(e) => e.target.value && onUpdateEvent({ actualDate: e.target.value, actualPrecision: 'day' })}
-                    />
-                  </Field>
                 </div>
+
+                <EventDatesEditor event={event} onUpdateEvent={onUpdateEvent} />
+
                 <Field label="הערה" htmlFor="ev-note">
                   <Input id="ev-note" defaultValue={event.note ?? ''} onBlur={(e) => e.target.value !== (event.note ?? '') && onUpdateEvent({ note: e.target.value })} />
                 </Field>
@@ -378,25 +364,23 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 </Field>
               </>
             ) : (
-              <dl className="flex flex-col gap-3">
-                {[
-                  ['קטגוריה', cat.label],
-                  ['תאריך תאריך התנעה', event.kickoffDate ? formatDate(event.kickoffDate) : '—'],
-                  [
-                    'תאריך אמת',
-                    isFloating(event) ? 'במהלך החודש' : formatDate(event.actualDate)
-                  ],
-                  ['חודשי הכנה', `${event.prepMonths}`],
-                  ['הערה', event.note || '—'],
-                  ['תיאור', event.description || '—'],
-                  ['נוצר', formatDate(event.createdAt.slice(0, 10))]
-                ].map(([label, value]) => (
-                  <div key={label} className="grid grid-cols-[8rem_1fr] gap-3">
-                    <dt className="text-sm text-ink-tertiary">{label}</dt>
-                    <dd className="text-base text-ink">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <>
+                <EventDatesSummary event={event} />
+
+                <dl className="flex flex-col gap-3 border-t border-line pt-4">
+                  {[
+                    ['סוג האירוע', cat.label],
+                    ['הערה', event.note || '—'],
+                    ['תיאור', event.description || '—'],
+                    ['נוצר', formatDate(event.createdAt.slice(0, 10))]
+                  ].map(([label, value]) => (
+                    <div key={label} className="grid grid-cols-[8rem_1fr] gap-3">
+                      <dt className="text-sm text-ink-tertiary">{label}</dt>
+                      <dd className="text-base text-ink">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </>
             )}
           </div>
         )}
@@ -455,3 +439,82 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
     </>
   );
 };
+
+/**
+ * "מי אחראי?" — one question, answered from the people already in the system.
+ *
+ * Shows initials and a name, never a colour alone: two people whose avatars
+ * differ only in hue are two people nobody can tell apart. Read-only viewers
+ * see the same face without a menu behind it.
+ */
+function AssigneePicker({
+  users,
+  assigneeId,
+  canEdit,
+  taskTitle,
+  onChange
+}: {
+  users: UserAccess[];
+  assigneeId: string | null;
+  canEdit: boolean;
+  taskTitle: string;
+  onChange: (assigneeId: string | null) => void;
+}) {
+  const assignee = users.find((u) => u.id === assigneeId) ?? null;
+
+  const face = (
+    <span
+      className={cn(
+        'grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold',
+        assignee
+          ? cn(avatarColor(assignee.email), 'text-white')
+          : 'border border-dashed border-line-strong bg-surface text-ink-tertiary'
+      )}
+    >
+      {assignee ? assignee.name.charAt(0) : <UserPlus className="h-4 w-4" aria-hidden="true" />}
+    </span>
+  );
+
+  if (!canEdit) {
+    return <Tooltip label={assignee ? `אחראי: ${assignee.name}` : 'אין אחראי'}>{face}</Tooltip>;
+  }
+
+  return (
+    <Menu
+      align="end"
+      trigger={
+        <button
+          className="shrink-0 rounded-full transition-opacity hover:opacity-80"
+          aria-label={assignee ? `אחראי: ${assignee.name}. שנה אחראי ל${taskTitle}` : `בחר אחראי ל${taskTitle}`}
+        >
+          {face}
+        </button>
+      }
+    >
+      <MenuLabel>מי אחראי?</MenuLabel>
+      {users.map((user) => (
+        <MenuItem key={user.id} onSelect={() => onChange(user.id)}>
+          <span
+            className={cn(
+              'grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold text-white',
+              avatarColor(user.email)
+            )}
+          >
+            {user.name.charAt(0)}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{user.name}</span>
+          {user.id === assigneeId && <Check className="h-4.5 w-4.5 text-primary" />}
+        </MenuItem>
+      ))}
+      {assigneeId && (
+        <>
+          <MenuSeparator />
+          <MenuItem onSelect={() => onChange(null)}>
+            <UserMinus className="h-5 w-5" />
+            ללא אחראי
+          </MenuItem>
+        </>
+      )}
+    </Menu>
+  );
+}

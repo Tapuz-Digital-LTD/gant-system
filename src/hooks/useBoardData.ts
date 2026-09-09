@@ -1,10 +1,14 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { api, ApiError, type EventInput, type TaskInput } from '../services/api';
-import { EventItem, TaskItem } from '../types';
+import { EventItem, MyTask, TaskItem, TaskStatus } from '../types';
 
 /** Query keys in one place so a mutation can never invalidate the wrong cache entry. */
 export const keys = {
   boards: ['boards'] as const,
+  myTasks: ['my-tasks'] as const,
+  notifications: ['notifications'] as const,
+  notificationPrefs: ['notification-prefs'] as const,
+  digestPreview: ['digest-preview'] as const,
   users: ['users'] as const,
   events: (boardId: string, from: string, to: string) => ['events', boardId, from, to] as QueryKey,
   comments: (eventId: string) => ['comments', eventId] as QueryKey,
@@ -26,6 +30,87 @@ export function useEvents(boardId: string | undefined, from: string, to: string)
     enabled: Boolean(boardId),
     // Keep the previous window on screen while the next one loads — no flash.
     placeholderData: (prev) => prev
+  });
+}
+
+/**
+ * The signed-in person's own work, across every board.
+ *
+ * Moving a card writes through to the server and rewrites this cache from the
+ * response, so a column change that failed does not stay on screen looking
+ * like it worked.
+ */
+export function useMyTasks(enabled = true) {
+  return useQuery({ queryKey: keys.myTasks, queryFn: api.tasks.mine, enabled, staleTime: 15_000 });
+}
+
+export function useMyTaskMutations() {
+  const qc = useQueryClient();
+
+  return {
+    move: useMutation({
+      mutationFn: (v: { id: string; version: number; status: TaskStatus }) =>
+        api.tasks.update(v.id, v.version, { status: v.status }),
+      onSuccess: (updated) => {
+        qc.setQueryData<MyTask[]>(keys.myTasks, (prev) =>
+          prev?.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
+        );
+        // The event's own copy of this task is now stale.
+        qc.invalidateQueries({ queryKey: ['events'] });
+      }
+    })
+  };
+}
+
+/**
+ * The inbox. Polled rather than pushed: a person who leaves a tab open all
+ * morning should still see that work arrived, and a minute of delay on that is
+ * nobody's problem. A socket would be a second thing to keep alive for it.
+ */
+export function useNotifications(enabled = true) {
+  return useQuery({
+    queryKey: keys.notifications,
+    queryFn: api.notifications.list,
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000
+  });
+}
+
+export function useNotificationMutations() {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.notifications });
+  return {
+    markRead: useMutation({ mutationFn: (id?: string) => api.notifications.markRead(id), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: api.notifications.remove, onSuccess: refresh })
+  };
+}
+
+export function useNotificationPrefs(enabled = true) {
+  return useQuery({ queryKey: keys.notificationPrefs, queryFn: api.notifications.prefs, enabled });
+}
+
+/** What would be sent today. Refetched after a change, so the preview follows it. */
+export function useDigestPreview(enabled = true) {
+  return useQuery({ queryKey: keys.digestPreview, queryFn: api.notifications.preview, enabled });
+}
+
+export function useNotificationPrefMutations() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.notifications.savePrefs,
+    onSuccess: (saved) => {
+      qc.setQueryData(keys.notificationPrefs, saved);
+      qc.invalidateQueries({ queryKey: keys.digestPreview });
+    }
+  });
+}
+
+export function useSavePhone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.notifications.savePhone,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] })
   });
 }
 

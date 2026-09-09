@@ -6,6 +6,10 @@ import * as v from './validation.js';
 import { createAiRouter } from './ai.js';
 import { PERMISSIONS, ROLE_LABELS, type Role } from './permissions.js';
 import { holidaysBetween } from './holidays.js';
+import { digestFor, digestText, hasAnything } from './notifications/digest.js';
+import { cronAuthorised, cronConfigured, runDigestJob } from './notifications/cron.js';
+import { israeliMobile } from './notifications/inforu.js';
+import { israelNow } from './notifications/prefs.js';
 import {
   type Actor,
   ForbiddenError,
@@ -92,12 +96,37 @@ export function createApiRouter(
 
   api.get('/me', asyncRoute(async (req, res) => {
     if (!req.actor) return res.json({ data: null });
-    res.json({
-      data: {
-        ...req.actor,
-        permissions: await req.repo.effectivePermissions(req.actor)
-      }
-    });
+    const [permissions, person] = await Promise.all([
+      req.repo.effectivePermissions(req.actor),
+      req.repo.findUserByEmail(req.actor.email)
+    ]);
+    res.json({ data: { ...req.actor, permissions, phone: person?.phone ?? null } });
+  }));
+
+  /**
+   * Your own number, and only your own — there is no user id in the path.
+   *
+   * Rejected rather than guessed at: a number stored wrong sends somebody
+   * else's work to a stranger, and the person who typed it would never find
+   * out why nothing arrives.
+   */
+  api.put('/my/phone', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const { phone } = v.phoneInput.parse(req.body);
+
+    if (phone === null || phone === '') {
+      res.json({ data: await req.repo.saveOwnPhone(actor.id, null) });
+      return;
+    }
+
+    const normalised = israeliMobile(phone);
+    if (!normalised) {
+      res.status(400).json({
+        error: { code: 'INVALID_PHONE', message: 'מספר הנייד לא נראה תקין. לדוגמה: 050-1234567' }
+      });
+      return;
+    }
+    res.json({ data: await req.repo.saveOwnPhone(actor.id, normalised) });
   }));
 
   api.get('/boards', asyncRoute(async (req, res) => {
@@ -106,14 +135,14 @@ export function createApiRouter(
   }));
 
   api.post('/boards', asyncRoute(async (req, res) => {
-    const actor = await requirePermission(req.repo, req.actor, 'board.create', 'יצירת בחר לוח');
-    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בבחר לוח ששיתפו איתו, אבל לא ליצור לוח');
+    const actor = await requirePermission(req.repo, req.actor, 'board.create', 'יצירת לוח');
+    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בלוח ששיתפו איתו, אבל לא ליצור לוח');
     const input = v.boardCreate.parse(req.body);
     res.status(201).json({ data: await req.repo.createBoard(input, actor.id) });
   }));
 
   api.patch('/boards/:id', asyncRoute(async (req, res) => {
-    const actor = await requirePermission(req.repo, req.actor, 'board.edit', 'עריכת בחר לוח');
+    const actor = await requirePermission(req.repo, req.actor, 'board.edit', 'עריכת לוח');
     const boardId = id(req.params.id);
     await assertBoardWrite(req.repo, actor, boardId);
     const input = v.boardUpdate.parse(req.body);
@@ -121,8 +150,8 @@ export function createApiRouter(
   }));
 
   api.post('/boards/:id/duplicate', asyncRoute(async (req, res) => {
-    const actor = await requirePermission(req.repo, req.actor, 'board.duplicate', 'שכפול בחר לוח');
-    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בבחר לוח ששיתפו איתו, אבל לא לשכפל לוח');
+    const actor = await requirePermission(req.repo, req.actor, 'board.duplicate', 'שכפול לוח');
+    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בלוח ששיתפו איתו, אבל לא לשכפל לוח');
     const boardId = id(req.params.id);
     await assertBoardRead(req.repo, actor, boardId);
     const { name } = v.boardDuplicate.parse(req.body ?? {});
@@ -130,8 +159,8 @@ export function createApiRouter(
   }));
 
   api.delete('/boards/:id', asyncRoute(async (req, res) => {
-    const actor = await requirePermission(req.repo, req.actor, 'board.delete', 'מחיקת בחר לוח');
-    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בבחר לוח ששיתפו איתו, אבל לא למחוק לוח');
+    const actor = await requirePermission(req.repo, req.actor, 'board.delete', 'מחיקת לוח');
+    if (actor.isGuest) throw new ForbiddenError('אורח יכול לצפות בלוח ששיתפו איתו, אבל לא למחוק לוח');
     const boardId = id(req.params.id);
     await assertBoardWrite(req.repo, actor, boardId);
     await req.repo.archiveBoard(boardId, actor.id);
@@ -206,11 +235,135 @@ export function createApiRouter(
     res.json({ data: await req.repo.listArchivedEvents(boardId) });
   }));
 
+  /**
+   * The one irreversible route in the API. Its own capability, off for editors
+   * by default, and it refuses anything that is not already in the archive.
+   */
+  api.delete('/events/:id/permanent', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'event.purge', 'מחיקה סופית');
+    const eventId = id(req.params.id);
+    await assertBoardWrite(req.repo, actor, await req.repo.boardIdForEvent(eventId));
+    res.json({ data: await req.repo.purgeEvent(eventId, actor.id) });
+  }));
+
   api.post('/events/:id/restore', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'event.restore', 'שחזור מהארכיון');
     const eventId = id(req.params.id);
     await assertBoardWrite(req.repo, actor, await req.repo.boardIdForEvent(eventId));
     res.json({ data: await req.repo.restoreEvent(eventId, actor.id) });
+  }));
+
+  /**
+   * The signed-in person's own work. No id in the path: you can only ask for
+   * yours, so there is no parameter for anyone to tamper with.
+   */
+  api.get('/my/tasks', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const boardIds = await req.repo.visibleBoardIds(actor);
+    res.json({ data: await req.repo.listTasksForAssignee(actor.id, boardIds) });
+  }));
+
+  // ---------------- notification settings ----------------
+
+  api.get('/my/notification-prefs', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    res.json({ data: await req.repo.notificationPrefsFor(actor.id) });
+  }));
+
+  api.put('/my/notification-prefs', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const input = v.notificationPrefsInput.parse(req.body);
+
+    // Reaching past your own work is a permission, not a preference. Somebody
+    // who cannot see the activity log does not get a digest about other people
+    // by ticking a box.
+    if (input.managerScope && input.managerScope !== 'none') {
+      const allowed = actor.isOwner || (await req.repo.can(actor.role, 'activity.view'));
+      if (!allowed) throw new ForbiddenError('רק מי שמורשה לראות נתוני צוות יכול לקבל סיכום על אחרים');
+    }
+
+    res.json({ data: await req.repo.saveNotificationPrefs(actor.id, input) });
+  }));
+
+  /**
+   * What today's digest would say, for this person, right now.
+   *
+   * The whole point of it is that nothing has to be switched on to find out.
+   * It reads; it never writes and never sends.
+   */
+  api.get('/my/digest-preview', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const prefs = await req.repo.notificationPrefsFor(actor.id);
+    const digest = await digestFor(req.repo, actor, prefs);
+    res.json({
+      data: {
+        date: israelNow().date,
+        hasAnything: hasAnything(digest),
+        sections: digest.sections,
+        team: digest.team,
+        text: digestText(digest, `בוקר טוב ${actor.name} — מה דורש טיפול היום`)
+      }
+    });
+  }));
+
+  api.get('/settings/notification-defaults', asyncRoute(async (req, res) => {
+    await requirePermission(req.repo, req.actor, 'permissions.manage', 'הגדרות התראות');
+    res.json({ data: await req.repo.workspaceNotificationDefaults() });
+  }));
+
+  api.put('/settings/notification-defaults', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'permissions.manage', 'הגדרות התראות');
+    const input = v.notificationPrefsInput.parse(req.body);
+    res.json({ data: await req.repo.saveWorkspaceNotificationDefaults(input, actor.id) });
+  }));
+
+  /*
+   * The scheduler's own door.
+   *
+   * No session, so it is guarded by a shared secret instead — and with no
+   * secret configured it refuses outright rather than running open. It writes
+   * nothing and sends nothing today: every digest goes to the log, to be read
+   * for a week before anybody's phone is involved.
+   */
+  api.all('/cron/digest', asyncRoute(async (req, res) => {
+    if (!cronConfigured()) {
+      res.status(503).json({ error: { code: 'CRON_NOT_CONFIGURED', message: 'CRON_SECRET לא מוגדר' } });
+      return;
+    }
+    if (!cronAuthorised(req.get('authorization'))) {
+      res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'לא מורשה' } });
+      return;
+    }
+
+    const run = await runDigestJob(req.repo);
+    console.log(JSON.stringify({ level: 'info', msg: 'digest_run', ...run, outcomes: undefined }));
+
+    // The bodies stay in the log; the response is a receipt, not a mailbox.
+    res.json({ data: { at: run.at, mode: run.mode, considered: run.considered, due: run.due, logged: run.logged } });
+  }));
+
+  // ---------------- notifications ----------------
+
+  /**
+   * Always the caller's own. There is no user id in any of these paths, so
+   * there is nothing for anyone to change to somebody else's.
+   */
+  api.get('/notifications', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    res.json({ data: await req.repo.listNotifications(actor.id) });
+  }));
+
+  api.post('/notifications/read', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const input = v.notificationRead.parse(req.body ?? {});
+    await req.repo.markNotificationsRead(actor.id, input.id ?? undefined);
+    res.status(204).end();
+  }));
+
+  api.delete('/notifications/:id', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    await req.repo.deleteNotification(actor.id, id(req.params.id));
+    res.status(204).end();
   }));
 
   // ---------------- tasks ----------------
