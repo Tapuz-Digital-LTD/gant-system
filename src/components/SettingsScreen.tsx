@@ -104,26 +104,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
           */}
           <span
             aria-live="polite"
-            className={cn(
-              'mt-1 flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold transition-opacity',
-              save.isPending
-                ? 'bg-subtle text-ink-secondary opacity-100'
-                : save.isSuccess
-                  ? 'bg-done-soft text-done opacity-100'
-                  : 'opacity-0'
-            )}
+            className="mt-1 flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold"
           >
             {save.isPending ? (
-              <>
+              <span className="flex items-center gap-1.5 rounded-md bg-subtle px-2 py-1 text-ink-secondary">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 שומר…
-              </>
-            ) : (
-              <>
+              </span>
+            ) : save.isSuccess ? (
+              <span className="flex items-center gap-1.5 rounded-md bg-done-soft px-2 py-1 text-done">
                 <Check className="h-4 w-4" aria-hidden="true" />
                 נשמר
-              </>
-            )}
+              </span>
+            ) : null}
           </span>
         </div>
 
@@ -215,7 +208,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
                             }
                             aria-pressed={on}
                             className={cn(
-                              'grid h-9 w-9 place-items-center rounded-lg border-2 text-base font-bold transition-colors',
+                              'grid aspect-square h-9 w-9 place-items-center rounded-lg border-2 text-base font-bold transition-colors',
                               on
                                 ? 'border-primary bg-primary-soft text-primary'
                                 : 'border-line bg-surface text-ink-tertiary hover:border-line-strong'
@@ -396,11 +389,32 @@ function Card({
   );
 }
 
+/*
+ * A row is a group, not a heading with some buttons under it.
+ *
+ * Sighted, "אחרי 3 ימים" sits visibly beneath "אם לא התחלתי לטפל במשימה". Read
+ * aloud, without the group, it is a button called "אחרי 3 ימים" answering
+ * nothing. One wrapper here fixes every row on the screen, including the
+ * weekday squares, which are not Pills.
+ */
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  const labelId = React.useId();
+  const hintId = React.useId();
   return (
-    <div className="flex flex-col gap-1.5 border-t border-line pt-3 first:border-0 first:pt-0">
-      <span className="text-base font-semibold text-ink">{label}</span>
-      {hint && <span className="text-sm text-ink-tertiary">{hint}</span>}
+    <div
+      role="group"
+      aria-labelledby={labelId}
+      aria-describedby={hint ? hintId : undefined}
+      className="flex flex-col gap-1.5 border-t border-line pt-3 first:border-0 first:pt-0"
+    >
+      <span id={labelId} className="text-base font-semibold text-ink">
+        {label}
+      </span>
+      {hint && (
+        <span id={hintId} className="text-sm text-ink-tertiary">
+          {hint}
+        </span>
+      )}
       {children}
     </div>
   );

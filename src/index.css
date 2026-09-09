@@ -171,3 +171,30 @@ time,
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * A finger is not a mouse pointer.
+ *
+ * 36px is comfortable density under a cursor and a miss under a thumb — and
+ * the people this is built for are reading it on a phone, at arm's length,
+ * without much patience for a second attempt. Raised only where the pointer is
+ * actually coarse, so desktop density is untouched.
+ *
+ * Height only. Forcing a minimum WIDTH would stretch every pill to the width of
+ * the longest one and turn a tidy row of choices into a column of slabs.
+ */
+@media (pointer: coarse) {
+  button,
+  [role='button'],
+  select,
+  textarea,
+  input:not([type='checkbox']):not([type='radio']):not([type='range']) {
+    min-height: 44px;
+  }
+
+  /* Square by intent — an icon button or a day cell stays square. */
+  button.aspect-square,
+  [role='button'].aspect-square {
+    min-width: 44px;
+  }
+}
