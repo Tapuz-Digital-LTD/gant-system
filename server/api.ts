@@ -131,7 +131,10 @@ export function createApiRouter(
 
   api.get('/boards', asyncRoute(async (req, res) => {
     const actor = requireActor(req.actor);
-    res.json({ data: await req.repo.listBoards(await req.repo.visibleBoardIds(actor)) });
+    // `?archived=1` is the finished shelf. Same permissions, same scoping —
+    // an archived project is one somebody could already see, not a new secret.
+    const archived = req.query.archived === '1';
+    res.json({ data: await req.repo.listBoards(await req.repo.visibleBoardIds(actor), archived) });
   }));
 
   api.post('/boards', asyncRoute(async (req, res) => {
@@ -165,6 +168,34 @@ export function createApiRouter(
     await assertBoardWrite(req.repo, actor, boardId);
     await req.repo.archiveBoard(boardId, actor.id);
     res.status(204).end();
+  }));
+
+  /**
+   * Back to work.
+   *
+   * Restoring is the same right as archiving — somebody who can finish a
+   * project can un-finish it, and making that a separate permission only
+   * produces people who can put work away and not get it back.
+   */
+  api.post('/boards/:id/restore', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'board.delete', 'החזרת לוח מהארכיון');
+    const boardId = id(req.params.id);
+    await assertBoardWrite(req.repo, actor, boardId);
+    res.json({ data: await req.repo.restoreBoard(boardId, actor.id) });
+  }));
+
+  /**
+   * Gone for good, and only from the archive.
+   *
+   * Its own permission, not `board.delete`: that one means "finish a project"
+   * and is reversible. This one is not, and everything under the board goes
+   * with it. An archive anyone can empty is not an archive.
+   */
+  api.delete('/boards/:id/permanent', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'board.purge', 'מחיקת לוח לצמיתות');
+    const boardId = id(req.params.id);
+    await assertBoardWrite(req.repo, actor, boardId);
+    res.json({ data: await req.repo.purgeBoard(boardId, actor.id) });
   }));
 
   /**

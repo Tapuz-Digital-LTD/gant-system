@@ -200,11 +200,83 @@ await assert.rejects(
 await repo.archiveEvent(t1.eventId, null);
 assert.equal((await repo.listEvents(board.id, '2027-01-01', '2027-12-31')).length, 1, 'archived events drop out of reads');
 
-await repo.archiveBoard(board.id, null);
-assert.ok(
-  !(await repo.listBoards()).some((b) => b.id === board.id),
-  'archived boards drop out of reads'
-);
+/*
+ * Finishing a project: it leaves the active list, and it stops asking for
+ * attention. Both halves matter — a board that disappears but keeps sending
+ * reminders every morning is the worst of the two behaviours.
+ */
+{
+  // Something for the milestone reminder to find: a go-live inside the window.
+  const soon = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+  const far = new Date(Date.now() + 40 * 86_400_000).toISOString().slice(0, 10);
+  const live = await repo.createEvent(
+    board.id,
+    { title: 'קמפיין פעיל', actualDate: far, kickoffDate: soon, prepMonths: 1 },
+    null
+  );
+
+  const today = new Date().toISOString().slice(0, 10);
+  assert.ok(
+    (await repo.upcomingMilestones(null, today, far)).some((m) => m.eventId === live.id),
+    'an active project has campaign dates worth mentioning'
+  );
+
+  // A notification already sitting in somebody's bell for this board.
+  const [watcher] = (
+    await pg.query<{ id: string }>(
+      `insert into users (email, name, role, is_guest) values ('watcher@xtra.co.il', 'צופה', 'editor', false) returning id`
+    )
+  ).rows;
+
+  await repo.notify({
+    userId: watcher.id,
+    kind: 'task_assigned',
+    title: 'משימה בפרויקט הזה',
+    body: null,
+    link: `/b/${board.id}/calendar`,
+    entity: 'task',
+    entityId: live.id,
+    dedupeKey: `board-archive-test:${live.id}`
+  });
+  assert.ok(
+    (await repo.listNotifications(watcher.id)).items.some((n) => n.link?.includes(board.id)),
+    'and it is in the bell'
+  );
+
+  await repo.archiveBoard(board.id, null);
+
+  assert.ok(
+    !(await repo.listBoards()).some((b) => b.id === board.id),
+    'archived boards drop out of the active list'
+  );
+  assert.ok(
+    (await repo.listBoards(null, true)).some((b) => b.id === board.id),
+    'but they are findable on the archived shelf — otherwise "archive" means "destroy quietly"'
+  );
+  assert.deepEqual(
+    (await repo.upcomingMilestones(null, today, far)).filter((m) => m.eventId === live.id),
+    [],
+    'a finished project stops sending campaign-date reminders'
+  );
+  assert.ok(
+    !(await repo.listNotifications(watcher.id)).items.some((n) => n.link?.includes(board.id)),
+    'and its outstanding notifications go with it, so restoring later does not dump a month of stale news'
+  );
+
+  await repo.restoreBoard(board.id, null);
+  assert.ok(
+    (await repo.listBoards()).some((b) => b.id === board.id),
+    'restoring brings it back to the active list'
+  );
+  assert.ok(
+    !(await repo.listNotifications(watcher.id)).items.some((n) => n.link?.includes(board.id)),
+    'and nothing old is replayed — tomorrow\'s reminders are recomputed from the dates'
+  );
+
+  // Permanent deletion is only ever from the archive.
+  await assert.rejects(() => repo.purgeBoard(board.id, null), /ארכיון/, 'an active project cannot be purged');
+  await repo.archiveBoard(board.id, null);
+}
 
 // ---------- notifications: told once, and only when it is news ----------
 const [dana] = (

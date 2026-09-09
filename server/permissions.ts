@@ -23,7 +23,8 @@ export const PERMISSIONS = [
   { key: 'board.create', label: 'יצירת לוח', group: 'לוחות' },
   { key: 'board.edit', label: 'שנה שם ותיאור של לוח', group: 'לוחות' },
   { key: 'board.duplicate', label: 'שכפול לוח', group: 'לוחות' },
-  { key: 'board.delete', label: 'מחיקת לוח', group: 'לוחות' },
+  { key: 'board.delete', label: 'העברת לוח לארכיון והחזרה ממנו', group: 'לוחות' },
+  { key: 'board.purge', label: 'מחיקת לוח לצמיתות מהארכיון (אין שחזור)', group: 'לוחות' },
 
   { key: 'export.run', label: 'הורדה והדפסה לאקסל וגיבוי', group: 'נתונים' },
   { key: 'activity.view', label: 'צפייה בלבד ביומן הפעילות', group: 'נתונים' },
@@ -53,6 +54,9 @@ export const DEFAULTS: Record<Role, PermissionKey[]> = {
     'board.create',
     'board.edit',
     'board.duplicate',
+    // 'board.delete' and 'board.purge' are absent for the same reason
+    // 'event.purge' is: finishing somebody else's project, or emptying the
+    // archive, is an admin's call. An admin can grant either.
     'export.run',
     'activity.view'
   ],

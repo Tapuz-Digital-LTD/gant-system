@@ -60,23 +60,21 @@ export function createRepo(db: Database) {
      * Drizzle emits bare column names, so `boards.id` would silently bind to the
      * inner table and every count would come back 0.
      */
-    async listBoards(onlyIds?: string[] | null) {
+    async listBoards(onlyIds?: string[] | null, archived = false) {
       if (onlyIds !== null && onlyIds !== undefined && onlyIds.length === 0) return [];
+      const state = archived ? isNotNull(boards.archivedAt) : isNull(boards.archivedAt);
       return db
         .select({
           id: boards.id,
           name: boards.name,
           description: boards.description,
           position: boards.position,
+          archivedAt: boards.archivedAt,
           eventCount: sql<number>`count(${events.id})::int`
         })
         .from(boards)
         .leftJoin(events, and(eq(events.boardId, boards.id), isNull(events.archivedAt)))
-        .where(
-          onlyIds && onlyIds.length
-            ? and(isNull(boards.archivedAt), inArray(boards.id, onlyIds))
-            : isNull(boards.archivedAt)
-        )
+        .where(onlyIds && onlyIds.length ? and(state, inArray(boards.id, onlyIds)) : state)
         .groupBy(boards.id)
         .orderBy(asc(boards.position), asc(boards.createdAt));
     },
@@ -179,7 +177,18 @@ export function createRepo(db: Database) {
       });
     },
 
-    /** Soft delete — a board is too expensive to lose to a mis-click. */
+    /**
+     * Finishing a project, not destroying one.
+     *
+     * Everything stays: the events, the tasks, the dates, the comments and the
+     * trail. The board simply stops appearing in the places people look for
+     * work, and stops asking for attention.
+     *
+     * Its outstanding notifications go with it. Leaving them means the bell
+     * still points at a project nobody is working on — and, worse, that
+     * restoring the board a month later dumps a month of stale news on
+     * somebody all at once.
+     */
     async archiveBoard(id: string, actorId: string | null) {
       const [row] = await db
         .update(boards)
@@ -187,8 +196,49 @@ export function createRepo(db: Database) {
         .where(and(eq(boards.id, id), isNull(boards.archivedAt)))
         .returning();
       if (!row) throw new NotFoundError('לא מצאנו את הלוח. רענן את הדף ונסה שוב');
+
+      await db.delete(notifications).where(
+        sql`${notifications.link} like ${'/b/' + id + '/%'}`
+      );
+
       await log(db, actorId, 'board', id, 'archived');
       return row;
+    },
+
+    /**
+     * Back to work.
+     *
+     * Nothing is replayed. The reminders that matter are recomputed from the
+     * dates tomorrow morning; the ones that were true a month ago are not news
+     * and are not resurrected.
+     */
+    async restoreBoard(id: string, actorId: string | null) {
+      const [row] = await db
+        .update(boards)
+        .set({ archivedAt: null })
+        .where(and(eq(boards.id, id), isNotNull(boards.archivedAt)))
+        .returning();
+      if (!row) throw new NotFoundError('לא מצאנו את הלוח בארכיון. רענן את הדף ונסה שוב');
+      await log(db, actorId, 'board', id, 'restored');
+      return row;
+    },
+
+    /**
+     * Gone for good.
+     *
+     * Only for a project opened by mistake. Everything under it goes — events,
+     * tasks, comments — and the trail says who did it, which is the one record
+     * that has to outlive the thing it describes.
+     */
+    async purgeBoard(id: string, actorId: string | null) {
+      const [board] = await db.select().from(boards).where(eq(boards.id, id));
+      if (!board) throw new NotFoundError('לא מצאנו את הלוח');
+      if (!board.archivedAt) throw new ConflictExistsError('אפשר למחוק לצמיתות רק פרויקט שנמצא בארכיון');
+
+      // Written before the rows go, so the record survives what it describes.
+      await log(db, actorId, 'board', id, 'purged', board, null);
+      await db.delete(boards).where(eq(boards.id, id));
+      return { id };
     },
 
     // ---------------- events ----------------
@@ -619,9 +669,15 @@ export function createRepo(db: Database) {
       const rows = await db
         .select()
         .from(events)
+        .innerJoin(boards, eq(events.boardId, boards.id))
         .where(
           and(
             isNull(events.archivedAt),
+            // A finished project stops asking for attention. The task queries
+            // already knew this; the milestone one did not, so archiving a
+            // board silenced its task reminders and left its campaign dates
+            // still going out every morning.
+            isNull(boards.archivedAt),
             boardIds ? inArray(events.boardId, boardIds) : undefined,
             sql`least(${events.reviewDate}, ${events.freezeDate}, ${events.kickoffDate},
                       ${events.announceDate}, ${events.campaignEndDate}) <= ${to}`,
@@ -630,7 +686,7 @@ export function createRepo(db: Database) {
           )
         );
 
-      return rows.flatMap((event) =>
+      return rows.flatMap(({ events: event }) =>
         MILESTONE_LABELS.flatMap((meta) => {
           const date = event[meta.field];
           if (!date || date < from || date > to) return [];
