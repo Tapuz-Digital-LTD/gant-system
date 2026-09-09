@@ -19,6 +19,20 @@ import { Button, Field, Input, cn } from './ui';
 
 type Channel = 'email' | 'phone';
 
+/**
+ * Something a person can act on, in their own language.
+ *
+ * better-auth answers in English, and its rate limit is the one somebody meets
+ * by pressing "send again" twice — which is exactly the moment they are least
+ * able to read "Too many requests" and work out that waiting is the answer.
+ */
+function signInError(error: { status?: number; message?: string }, fallback?: string): string {
+  if (error.status === 429 || error.status === 403) {
+    return 'שלחנו כבר קוד. חכה דקה ונסה שוב.';
+  }
+  return fallback ?? 'לא הצלחנו לשלוח את הקוד. נסה שוב בעוד רגע.';
+}
+
 export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn: () => void }) {
   const [channel, setChannel] = useState<Channel>('email');
   const [email, setEmail] = useState('');
@@ -66,7 +80,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
     setBusy(null);
     // Always advance: whether an address is known to us is not something a
     // stranger should be able to probe by watching which ones fail.
-    if (error) setError(error.message ?? 'לא הצלחנו לשלוח את הקוד. נסה שוב');
+    if (error) setError(signInError(error));
     else setStep('code');
   };
 
@@ -82,7 +96,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
         : await authClient.phoneNumber.verify({ phoneNumber: cleanPhone(), code: otp.trim() });
 
     setBusy(null);
-    if (error) setError(error.message ?? 'הקוד לא נכון או שכבר פג תוקפו. בקש קוד חדש');
+    if (error) setError(signInError(error, 'הקוד לא נכון או שכבר פג תוקפו. בקש קוד חדש'));
     else onSignedIn();
   };
 
