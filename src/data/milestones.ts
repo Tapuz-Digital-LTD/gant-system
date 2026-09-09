@@ -60,6 +60,37 @@ export interface MilestoneMeta {
    * for every category, and every optional field may be left empty.
    */
   openFor: EventCategory[];
+  /**
+   * Words that change with the kind of work.
+   *
+   * A campaign does not "happen" on a day, it starts; a holiday is not
+   * something anybody schedules. Asking a marketer "מתי האירוע קורה?" about a
+   * sale, directly above a field called "עלייה לאוויר", is how two different
+   * dates come to sound like the same date typed twice.
+   *
+   * Only the wording moves. The field, the meaning and the stored value are
+   * identical for every category, so the calendar, the timeline and every
+   * export keep reading one thing.
+   */
+  byCategory?: Partial<Record<EventCategory, Partial<Pick<MilestoneMeta, 'label' | 'short' | 'hint'>>>>;
+}
+
+/**
+ * What this milestone is called for this kind of work.
+ *
+ * One function, so a name cannot resolve one way in the form and another way
+ * on the calendar.
+ */
+export function milestoneText(
+  meta: MilestoneMeta,
+  category: EventCategory | undefined
+): Pick<MilestoneMeta, 'label' | 'short' | 'hint'> {
+  const override = (category && meta.byCategory?.[category]) || {};
+  return {
+    label: override.label ?? meta.label,
+    short: override.short ?? meta.short,
+    hint: override.hint ?? meta.hint
+  };
 }
 
 /** The categories whose work reaches customers, so the launch dates matter. */
@@ -125,9 +156,23 @@ export const MILESTONES: MilestoneMeta[] = [
   {
     key: 'kickoff',
     field: 'kickoffDate',
-    label: 'מתי עולים לאוויר?',
+    label: 'מתי מתחילים לפרסם?',
     short: 'עלייה לאוויר',
-    hint: 'היום שבו הקמפיין מתחיל להגיע ללקוחות — פרסום, דיוור, טעינת שוברים.',
+    hint: 'היום שבו מתחילים לפרסם החוצה — פרסום, דיוור, טעינת שוברים. למלא רק אם זה יום אחר מהמועד המרכזי.',
+    byCategory: {
+      campaign: {
+        label: 'מתי מתחילים לפרסם את המבצע?',
+        hint: 'היום שבו הפרסום יוצא ללקוחות. בדרך כלל לפני שהמבצע עצמו מתחיל — למלא רק אם זה יום אחר.'
+      },
+      social: {
+        label: 'מתי מתחילים לקדם?',
+        hint: 'היום שבו מתחילים לקדם את התוכן. למלא רק אם זה יום אחר מהפרסום עצמו.'
+      },
+      b2b: {
+        label: 'מתי מתחילים לפנות ללקוחות?',
+        hint: 'היום שבו יוצאת הפנייה הראשונה ללקוחות. למלא רק אם זה יום אחר מתחילת הפעילות.'
+      }
+    },
     example: 'למשל: 6.12 — הפרסום מתחיל',
     icon: Rocket,
     text: 'text-ms-kickoff',
@@ -157,9 +202,36 @@ export const MILESTONES: MilestoneMeta[] = [
   {
     key: 'actual',
     field: 'actualDate',
-    label: 'מתי האירוע קורה?',
+    label: 'מתי האירוע מתקיים?',
     short: 'תאריך האירוע',
     hint: 'המועד של האירוע עצמו. אם אין יום מדויק, אפשר לבחור חודש שלם.',
+    byCategory: {
+      campaign: {
+        label: 'מתי המבצע מתחיל?',
+        short: 'תחילת המבצע',
+        hint: 'היום הראשון של המבצע מבחינת הלקוח. אם אין יום מדויק, אפשר לבחור חודש שלם.'
+      },
+      social: {
+        label: 'מתי התוכן מתפרסם?',
+        short: 'תאריך הפרסום',
+        hint: 'היום שבו התוכן עולה. אם אין יום מדויק, אפשר לבחור חודש שלם.'
+      },
+      b2b: {
+        label: 'מתי הפעילות מתחילה?',
+        short: 'תחילת הפעילות',
+        hint: 'היום הראשון של הפעילות מול הלקוח. אם אין יום מדויק, אפשר לבחור חודש שלם.'
+      },
+      holiday: {
+        label: 'מתי החג חל?',
+        short: 'תאריך החג',
+        hint: 'היום שבו החג חל. אם אין יום מדויק, אפשר לבחור חודש שלם.'
+      },
+      operational: {
+        label: 'מתי זה צריך להיות מוכן?',
+        short: 'מועד היעד',
+        hint: 'היום שבו זה חייב להיות גמור. אם אין יום מדויק, אפשר לבחור חודש שלם.'
+      }
+    },
     example: 'למשל: 14.12 — נר ראשון של חנוכה',
     icon: CalendarDays,
     text: 'text-ms-actual',

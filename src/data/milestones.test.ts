@@ -1,8 +1,9 @@
 // Run: npx tsx src/data/milestones.test.ts
 import assert from 'node:assert/strict';
-import { EventItem } from '../types.ts';
+import { EventItem, type EventCategory } from '../types.ts';
 import {
   MILESTONES,
+  milestoneText,
   milestonesOf,
   milestonesOnDay,
   milestoneWarnings,
@@ -137,6 +138,46 @@ assert.deepEqual(
     milestoneWarnings(event({ campaignEndDate: '2026-12-01' })).length > 0,
     'an odd plan is still a plan the system will hold'
   );
+}
+
+
+// ---------- two dates must never read as the same date ----------
+{
+  const actual = MILESTONES.find((m) => m.key === 'actual')!;
+  const kickoff = MILESTONES.find((m) => m.key === 'kickoff')!;
+  const categories: EventCategory[] = ['holiday', 'campaign', 'b2b', 'social', 'operational', 'other'];
+
+  for (const category of categories) {
+    const a = milestoneText(actual, category);
+    const k = milestoneText(kickoff, category);
+
+    assert.notEqual(a.label, k.label, `"${category}": the two questions must differ`);
+    assert.notEqual(a.short, k.short, `"${category}": the two names must differ`);
+    assert.ok(a.label.trim().endsWith('?'), 'the central date asks a question');
+    assert.ok(k.label.trim().endsWith('?'), 'so does the go-live date');
+  }
+
+  // The wording follows the work: a campaign starts, it does not "take place".
+  assert.equal(milestoneText(actual, 'campaign').label, 'מתי המבצע מתחיל?');
+  assert.equal(milestoneText(actual, 'campaign').short, 'תחילת המבצע');
+  assert.equal(milestoneText(actual, 'holiday').short, 'תאריך החג');
+  assert.equal(milestoneText(actual, 'other').short, 'תאריך האירוע', 'an unlisted category keeps the base wording');
+  assert.equal(milestoneText(actual, undefined).short, 'תאריך האירוע', 'and so does no category at all');
+
+  // Only wording moves. The stored field is the same everywhere, or the
+  // calendar and the timeline stop agreeing with the form.
+  for (const category of categories) {
+    assert.equal(actual.field, 'actualDate', `"${category}" must not change where the value lives`);
+    assert.equal(kickoff.field, 'kickoffDate');
+  }
+
+  // The go-live hint has to say it is optional, or people fill it in twice.
+  for (const category of categories) {
+    assert.ok(
+      milestoneText(kickoff, category).hint.includes('רק אם'),
+      `"${category}": the go-live date must say it is only for a different day`
+    );
+  }
 }
 
 console.log('milestones: כל הבדיקות עברו ✓');

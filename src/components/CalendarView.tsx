@@ -3,7 +3,7 @@ import { CalendarOff, Plus } from 'lucide-react';
 import { EventItem, FilterState, Holiday, isFloating, monthKeyOf } from '../types';
 import { filterEvents } from '../utils/filterEvents';
 import type { Can } from '../hooks/useCan';
-import { MILESTONES, MILESTONE_BY_KEY, milestonesOf } from '../data/milestones';
+import { MILESTONES, MILESTONE_BY_KEY, milestoneText, milestonesOf } from '../data/milestones';
 import type { MilestoneOccurrence } from '../data/milestones';
 import {
   Period,
@@ -411,7 +411,7 @@ function Agenda({
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className={cn('block text-sm font-bold', occurrence.meta.text)}>
-                            {occurrence.meta.short}
+                            {milestoneText(occurrence.meta, event.category).short}
                           </span>
                           <span className="block text-base text-ink">{event.title}</span>
                         </span>
@@ -462,9 +462,12 @@ function MilestoneChip({
 }) {
   const { meta } = occurrence;
   const Icon = meta.icon;
+  // The wording follows the kind of work, so a date is not called one thing in
+  // the form and another on the calendar.
+  const text = milestoneText(meta, event.category);
 
   return (
-    <Tooltip label={`${meta.short} · ${event.title} — ${meta.hint}`}>
+    <Tooltip label={`${text.short} · ${event.title} — ${text.hint}`}>
       <button
         onClick={() => onOpen(event)}
         className={cn(
@@ -477,7 +480,7 @@ function MilestoneChip({
       >
         <span className={cn('flex items-center gap-1 text-xs font-bold', meta.text)}>
           <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate">{meta.short}</span>
+          <span className="truncate">{text.short}</span>
         </span>
         <span
           className={cn('block text-xs text-ink', detailed ? 'line-clamp-2' : 'truncate')}

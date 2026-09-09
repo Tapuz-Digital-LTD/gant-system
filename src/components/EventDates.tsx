@@ -1,8 +1,8 @@
 import React from 'react';
 import { TriangleAlert } from 'lucide-react';
-import { EventItem, isFloating } from '../types';
+import { EventCategory, EventItem, isFloating } from '../types';
 import type { EventInput } from '../services/api';
-import { MILESTONES, milestoneWarnings, workWindowStart } from '../data/milestones';
+import { MILESTONES, milestoneText, milestoneWarnings, workWindowStart } from '../data/milestones';
 import { monthName } from '../utils/period';
 import { formatDate } from '../utils/dateHelpers';
 import { Field, Input, cn } from './ui';
@@ -66,7 +66,9 @@ export function EventDatesSummary({ event }: { event: EventItem }) {
                 <meta.icon className="h-4 w-4" aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-base font-semibold text-ink">{meta.short}</span>
+                <span className="block text-base font-semibold text-ink">
+                  {milestoneText(meta, event.category).short}
+                </span>
                 <span className="block text-sm text-ink-tertiary">{meta.hint}</span>
               </span>
               <span
@@ -126,7 +128,7 @@ export function EventDatesEditor({
         if (isActual) {
           return (
             <div key={meta.key} className="flex flex-col gap-1">
-              <MilestoneLabel meta={meta} htmlFor={id} />
+              <MilestoneLabel meta={meta} htmlFor={id} category={event.category} />
               {floating ? (
                 <>
                   <Input
@@ -179,7 +181,7 @@ export function EventDatesEditor({
 
         return (
           <div key={meta.key} className="flex flex-col gap-1">
-            <MilestoneLabel meta={meta} htmlFor={id} />
+            <MilestoneLabel meta={meta} htmlFor={id} category={event.category} />
             <Input
               id={id}
               type="date"
@@ -198,20 +200,24 @@ export function EventDatesEditor({
 
 function MilestoneLabel({
   meta,
-  htmlFor
+  htmlFor,
+  category
 }: {
   meta: (typeof MILESTONES)[number];
   htmlFor: string;
+  /** The wording follows the kind of work — see milestoneText. */
+  category: EventCategory;
 }) {
+  const text = milestoneText(meta, category);
   return (
     <>
       <label htmlFor={htmlFor} className="flex items-center gap-1.5 text-base font-semibold text-ink">
         <span className={cn('grid h-6 w-6 place-items-center rounded', meta.bg, meta.text)}>
           <meta.icon className="h-3.5 w-3.5" aria-hidden="true" />
         </span>
-        {meta.label}
+        {text.label}
       </label>
-      <p className="text-sm text-ink-tertiary">{meta.hint}</p>
+      <p className="text-sm text-ink-tertiary">{text.hint}</p>
     </>
   );
 }

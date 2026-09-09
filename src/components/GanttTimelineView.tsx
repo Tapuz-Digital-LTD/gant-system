@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
 import { CalendarOff, Plus } from 'lucide-react';
-import { EventItem, FilterState, isFloating } from '../types';
+import { EventCategory, EventItem, FilterState, isFloating } from '../types';
 import { filterEvents } from '../utils/filterEvents';
 import type { Can } from '../hooks/useCan';
-import { MILESTONES, milestonesOf, workWindowStart } from '../data/milestones';
+import { MILESTONES, milestoneText, milestonesOf, workWindowStart } from '../data/milestones';
 import type { MilestoneOccurrence } from '../data/milestones';
 import { CATEGORY_META } from '../utils/eventMeta';
 import { formatDate } from '../utils/dateHelpers';
@@ -269,7 +269,13 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
 
                     {/* the milestones, each on its own real day */}
                     {marks.map((mark) => (
-                      <Marker key={mark.meta.key} mark={mark} left={at(mark.date)} title={ev.title} />
+                      <Marker
+                        key={mark.meta.key}
+                        mark={mark}
+                        left={at(mark.date)}
+                        title={ev.title}
+                        category={ev.category}
+                      />
                     ))}
 
                     {endsAfter && (
@@ -293,16 +299,19 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
 function Marker({
   mark,
   left,
-  title
+  title,
+  category
 }: {
   mark: MilestoneOccurrence;
   left: number;
   title: string;
+  /** The wording follows the kind of work — see milestoneText. */
+  category: EventCategory;
 }) {
   const { meta } = mark;
   const Icon = meta.icon;
   return (
-    <Tooltip label={`${meta.short} · ${title} — ${formatDate(mark.date)}`}>
+    <Tooltip label={`${milestoneText(meta, category).short} · ${title} — ${formatDate(mark.date)}`}>
       <span
         className="absolute top-1 z-10 -translate-x-1/2"
         style={{ insetInlineStart: `${left}%` }}
@@ -354,7 +363,7 @@ function CompactRow({
         {marks.map((mark) => (
           <span key={mark.meta.key} className="flex items-center gap-1.5 text-sm text-ink-secondary">
             <mark.meta.icon className={cn('h-4 w-4 shrink-0', mark.meta.text)} aria-hidden="true" />
-            {mark.meta.short}: {formatDate(mark.date)}
+            {milestoneText(mark.meta, event.category).short}: {formatDate(mark.date)}
           </span>
         ))}
 

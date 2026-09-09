@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown, Plus, TriangleAlert } from '
 import { EventCategory, MilestoneKey } from '../types';
 import type { EventInput } from '../services/api';
 import { CATEGORY_META, currentMonthKey } from '../utils/eventMeta';
-import { MILESTONES, OPTIONAL_MILESTONES, milestoneWarnings } from '../data/milestones';
+import { MILESTONES, OPTIONAL_MILESTONES, milestoneText, milestoneWarnings } from '../data/milestones';
 import { monthName, monthKeyFromOrdinal, monthOrdinal } from '../utils/period';
 import { Modal, Button, Field, Input, Textarea, cn } from './ui';
 
@@ -296,7 +296,7 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
           <>
             <fieldset className="flex flex-col gap-3 rounded-lg border border-line bg-canvas p-3">
               <legend className="px-1 text-xs font-semibold text-ink-secondary">
-                מתי האירוע קורה?
+                {milestoneText(MILESTONES.find((m) => m.key === 'actual')!, category).label}
               </legend>
 
               <div className="flex gap-2">
@@ -387,6 +387,7 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
                     <MilestoneField
                       key={m.key}
                       meta={m}
+                      category={category}
                       value={dates[m.key]}
                       onChange={(v) => setDates((d) => ({ ...d, [m.key]: v }))}
                       sameDayAs={
@@ -409,6 +410,7 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
                     <MilestoneField
                       key={m.key}
                       meta={m}
+                      category={category}
                       value={dates[m.key]}
                       onChange={(v) => setDates((d) => ({ ...d, [m.key]: v }))}
                     />
@@ -522,26 +524,30 @@ function PrecisionChoice({
 
 function MilestoneField({
   meta,
+  category,
   value,
   onChange,
   sameDayAs
 }: {
   meta: (typeof MILESTONES)[number];
+  /** The wording follows the kind of work — see milestoneText. */
+  category: EventCategory;
   value: string;
   onChange: (value: string) => void;
   /** Offers to copy a sibling date. An offer a person accepts, never an auto-fill. */
   sameDayAs?: string;
 }) {
   const id = `ae-${meta.key}`;
+  const text = milestoneText(meta, category);
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={id} className="flex items-center gap-1.5 text-base font-semibold text-ink">
         <span className={cn('grid h-6 w-6 place-items-center rounded', meta.bg, meta.text)}>
           <meta.icon className="h-3.5 w-3.5" aria-hidden="true" />
         </span>
-        {meta.label}
+        {text.label}
       </label>
-      <p className="text-sm text-ink-tertiary">{meta.hint}</p>
+      <p className="text-sm text-ink-tertiary">{text.hint}</p>
       <div className="flex items-center gap-2">
         <Input
           id={id}
