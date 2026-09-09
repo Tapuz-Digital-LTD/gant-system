@@ -1,7 +1,18 @@
 import React from 'react';
-import { Bell, Check, CheckCheck, ClipboardCheck, Clock, Snowflake, UserPlus, X } from 'lucide-react';
+import {
+  Bell,
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ClipboardCheck,
+  Clock,
+  Snowflake,
+  UserPlus,
+  X
+} from 'lucide-react';
 import { AppNotification, NotificationKind } from '../types';
 import { useNotifications, useNotificationMutations } from '../hooks/useBoardData';
+import { groupNotifications, type NotificationGroup } from '../utils/notificationGroups';
 import { Button, Popover, cn } from './ui';
 
 /**
@@ -14,6 +25,11 @@ import { Button, Popover, cn } from './ui';
  *
  * The count is unread items, and it is absent rather than zero: a badge showing
  * "0" is a thing to check, and there is nothing to check.
+ *
+ * Sorted by what it asks of the reader, and anything that repeats folded into
+ * one line. Fourteen rows saying "משימה באיחור" is not fourteen pieces of news,
+ * it is one piece of news fourteen times — and that is a bell people stop
+ * opening.
  */
 
 const KIND_META: Record<NotificationKind, { icon: typeof Bell; tone: string }> = {
@@ -95,22 +111,92 @@ export function NotificationsBell({ onOpenLink }: { onOpenLink: (link: string) =
             <p className="text-sm text-ink-tertiary">כשמשהו ידרוש את תשומת ליבך, הוא יופיע כאן.</p>
           </div>
         ) : (
-          <ul className="divide-y divide-line">
-            {items.map((item) => (
-              <NotificationRow
-                key={item.id}
-                item={item}
-                onOpen={() => {
-                  if (!item.readAt) markRead.mutate(item.id);
-                  if (item.link) onOpenLink(item.link);
-                }}
-                onDismiss={() => remove.mutate(item.id)}
-              />
-            ))}
-          </ul>
+          groupNotifications(items).map((section) => (
+            <section key={section.severity}>
+              <h3 className="sticky top-0 z-1 bg-subtle px-3 py-1 text-xs font-bold text-ink-secondary">
+                {section.heading}
+                {section.unread > 0 && <span className="text-ink-tertiary"> · {section.unread} חדשות</span>}
+              </h3>
+              {section.groups.map((group) => (
+                <Group
+                  key={group.kind}
+                  group={group}
+                  onOpen={(item) => {
+                    if (!item.readAt) markRead.mutate(item.id);
+                    if (item.link) onOpenLink(item.link);
+                  }}
+                  onDismiss={(item) => remove.mutate(item.id)}
+                />
+              ))}
+            </section>
+          ))
         )}
       </div>
     </Popover>
+  );
+}
+
+/**
+ * One kind of news, once.
+ *
+ * A folded group opens in place rather than navigating somewhere — the point of
+ * folding is that the detail is still one click away, not that it is gone.
+ */
+function Group({
+  group,
+  onOpen,
+  onDismiss
+}: {
+  group: NotificationGroup;
+  onOpen: (item: AppNotification) => void;
+  onDismiss: (item: AppNotification) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const meta = KIND_META[group.kind] ?? KIND_META.task_assigned;
+  const Icon = meta.icon;
+
+  if (!group.folded) {
+    return (
+      <ul className="divide-y divide-line">
+        {group.items.map((item) => (
+          <NotificationRow key={item.id} item={item} onOpen={() => onOpen(item)} onDismiss={() => onDismiss(item)} />
+        ))}
+      </ul>
+    );
+  }
+
+  return (
+    <div className="border-t border-line first:border-t-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-start hover:bg-subtle/60"
+      >
+        <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-lg', meta.tone)}>
+          <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className={cn('block text-base', group.unread > 0 ? 'font-bold text-ink' : 'font-semibold text-ink-secondary')}>
+            {group.title}
+          </span>
+          <span className="block text-xs text-ink-tertiary">
+            {open ? 'לחץ כדי לסגור' : 'לחץ כדי לראות את כולן'}
+          </span>
+        </span>
+        <ChevronDown
+          className={cn('h-4.5 w-4.5 shrink-0 text-ink-tertiary transition-transform', open && 'rotate-180')}
+          aria-hidden="true"
+        />
+      </button>
+
+      {open && (
+        <ul className="divide-y divide-line border-t border-line bg-canvas/50">
+          {group.items.map((item) => (
+            <NotificationRow key={item.id} item={item} onOpen={() => onOpen(item)} onDismiss={() => onDismiss(item)} />
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
