@@ -20,7 +20,7 @@ export interface UserAccess {
 
 /** Every capability the UI gates on. Mirrors server/permissions.ts. */
 export type Capability =
-  | 'event.create' | 'event.edit' | 'event.delete' | 'event.restore'
+  | 'event.create' | 'event.edit' | 'event.delete' | 'event.restore' | 'event.purge'
   | 'task.create' | 'task.edit' | 'task.delete'
   | 'comment.create'
   | 'board.create' | 'board.edit' | 'board.duplicate' | 'board.delete'

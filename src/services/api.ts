@@ -120,6 +120,11 @@ export const api = {
     archive: (id: string) => request<void>(`/events/${id}`, { method: 'DELETE' }),
     listArchived: (boardId: string) => request<EventItem[]>(`/boards/${boardId}/archive`),
     restore: (id: string) => request<EventItem>(`/events/${id}/restore`, { method: 'POST' }),
+    /** Irreversible, and only for an event already in the archive. */
+    purge: (id: string) =>
+      request<{ id: string; title: string; taskCount: number }>(`/events/${id}/permanent`, {
+        method: 'DELETE'
+      }),
     activity: (id: string) => request<ActivityEntry[]>(`/events/${id}/activity`)
   },
 

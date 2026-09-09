@@ -387,6 +387,39 @@ export function createRepo(db: Database) {
         .limit(200);
     },
 
+    /**
+     * Deletes an event for good, with its tasks, checklists and comments — the
+     * schema cascades those. Only from the archive: an event has to be archived
+     * first, so nothing can be erased in a single click from the calendar.
+     *
+     * The activity row survives, because `activity.entity_id` is a plain column
+     * and not a foreign key: who removed what, and the whole row as it was, are
+     * still in the database afterwards.
+     *
+     * They are not reachable over the API, though. `GET /events/:id/activity`
+     * decides board access by looking the event up, so once the event is gone
+     * the route answers 404. Reading a deleted event's history needs either a
+     * board-level activity route or a look at the table directly. Nobody has
+     * asked for one yet; this note is here so the next person is not surprised.
+     */
+    async purgeEvent(id: string, actorId: string | null) {
+      const [before] = await db.select().from(events).where(eq(events.id, id));
+      if (!before) throw new NotFoundError('לא מצאנו את האירוע. ייתכן שכבר נמחק');
+      if (!before.archivedAt) {
+        throw new ConflictExistsError('אפשר למחוק לצמיתות רק אירוע שנמצא בארכיון');
+      }
+
+      const [{ tasks: taskCount }] = await db
+        .select({ tasks: sql<number>`count(*)::int` })
+        .from(tasks)
+        .where(eq(tasks.eventId, id));
+
+      // Logged before the delete: afterwards there is nothing left to describe.
+      await log(db, actorId, 'event', id, 'purged', { ...before, taskCount }, null);
+      await db.delete(events).where(eq(events.id, id));
+      return { id, title: before.title, taskCount };
+    },
+
     async restoreEvent(id: string, actorId: string | null) {
       const [row] = await db
         .update(events)

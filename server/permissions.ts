@@ -12,6 +12,7 @@ export const PERMISSIONS = [
   { key: 'event.edit', label: 'עריכת אירועים', group: 'אירועים' },
   { key: 'event.delete', label: 'מחיקת אירועים', group: 'אירועים' },
   { key: 'event.restore', label: 'שחזור מהארכיון', group: 'אירועים' },
+  { key: 'event.purge', label: 'מחיקה סופית מהארכיון (אין שחזור)', group: 'אירועים' },
 
   { key: 'task.create', label: 'הוספת משימות', group: 'משימות' },
   { key: 'task.edit', label: 'עריכת משימות ושינוי סטטוס', group: 'משימות' },
@@ -42,6 +43,9 @@ export const DEFAULTS: Record<Role, PermissionKey[]> = {
     'event.edit',
     'event.delete',
     'event.restore',
+    // 'event.purge' is deliberately absent: an editor may archive, and an
+    // archive that anyone can empty is not an archive. An admin can grant it.
+
     'task.create',
     'task.edit',
     'task.delete',

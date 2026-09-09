@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { createRepo, ConflictError, NotFoundError } from './repo.ts';
+import { createRepo, ConflictError, ConflictExistsError, NotFoundError } from './repo.ts';
 import type { Database } from './client.ts';
 import * as schema from './schema.ts';
 
@@ -205,6 +205,67 @@ assert.ok(
   !(await repo.listBoards()).some((b) => b.id === board.id),
   'archived boards drop out of reads'
 );
+
+// ---------- permanent deletion ----------
+// The archive is the only door: an event has to be in it before it can go.
+const purgeBoard = await repo.createBoard({ name: 'לוח מחיקה', description: '' }, null);
+const doomed = await repo.createEvent(
+  purgeBoard.id,
+  { title: 'אירוע שיימחק', category: 'campaign', actualDate: '2027-04-01', prepMonths: 1 },
+  null
+);
+const doomedTask = await repo.createTask(doomed.id, { title: 'משימה שתלך איתו' }, null);
+await repo.createComment(doomed.id, { body: 'תגובה שתלך איתו' }, null);
+
+await assert.rejects(
+  () => repo.purgeEvent(doomed.id, null),
+  (e: unknown) => e instanceof ConflictExistsError,
+  'an event that is not archived cannot be deleted for good'
+);
+assert.ok(await repo.getEvent(doomed.id), 'and it is still there after the refusal');
+
+await repo.archiveEvent(doomed.id, null);
+const purged = await repo.purgeEvent(doomed.id, null);
+assert.equal(purged.title, 'אירוע שיימחק');
+assert.equal(purged.taskCount, 1, 'the caller is told what went with it');
+
+await assert.rejects(
+  () => repo.getEvent(doomed.id),
+  (e: unknown) => e instanceof NotFoundError,
+  'the event is gone'
+);
+assert.equal(
+  (await repo.listArchivedEvents(purgeBoard.id)).length,
+  0,
+  'and gone from the archive too'
+);
+assert.equal((await repo.listComments(doomed.id)).length, 0, 'its comments went with it');
+
+// The audit trail is not a child of the event, so it outlives it. Who deleted
+// what, and the whole row as it was, stay readable.
+const purgeTrail = await repo.listActivity('event', doomed.id);
+const purgeEntry = purgeTrail.find((a) => a.action === 'purged');
+assert.ok(purgeEntry, 'the deletion is recorded');
+assert.equal(
+  (purgeEntry!.before as { title: string }).title,
+  'אירוע שיימחק',
+  'and the record still holds what was deleted'
+);
+
+await assert.rejects(
+  () => repo.purgeEvent(doomed.id, null),
+  (e: unknown) => e instanceof NotFoundError,
+  'deleting it twice is a clear not-found, not a crash'
+);
+
+// A neighbour on the same board is untouched.
+const survivor = await repo.createEvent(
+  purgeBoard.id,
+  { title: 'אירוע ששורד', category: 'campaign', actualDate: '2027-04-10', prepMonths: 1 },
+  null
+);
+assert.ok(await repo.getEvent(survivor.id), 'the other event on that board is fine');
+assert.ok(doomedTask.id, 'the task existed before the purge');
 
 // ---------- audit trail ----------
 const trail = await repo.listActivity('event', rosh.id);

@@ -255,6 +255,7 @@ export default function App() {
           onClose={() => setIsArchiveOpen(false)}
           boardId={board.id}
           canEdit={can('event.restore')}
+          canPurge={can('event.purge')}
         />
       )}
 

@@ -206,6 +206,17 @@ export function createApiRouter(
     res.json({ data: await req.repo.listArchivedEvents(boardId) });
   }));
 
+  /**
+   * The one irreversible route in the API. Its own capability, off for editors
+   * by default, and it refuses anything that is not already in the archive.
+   */
+  api.delete('/events/:id/permanent', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'event.purge', 'מחיקה סופית');
+    const eventId = id(req.params.id);
+    await assertBoardWrite(req.repo, actor, await req.repo.boardIdForEvent(eventId));
+    res.json({ data: await req.repo.purgeEvent(eventId, actor.id) });
+  }));
+
   api.post('/events/:id/restore', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'event.restore', 'שחזור מהארכיון');
     const eventId = id(req.params.id);
