@@ -209,10 +209,16 @@ async function suggestTasks(req: Request, res: Response) {
     /*
      * What it actually cost, from the provider rather than from a guess.
      *
-     * Recorded after the fact and never blocking: a failure to write the
-     * number must not fail a request the person already paid for.
+     * Awaited, despite being bookkeeping. Left floating it never ran: a
+     * serverless instance is frozen the moment the response is written, so the
+     * update was abandoned mid-flight and every token count stayed at zero. One
+     * short UPDATE on the end of a fifteen-second request is not the thing to
+     * optimise.
+     *
+     * Still swallowed: failing to write a number must not fail a request the
+     * person has already paid for.
      */
-    void req.repo
+    await req.repo
       .recordAiTokens(actor.id, response.usage?.input_tokens ?? 0, response.usage?.output_tokens ?? 0)
       .catch(() => undefined);
 
