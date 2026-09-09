@@ -13,9 +13,17 @@ const WHY: Record<SearchHit['matchedOn'], string> = {
 };
 
 /**
- * Search that waits to be asked, then says what it found and takes you there.
- * Typing alone changes nothing — the old instant filter quietly reshaped the
- * board and left no way to tell what had matched.
+ * Search that answers while you type, and takes you where you point.
+ *
+ * It used to wait for Enter. That was a fix for a real problem — an earlier
+ * version filtered the board itself as you typed, silently reshaping what was
+ * on screen with no way to tell what had matched — but it overcorrected: results
+ * arrive in a list of their own now, so being instant reshapes nothing. Waiting
+ * meant typing a word, seeing nothing happen, and having to work out that a
+ * button existed.
+ *
+ * The pause is what makes it cheap: one request after somebody stops typing,
+ * not one per keystroke.
  */
 export function SearchBox({
   boardId,
@@ -32,6 +40,28 @@ export function SearchBox({
 
   const results = useSearch(boardId, submitted);
   const hits: SearchHit[] = results.data ?? [];
+
+  /*
+   * Ask once the typing stops.
+   *
+   * Two characters is the floor the server enforces anyway, and clearing the
+   * box has to clear the results too — a stale list under an empty field is
+   * the search equivalent of a screen that lies.
+   */
+  useEffect(() => {
+    const q = text.trim();
+    if (q.length < 2) {
+      setSubmitted('');
+      setOpen(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setSubmitted(q);
+      setOpen(true);
+      setCursor(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [text]);
 
   useEffect(() => {
     const away = (e: MouseEvent) => {
