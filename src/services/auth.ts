@@ -7,8 +7,7 @@ export const authClient = createAuthClient({
 });
 
 export interface AuthConfig {
-  google: boolean;
-  emailOtp: boolean;
+  /** False means codes are only written to the server log, not emailed. */
   mailConfigured: boolean;
   staffDomain: string | null;
 }

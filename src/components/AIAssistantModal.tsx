@@ -6,13 +6,12 @@ import { api } from '../services/api';
 import { Modal, Button, Badge, Field, Input, Select, cn } from './ui';
 import { CATEGORY_META } from '../utils/eventMeta';
 
+/** Mirrors the schema the server validates before it answers. */
 interface Suggestion {
   title: string;
   description?: string;
   priority?: string;
   suggestedRole?: string;
-  daysBeforeKickoff?: number;
-  checklist?: string[];
 }
 
 interface AIAssistantModalProps {
@@ -170,12 +169,11 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
                       <span className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="text-base font-semibold text-ink">{s.title}</span>
                         {s.description && <span className="text-sm text-ink-secondary">{s.description}</span>}
-                        <span className="flex flex-wrap gap-1.5">
-                          {s.suggestedRole && <Badge tone="neutral">{s.suggestedRole}</Badge>}
-                          {s.checklist && s.checklist.length > 0 && (
-                            <Badge tone="neutral">{s.checklist.length} סעיפי צ׳קליסט</Badge>
-                          )}
-                        </span>
+                        {s.suggestedRole && (
+                          <span className="flex flex-wrap gap-1.5">
+                            <Badge tone="neutral">{s.suggestedRole}</Badge>
+                          </span>
+                        )}
                       </span>
                     </button>
                   </li>

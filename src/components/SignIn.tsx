@@ -12,7 +12,7 @@ import { Button, Field, Input, cn } from './ui';
 export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn: () => void }) {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
-  const [busy, setBusy] = useState<'google' | 'send' | 'verify' | null>(null);
+  const [busy, setBusy] = useState<'send' | 'verify' | null>(null);
   /** Step 1 collects the address, step 2 the six digits it was sent. */
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [error, setError] = useState('');
@@ -29,15 +29,6 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
       (otp.trim().length === 6 ? undefined : 'הקוד צריך להיות בן 6 ספרות')
   });
 
-  const google = async () => {
-    setBusy('google');
-    setError('');
-    const { error } = await authClient.signIn.social({ provider: 'google', callbackURL: '/' });
-    if (error) {
-      setError(error.message ?? 'לא הצלחנו להכניס אותך. נסה שוב');
-      setBusy(null);
-    }
-  };
 
   const sendCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,24 +74,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
         </div>
 
         <div className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
-          {config.google && (
-            <Button variant="primary" onClick={google} disabled={busy !== null} className="w-full">
-              {busy === 'google' ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogIn className="h-5 w-5" />}
-    כניסה עם Google
-              {config.staffDomain && <span className="opacity-70">({config.staffDomain})</span>}
-            </Button>
-          )}
-
-          {config.google && config.emailOtp && (
-            <div className="flex items-center gap-3">
-              <span className="h-px flex-1 bg-line" />
-              <span className="text-xs text-ink-tertiary">או</span>
-              <span className="h-px flex-1 bg-line" />
-            </div>
-          )}
-
-          {config.emailOtp &&
-            (step === 'email' ? (
+          {step === 'email' ? (
               <form onSubmit={sendCode} noValidate className="flex flex-col gap-3">
                 <Field label="מייל" error={emailForm.error('email')} htmlFor="si-email">
                   <Input
@@ -114,7 +88,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
                     className={emailForm.error('email') ? 'border-late' : undefined}
                   />
                 </Field>
-                <Button type="submit" variant="secondary" disabled={busy !== null}>
+                <Button type="submit" variant="primary" disabled={busy !== null}>
                   {busy === 'send' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
                   שלחו לי קוד
                 </Button>
@@ -178,13 +152,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
 לא הגיע? שלחו שוב
                 </button>
               </form>
-            ))}
-
-          {!config.google && !config.emailOtp && (
-            <p className="text-base text-ink-secondary">
-              לא הוגדרה שיטת התחברות בשרת. פנה למנהל המערכת.
-            </p>
-          )}
+            )}
 
           {error && <p className={cn('text-sm text-late')}>{error}</p>}
         </div>
