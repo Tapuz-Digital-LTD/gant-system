@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, PlugZap, SearchX } from 'lucide-react';
-import { EventItem, FilterState, UserAccess } from './types';
+import { EventItem, FilterState, GanttBoard, UserAccess } from './types';
 import {
   useBoards,
   useUsers,
   useEvents,
   useEventMutations,
+  useArchivedBoards,
   useBoardMutations,
   useMyTasks,
   useMyTaskMutations,
@@ -37,7 +38,7 @@ import { SignIn } from './components/SignIn';
 import { fetchAuthConfig, fetchMe, authClient } from './services/auth';
 import { ApiError } from './services/api';
 import { focusFirstBadField } from './utils/fieldErrors';
-import { Button, useToast } from './components/ui';
+import { Button, ConfirmDialog, useToast } from './components/ui';
 import { makeCan } from './hooks/useCan';
 import { NoPermission } from './components/NoPermission';
 import { api } from './services/api';
@@ -86,6 +87,9 @@ export default function App() {
 
   const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
   const [isManageBoardsOpen, setIsManageBoardsOpen] = useState(false);
+  /* --- the project lifecycle: new → work → finished → archive → next --- */
+  const [showArchive, setShowArchive] = useState(false);
+  const [purging, setPurging] = useState<GanttBoard | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
@@ -113,6 +117,35 @@ export default function App() {
 
   const m = useEventMutations(board?.id, range.from, range.to);
   const boardMutations = useBoardMutations();
+  // The count is cheap and always shown; the list itself is only fetched when
+  // somebody opens the shelf.
+  const archivedQuery = useArchivedBoards(Boolean(me));
+  const archivedBoards = archivedQuery.data ?? [];
+
+  /**
+   * Finishing a project is one click, with the way back offered afterwards.
+   *
+   * A confirmation dialog in front of a reversible action taxes the ninety-nine
+   * people who meant it to protect the one who did not. Undo is the other way
+   * round.
+   */
+  const archiveBoard = async (target: GanttBoard) => {
+    /*
+     * Not `run()`: it reports success by returning the mutation's result, and
+     * an archive returns nothing — so "it worked" and "it failed" were the same
+     * `undefined`, and the undo never appeared. A void result needs the throw,
+     * not the return value.
+     */
+    try {
+      await boardMutations.archive.mutateAsync(target.id);
+      notify('success', `«${target.name}» עבר לארכיון`, {
+        label: 'בטל',
+        onClick: () => void run(boardMutations.restore.mutateAsync(target.id))
+      });
+    } catch (error) {
+      notify('error', describeError(error));
+    }
+  };
 
 
   /** What the home screen puts in front of somebody before anything else. */
@@ -262,6 +295,24 @@ export default function App() {
 
   const dialogs = (
     <>
+      {/*
+        The one board action that is not reversible, and the only one that asks
+        first. It names what goes with it, because "delete project" does not
+        make somebody picture the events and tasks underneath.
+      */}
+      {purging && (
+        <ConfirmDialog
+          title={`למחוק את «${purging.name}» לצמיתות?`}
+          body={`כל האירועים, המשימות והתאריכים בפרויקט הזה יימחקו. אי אפשר לשחזר.`}
+          confirmLabel="מחק לצמיתות"
+          onCancel={() => setPurging(null)}
+          onConfirm={async () => {
+            const target = purging;
+            setPurging(null);
+            await run(boardMutations.purge.mutateAsync(target.id), `«${target.name}» נמחק לצמיתות`);
+          }}
+        />
+      )}
       {isPermissionsOpen && (
         <UserPermissionsModal
           isOpen
@@ -410,6 +461,18 @@ export default function App() {
           onOpenMyTasks={() => navigate('/my')}
           onOpen={(next) => navigate(next)}
           onCreateBoard={() => setIsManageBoardsOpen(true)}
+          archivedBoards={archivedBoards}
+          archivedCount={archivedBoards.length}
+          showArchive={showArchive}
+          onToggleArchive={() => setShowArchive((v) => !v)}
+          onRenameBoard={() => setIsManageBoardsOpen(true)}
+          onDuplicateBoard={async (b) => {
+            const copy = await run(boardMutations.duplicate.mutateAsync({ id: b.id }), 'הפרויקט שוכפל');
+            if (copy) navigate(boardRoute(copy.id));
+          }}
+          onArchiveBoard={archiveBoard}
+          onRestoreBoard={(b) => void run(boardMutations.restore.mutateAsync(b.id), `«${b.name}» חזר לפעילות`)}
+          onPurgeBoard={setPurging}
           onOpenPeople={() => setIsPermissionsOpen(true)}
           onOpenSettings={() => navigate('/settings')}
           onSignOut={signOut}

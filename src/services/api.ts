@@ -107,7 +107,11 @@ export const api = {
       request<GanttBoard>(`/boards/${id}`, { method: 'PATCH', ...body(input) }),
     duplicate: (id: string, name?: string) =>
       request<GanttBoard>(`/boards/${id}/duplicate`, { method: 'POST', ...body({ name }) }),
-    archive: (id: string) => request<void>(`/boards/${id}`, { method: 'DELETE' })
+    archive: (id: string) => request<void>(`/boards/${id}`, { method: 'DELETE' }),
+    /** The finished shelf. Same permissions, same scoping — just the other state. */
+    listArchived: () => request<GanttBoard[]>('/boards?archived=1'),
+    restore: (id: string) => request<GanttBoard>(`/boards/${id}/restore`, { method: 'POST' }),
+    purge: (id: string) => request<{ id: string }>(`/boards/${id}/permanent`, { method: 'DELETE' })
   },
 
   events: {

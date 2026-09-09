@@ -5,6 +5,7 @@ export { Field, Label, Input, Textarea, Select } from './Field';
 export { Badge, StatusPill, Dot } from './Badge';
 export type { StatusFill } from './Badge';
 export { Modal, DialogClose } from './Dialog';
+export { ConfirmDialog } from './ConfirmDialog';
 export { Menu, MenuItem, MenuLabel, MenuSeparator } from './Menu';
 export { Tooltip, TooltipProvider } from './Tooltip';
 export { Popover, PopoverClose } from './Popover';

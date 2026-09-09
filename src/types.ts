@@ -185,6 +185,8 @@ export interface DigestPreview {
 }
 
 export interface GanttBoard {
+  /** Set when the project is finished and living on the archive shelf. */
+  archivedAt?: string | null;
   id: string;
   name: string;
   description: string;

@@ -54,9 +54,12 @@ export const DEFAULTS: Record<Role, PermissionKey[]> = {
     'board.create',
     'board.edit',
     'board.duplicate',
-    // 'board.delete' and 'board.purge' are absent for the same reason
-    // 'event.purge' is: finishing somebody else's project, or emptying the
-    // archive, is an admin's call. An admin can grant either.
+    // Finishing a project is part of running one. Somebody who can open a
+    // board and cannot put it away has to ask an admin to end their own work,
+    // and the archive fills up with projects nobody closed.
+    'board.delete',
+    // 'board.purge' is absent for the same reason 'event.purge' is: an archive
+    // anybody can empty is not an archive. An admin can grant it.
     'export.run',
     'activity.view'
   ],

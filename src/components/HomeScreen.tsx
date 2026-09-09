@@ -1,11 +1,27 @@
 import React from 'react';
-import { AlertTriangle, ArrowLeft, BellRing, CalendarDays, LayoutGrid, ListChecks, Plus, RotateCcw, Users } from 'lucide-react';
+import {
+  AlertTriangle,
+  Archive,
+  ArrowLeft,
+  BellRing,
+  CalendarDays,
+  ChevronDown,
+  Copy,
+  LayoutGrid,
+  ListChecks,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Trash2,
+  Users
+} from 'lucide-react';
 import { GanttBoard, UserAccess } from '../types';
 import type { Can } from '../hooks/useCan';
 import { boardRoute, recallPlace } from '../utils/routes';
 import { todayISO, monthName } from '../utils/period';
 import { NotificationsBell } from './NotificationsBell';
-import { Button, cn } from './ui';
+import { Button, Menu, MenuItem, MenuSeparator, cn } from './ui';
 
 interface HomeScreenProps {
   boards: GanttBoard[];
@@ -19,6 +35,16 @@ interface HomeScreenProps {
   onOpenPeople: () => void;
   onOpenSettings: () => void;
   onSignOut: () => void;
+  /* --- project lifecycle: new → work → finished → archive → next --- */
+  archivedBoards: GanttBoard[];
+  archivedCount: number;
+  showArchive: boolean;
+  onToggleArchive: () => void;
+  onRenameBoard: (board: GanttBoard) => void;
+  onDuplicateBoard: (board: GanttBoard) => void;
+  onArchiveBoard: (board: GanttBoard) => void;
+  onRestoreBoard: (board: GanttBoard) => void;
+  onPurgeBoard: (board: GanttBoard) => void;
 }
 
 /**
@@ -77,11 +103,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onCreateBoard,
   onOpenPeople,
   onOpenSettings,
-  onSignOut
+  onSignOut,
+  archivedBoards,
+  archivedCount,
+  showArchive,
+  onToggleArchive,
+  onRenameBoard,
+  onDuplicateBoard,
+  onArchiveBoard,
+  onRestoreBoard,
+  onPurgeBoard
 }) => {
   // Only offer to go back somewhere that still exists and is still allowed.
   const remembered = recallPlace(currentUser.id);
   const lastBoard = remembered && boards.find((b) => b.id === remembered.boardId);
+  // No menu at all for somebody who cannot do any of the things in it — an
+  // empty ⋯ is a button that punishes curiosity.
+  const canManage =
+    can('board.edit') || can('board.duplicate') || can('board.delete') || can('board.purge');
 
   const firstName = currentUser.name?.split(' ')[0] || '';
 
@@ -243,11 +282,122 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {boards.map((board) => (
-                <BoardCard key={board.id} board={board} onOpen={onOpen} />
+                <BoardCard
+                  key={board.id}
+                  board={board}
+                  onOpen={onOpen}
+                  actions={
+                    canManage ? (
+                      <Menu
+                        trigger={
+                          <button
+                            aria-label={`פעולות על ${board.name}`}
+                            className={cn(
+                              'grid h-8 w-8 place-items-center rounded-lg text-ink-tertiary transition',
+                              'opacity-0 hover:bg-subtle hover:text-ink',
+                              'group-hover:opacity-100 focus-visible:opacity-100'
+                            )}
+                          >
+                            <MoreHorizontal className="h-5 w-5" />
+                          </button>
+                        }
+                      >
+                        {can('board.edit') && (
+                          <MenuItem onSelect={() => onRenameBoard(board)}>
+                            <Pencil className="h-4.5 w-4.5" aria-hidden="true" />
+                            שנה שם ותיאור
+                          </MenuItem>
+                        )}
+                        {can('board.duplicate') && (
+                          <MenuItem onSelect={() => onDuplicateBoard(board)}>
+                            <Copy className="h-4.5 w-4.5" aria-hidden="true" />
+                            שכפל פרויקט
+                          </MenuItem>
+                        )}
+                        {can('board.delete') && (
+                          <>
+                            <MenuSeparator />
+                            <MenuItem onSelect={() => onArchiveBoard(board)}>
+                              <Archive className="h-4.5 w-4.5" aria-hidden="true" />
+                              סיימנו — לארכיון
+                            </MenuItem>
+                          </>
+                        )}
+                      </Menu>
+                    ) : undefined
+                  }
+                />
               ))}
             </div>
           )}
         </section>
+
+        {/*
+          The finished shelf.
+          
+          Closed by default and quiet about it: a list of projects nobody is
+          working on should not compete with the ones they are. One click opens
+          it, and the list is only fetched then.
+        */}
+        {archivedCount > 0 && (
+          <section className="mt-6">
+            <button
+              onClick={onToggleArchive}
+              aria-expanded={showArchive}
+              className="flex items-center gap-2 text-sm font-semibold text-ink-tertiary hover:text-ink"
+            >
+              <Archive className="h-4.5 w-4.5" aria-hidden="true" />
+              ארכיון
+              <span className="tnum">({archivedCount})</span>
+              <ChevronDown
+                className={cn('h-4 w-4 transition-transform', showArchive && 'rotate-180')}
+                aria-hidden="true"
+              />
+            </button>
+
+            {showArchive && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {archivedBoards.map((board) => (
+                  <BoardCard
+                    key={board.id}
+                    board={board}
+                    onOpen={onOpen}
+                    actions={
+                      canManage ? (
+                        <Menu
+                          trigger={
+                            <button
+                              aria-label={`פעולות על ${board.name}`}
+                              className="grid h-8 w-8 place-items-center rounded-lg text-ink-tertiary transition hover:bg-subtle hover:text-ink"
+                            >
+                              <MoreHorizontal className="h-5 w-5" />
+                            </button>
+                          }
+                        >
+                          {can('board.delete') && (
+                            <MenuItem onSelect={() => onRestoreBoard(board)}>
+                              <RotateCcw className="h-4.5 w-4.5" aria-hidden="true" />
+                              החזר לפעילות
+                            </MenuItem>
+                          )}
+                          {can('board.purge') && (
+                            <>
+                              <MenuSeparator />
+                              <MenuItem onSelect={() => onPurgeBoard(board)} className="text-late">
+                                <Trash2 className="h-4.5 w-4.5" aria-hidden="true" />
+                                מחק לצמיתות
+                              </MenuItem>
+                            </>
+                          )}
+                        </Menu>
+                      ) : undefined
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {can('board.create') && boards.length > 0 && (
           <Button variant="secondary" className="mt-4" onClick={onCreateBoard}>
@@ -279,33 +429,62 @@ function viewLabel(view: string | null): string {
   return 'הלוח';
 }
 
-function BoardCard({ board, onOpen }: { board: GanttBoard; onOpen: (url: string) => void }) {
+/**
+ * One project.
+ *
+ * The whole card opens it — that is the thing people do ninety-nine times out
+ * of a hundred. Everything else lives behind one quiet ⋯, which appears on
+ * hover and is always present for a keyboard.
+ *
+ * The card cannot be a <button> any more: a menu button inside a button is
+ * invalid, and the two clicks fight. So the open action is an overlay that
+ * fills the card, and the menu sits above it.
+ */
+function BoardCard({
+  board,
+  onOpen,
+  actions
+}: {
+  board: GanttBoard;
+  onOpen: (url: string) => void;
+  actions?: React.ReactNode;
+}) {
   const accent = accentOf(board.id);
 
   return (
-    <button
-      onClick={() => onOpen(boardRoute(board.id))}
+    <div
       className={cn(
         'group relative flex flex-col items-start gap-2 overflow-hidden rounded-xl border bg-surface p-4 text-start',
         'border-line shadow-card transition-all',
         'hover:-translate-y-0.5 hover:shadow-raised',
         accent.hover,
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
+        'focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary'
       )}
     >
       <span className={cn('absolute inset-y-0 end-0 w-1', accent.bar)} aria-hidden="true" />
 
-      <span className={cn('grid h-10 w-10 place-items-center rounded-lg', accent.chip)}>
+      {/* The card's main action, filling it, underneath everything else. */}
+      <button
+        onClick={() => onOpen(boardRoute(board.id))}
+        aria-label={`פתח את ${board.name}`}
+        className="absolute inset-0 z-0 focus:outline-none"
+      />
+
+      {actions && <div className="absolute start-2 top-2 z-20">{actions}</div>}
+
+      <span className={cn('pointer-events-none z-10 grid h-10 w-10 place-items-center rounded-lg', accent.chip)}>
         <LayoutGrid className="h-5 w-5" aria-hidden="true" />
       </span>
 
-      <span className="text-md font-bold text-ink">{board.name}</span>
+      <span className="pointer-events-none z-10 text-md font-bold text-ink">{board.name}</span>
 
       {board.description && (
-        <span className="line-clamp-2 text-base text-ink-secondary">{board.description}</span>
+        <span className="pointer-events-none z-10 line-clamp-2 text-base text-ink-secondary">
+          {board.description}
+        </span>
       )}
 
-      <span className="mt-auto flex items-center gap-1.5 pt-2 text-sm text-ink-tertiary">
+      <span className="pointer-events-none z-10 mt-auto flex items-center gap-1.5 pt-2 text-sm text-ink-tertiary">
         <CalendarDays className="h-4 w-4" aria-hidden="true" />
         <span className="tnum">{board.eventCount}</span> אירועים
         <ArrowLeft
@@ -313,7 +492,7 @@ function BoardCard({ board, onOpen }: { board: GanttBoard; onOpen: (url: string)
           aria-hidden="true"
         />
       </span>
-    </button>
+    </div>
   );
 }
 

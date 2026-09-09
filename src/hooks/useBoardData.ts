@@ -5,6 +5,7 @@ import { EventItem, MyTask, TaskItem, TaskStatus } from '../types';
 /** Query keys in one place so a mutation can never invalidate the wrong cache entry. */
 export const keys = {
   boards: ['boards'] as const,
+  archivedBoards: ['boards', 'archived'] as const,
   myTasks: ['my-tasks'] as const,
   notifications: ['notifications'] as const,
   notificationPrefs: ['notification-prefs'] as const,
@@ -130,6 +131,13 @@ export function useComments(eventId: string | undefined) {
 export function useBoardMutations() {
   const qc = useQueryClient();
   const invalidateBoards = () => qc.invalidateQueries({ queryKey: keys.boards });
+  // Archiving moves a project between two lists, so both have to be refetched
+  // or the card lingers on one of them until a reload.
+  const invalidateBoth = () => {
+    invalidateBoards();
+    qc.invalidateQueries({ queryKey: keys.archivedBoards });
+    qc.invalidateQueries({ queryKey: keys.notifications });
+  };
 
   return {
     create: useMutation({ mutationFn: api.boards.create, onSuccess: invalidateBoards }),
@@ -145,8 +153,25 @@ export function useBoardMutations() {
         qc.invalidateQueries({ queryKey: ['events'] });
       }
     }),
-    archive: useMutation({ mutationFn: api.boards.archive, onSuccess: invalidateBoards })
+    archive: useMutation({ mutationFn: api.boards.archive, onSuccess: invalidateBoth }),
+    restore: useMutation({ mutationFn: api.boards.restore, onSuccess: invalidateBoth }),
+    purge: useMutation({ mutationFn: api.boards.purge, onSuccess: invalidateBoth })
   };
+}
+
+/**
+ * The finished shelf.
+ *
+ * Fetched only when somebody opens it. A list of projects nobody is working on
+ * has no business being loaded on every visit to the home screen.
+ */
+export function useArchivedBoards(enabled: boolean) {
+  return useQuery({
+    queryKey: keys.archivedBoards,
+    queryFn: api.boards.listArchived,
+    enabled,
+    staleTime: 30_000
+  });
 }
 
 export function useEventMutations(boardId: string | undefined, from: string, to: string) {
