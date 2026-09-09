@@ -22,6 +22,7 @@ const task = (over: Partial<TaskItem> = {}): TaskItem => ({
   status: 'todo',
   priority: 'medium',
   assigneeId: DANA,
+  assignedAt: null,
   startDate: null,
   endDate: null,
   dueDate: null,

@@ -520,6 +520,7 @@ export function createRepo(db: Database) {
           status: tasks.status,
           priority: tasks.priority,
           assigneeId: tasks.assigneeId,
+          assignedAt: tasks.assignedAt,
           startDate: tasks.startDate,
           endDate: tasks.endDate,
           dueDate: tasks.dueDate,
@@ -695,7 +696,12 @@ export function createRepo(db: Database) {
 
       const [row] = await db
         .insert(tasks)
-        .values({ ...input, eventId, position: next })
+        .values({
+          ...input,
+          eventId,
+          position: next,
+          assignedAt: input.assigneeId ? new Date() : null
+        })
         .returning();
       await log(db, actorId, 'task', row.id, 'created', null, row);
 
@@ -720,9 +726,18 @@ export function createRepo(db: Database) {
             ? (before.completedAt ?? new Date())
             : null;
 
+      // The handover clock restarts only on a real handover, so a task edited
+      // ten times still counts its days from when somebody was given it.
+      const assignedAt =
+        changes.assigneeId === undefined || changes.assigneeId === before.assigneeId
+          ? before.assignedAt
+          : changes.assigneeId
+            ? new Date()
+            : null;
+
       const [row] = await db
         .update(tasks)
-        .set({ ...changes, completedAt, version: before.version + 1, updatedAt: new Date() })
+        .set({ ...changes, assignedAt, completedAt, version: before.version + 1, updatedAt: new Date() })
         .where(and(eq(tasks.id, id), eq(tasks.version, version)))
         .returning();
 

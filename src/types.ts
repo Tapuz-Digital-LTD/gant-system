@@ -60,6 +60,8 @@ export interface TaskItem {
   status: TaskStatus;
   priority: TaskPriority;
   assigneeId: string | null;
+  /** When it last changed hands. Null for work nobody has been given. */
+  assignedAt: string | null;
   startDate: string | null;
   endDate: string | null;
   dueDate: string | null;

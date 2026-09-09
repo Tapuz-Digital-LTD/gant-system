@@ -182,6 +182,8 @@ export const tasks = pgTable(
     status: taskStatus('status').notNull().default('todo'),
     priority: taskPriority('priority').notNull().default('medium'),
     assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
+    /** When it last changed hands. The clock a "not started yet" reminder uses. */
+    assignedAt: timestamp('assigned_at', { withTimezone: true }),
 
     /** Day-resolution range. Always civil, even when the parent event is Hebrew-anchored. */
     startDate: date('start_date'),
@@ -265,6 +267,35 @@ export const notifications = pgTable(
     index('notifications_inbox_idx').on(t.userId, t.readAt, t.createdAt)
   ]
 );
+
+/**
+ * What one person wants to hear about, and how.
+ *
+ * Held as JSON rather than columns because these are preferences, not facts:
+ * they are read as a whole, written as a whole, and gain a key whenever a new
+ * kind of news is invented. `server/notifications/prefs.ts` is the shape, and
+ * reads it leniently — somebody who has never opened the settings screen has
+ * every default and nothing stored.
+ */
+export const notificationPrefs = pgTable('notification_prefs', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  prefs: jsonb('prefs').notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+/**
+ * The organisation's own defaults, edited by an admin.
+ *
+ * Exactly one row: the primary key is a boolean that may only be true, so a
+ * second row is a constraint violation rather than a bug nobody notices.
+ */
+export const workspaceSettings = pgTable('workspace_settings', {
+  id: boolean('id').primaryKey().default(true),
+  notificationDefaults: jsonb('notification_defaults').notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
 
 export const activity = pgTable(
   'activity',
