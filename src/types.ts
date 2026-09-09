@@ -14,6 +14,7 @@ export interface UserAccess {
   name: string;
   role: UserRole;
   isOwner?: boolean;
+  phone?: string | null;
   /** What this person may actually do. Comes from the server, never guessed. */
   permissions?: string[];
 }

@@ -8,6 +8,7 @@ import { PERMISSIONS, ROLE_LABELS, type Role } from './permissions.js';
 import { holidaysBetween } from './holidays.js';
 import { digestFor, digestText, hasAnything } from './notifications/digest.js';
 import { cronAuthorised, cronConfigured, runDigestJob } from './notifications/cron.js';
+import { israeliMobile } from './notifications/inforu.js';
 import { israelNow } from './notifications/prefs.js';
 import {
   type Actor,
@@ -95,12 +96,37 @@ export function createApiRouter(
 
   api.get('/me', asyncRoute(async (req, res) => {
     if (!req.actor) return res.json({ data: null });
-    res.json({
-      data: {
-        ...req.actor,
-        permissions: await req.repo.effectivePermissions(req.actor)
-      }
-    });
+    const [permissions, person] = await Promise.all([
+      req.repo.effectivePermissions(req.actor),
+      req.repo.findUserByEmail(req.actor.email)
+    ]);
+    res.json({ data: { ...req.actor, permissions, phone: person?.phone ?? null } });
+  }));
+
+  /**
+   * Your own number, and only your own — there is no user id in the path.
+   *
+   * Rejected rather than guessed at: a number stored wrong sends somebody
+   * else's work to a stranger, and the person who typed it would never find
+   * out why nothing arrives.
+   */
+  api.put('/my/phone', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const { phone } = v.phoneInput.parse(req.body);
+
+    if (phone === null || phone === '') {
+      res.json({ data: await req.repo.saveOwnPhone(actor.id, null) });
+      return;
+    }
+
+    const normalised = israeliMobile(phone);
+    if (!normalised) {
+      res.status(400).json({
+        error: { code: 'INVALID_PHONE', message: 'מספר הנייד לא נראה תקין. לדוגמה: 050-1234567' }
+      });
+      return;
+    }
+    res.json({ data: await req.repo.saveOwnPhone(actor.id, normalised) });
   }));
 
   api.get('/boards', asyncRoute(async (req, res) => {

@@ -106,6 +106,14 @@ export function useNotificationPrefMutations() {
   });
 }
 
+export function useSavePhone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.notifications.savePhone,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] })
+  });
+}
+
 export function useComments(eventId: string | undefined) {
   return useQuery({
     queryKey: keys.comments(eventId ?? ''),

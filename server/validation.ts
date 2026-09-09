@@ -123,6 +123,9 @@ export const personUpdate = z.object({
   role: memberRole.optional()
 });
 
+/** Empty string clears it — a person taking their number back out is a save, not a delete. */
+export const phoneInput = z.object({ phone: z.string().trim().max(30).nullable() });
+
 export const boardGrant = z.object({
   userId: z.string().uuid(),
   role: boardRole.default('viewer')

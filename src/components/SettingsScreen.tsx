@@ -9,11 +9,17 @@ import {
   Loader2,
   Mail,
   MessageSquare,
+  Smartphone,
   Users
 } from 'lucide-react';
 import { NotificationPrefs, UserAccess } from '../types';
 import type { Can } from '../hooks/useCan';
-import { useDigestPreview, useNotificationPrefs, useNotificationPrefMutations } from '../hooks/useBoardData';
+import {
+  useDigestPreview,
+  useNotificationPrefs,
+  useNotificationPrefMutations,
+  useSavePhone
+} from '../hooks/useBoardData';
 import { Button, cn } from './ui';
 
 interface SettingsScreenProps {
@@ -238,6 +244,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
                 />
               </Row>
 
+              {prefs.sms !== 'off' && <PhoneRow currentPhone={currentUser.phone ?? null} />}
+
               <p className="flex items-start gap-2 rounded-lg bg-progress-soft px-3 py-2.5 text-base text-ink">
                 <AlertTriangle className="mt-0.5 h-4.5 w-4.5 shrink-0 text-progress" aria-hidden="true" />
                 מייל ו-SMS עדיין לא מופעלים במערכת. ההגדרות כאן נשמרות, ויתחילו לפעול כשהחיבור לספק
@@ -287,6 +295,77 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
         )}
       </main>
     </div>
+  );
+};
+
+/**
+ * The number, only for the person it belongs to.
+ *
+ * Kept in local state while it is being typed, because a field that reformats
+ * itself under the cursor is a field people fight with. It is normalised once,
+ * on the server, when they are done — and if it cannot be, they are told now
+ * rather than by a text message that never arrives.
+ */
+const PhoneRow: React.FC<{ currentPhone: string | null }> = ({ currentPhone }) => {
+  const save = useSavePhone();
+  const [draft, setDraft] = React.useState(currentPhone ?? '');
+
+  React.useEffect(() => setDraft(currentPhone ?? ''), [currentPhone]);
+
+  const commit = () => {
+    const value = draft.trim();
+    if (value === (currentPhone ?? '')) return;
+    save.mutate(value === '' ? null : value);
+  };
+
+  return (
+    <Row label="מספר לקבלת SMS" hint="בלי מספר אין לאן לשלוח. אפשר למחוק אותו בכל רגע.">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Smartphone
+            className="pointer-events-none absolute end-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-ink-tertiary"
+            aria-hidden="true"
+          />
+          <input
+            type="tel"
+            inputMode="tel"
+            dir="ltr"
+            autoComplete="tel"
+            placeholder="050-1234567"
+            aria-label="מספר נייד לקבלת SMS"
+            aria-invalid={save.isError || undefined}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            className={cn(
+              'h-11 w-52 rounded-lg border-2 bg-surface px-3 pe-10 text-start text-base text-ink',
+              'focus:border-primary focus:outline-none',
+              save.isError ? 'border-late' : 'border-line'
+            )}
+          />
+        </div>
+
+        {save.isPending && <Loader2 className="h-4.5 w-4.5 animate-spin text-ink-tertiary" aria-hidden="true" />}
+        {save.isSuccess && !save.isPending && (
+          <span className="flex items-center gap-1 text-sm font-semibold text-done">
+            <Check className="h-4 w-4" aria-hidden="true" />
+            נשמר
+          </span>
+        )}
+      </div>
+
+      {save.isError && (
+        <p role="alert" className="mt-1.5 text-base text-late">
+          מספר הנייד לא נראה תקין. לדוגמה: 050-1234567
+        </p>
+      )}
+    </Row>
   );
 };
 

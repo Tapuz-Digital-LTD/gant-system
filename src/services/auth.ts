@@ -27,6 +27,8 @@ export interface Me {
   isGuest: boolean;
   isOwner: boolean;
   role: 'admin' | 'editor' | 'viewer';
+  /** Israeli mobile, or null. Only ever this person's own. */
+  phone: string | null;
   /** Resolved on the server — the client never infers capability from the role. */
   permissions: string[];
 }

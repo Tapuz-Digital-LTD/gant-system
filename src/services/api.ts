@@ -160,7 +160,10 @@ export const api = {
       request<Partial<NotificationPrefs>>('/settings/notification-defaults', { method: 'PUT', ...body(prefs) }),
     markRead: (id?: string) =>
       request<void>('/notifications/read', { method: 'POST', ...body(id ? { id } : {}) }),
-    remove: (id: string) => request<void>(`/notifications/${id}`, { method: 'DELETE' })
+    remove: (id: string) => request<void>(`/notifications/${id}`, { method: 'DELETE' }),
+    /** Your own mobile. Normalised on the server, or refused there. */
+    savePhone: (phone: string | null) =>
+      request<{ phone: string | null }>('/my/phone', { method: 'PUT', ...body({ phone }) })
   },
 
   users: {

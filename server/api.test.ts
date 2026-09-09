@@ -154,6 +154,21 @@ assert.ok(!body.includes('at '), 'no stack frames in responses');
 r = await call('GET', `/events/${event.id}/activity`);
 assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
 
+// ---------- a phone number is your own, and is normalised ----------
+{
+  r = await call('PUT', '/my/phone', { phone: '052-577-0223' });
+  assert.equal(r.json.data.phone, '0525770223', 'stored one way, however it was typed');
+  assert.equal((await call('GET', '/me')).json.data.phone, '0525770223');
+
+  r = await call('PUT', '/my/phone', { phone: '03-6234567' });
+  assert.equal(r.status, 400, 'a landline cannot receive an SMS, and saying so beats silence later');
+  assert.equal(r.json.error.code, 'INVALID_PHONE');
+  assert.equal((await call('GET', '/me')).json.data.phone, '0525770223', 'and the good number survives the bad one');
+
+  r = await call('PUT', '/my/phone', { phone: '' });
+  assert.equal(r.json.data.phone, null, 'taking your number back out is a save, not a delete');
+}
+
 // ---------- the daily digest job sends nothing ----------
 {
   // Work that is actually late, on this person's plate, so there is something

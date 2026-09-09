@@ -48,6 +48,13 @@ export const users = pgTable(
     name: text('name').notNull(),
     /** Staff sign in with SSO; guests arrive through an invite and have no domain. */
     isGuest: boolean('is_guest').notNull().default(false),
+    /**
+     * Israeli mobile, stored as `05XXXXXXXX`.
+     *
+     * Optional for good: most people here never want a text message, and a
+     * required field only teaches them to invent a number.
+     */
+    phone: text('phone'),
     role: memberRole('role').notNull().default('editor'),
     /**
      * The account that owns the workspace. Cannot be removed or demoted by

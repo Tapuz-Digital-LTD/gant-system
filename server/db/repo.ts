@@ -941,6 +941,16 @@ export function createRepo(db: Database) {
         .orderBy(asc(users.name));
     },
 
+    /** Somebody's own number, normalised by the caller or cleared outright. */
+    async saveOwnPhone(userId: string, phone: string | null) {
+      const [row] = await db
+        .update(users)
+        .set({ phone, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .returning({ phone: users.phone });
+      return row ?? { phone: null };
+    },
+
     async findUserByEmail(email: string) {
       const [row] = await db
         .select()

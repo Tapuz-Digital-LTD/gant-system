@@ -161,7 +161,15 @@ export default function App() {
   };
 
   const currentUser: UserAccess = me
-    ? { id: me.id, email: me.email, name: me.name, role: me.role, isOwner: me.isOwner, permissions: me.permissions }
+    ? {
+        id: me.id,
+        email: me.email,
+        name: me.name,
+        role: me.role,
+        isOwner: me.isOwner,
+        phone: me.phone,
+        permissions: me.permissions
+      }
     : { id: '', email: '', name: '', role: 'viewer' };
 
   const can = makeCan(me ? currentUser : null);
