@@ -1,11 +1,20 @@
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './client.js';
-import { boards, boardMembers, events, tasks, checklistItems, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions } from './schema.js';
+import { israelNow } from '../notifications/prefs.js';
+import { boards, boardMembers, events, tasks, checklistItems, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions, aiUsage } from './schema.js';
 import { DEFAULT_PREFS, readPrefs, type NotificationPrefs } from '../notifications/prefs.js';
 import { MILESTONE_LABELS } from '../notifications/milestone-labels.js';
 import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permissions.js';
 
 /** Thrown when a write carries a stale `version`. Routes turn this into 409. */
+/*
+ * The day boundary is Israel's, not UTC's.
+ *
+ * A daily cap that rolls over at 2am local is a cap somebody hits twice in one
+ * working day and then finds mysteriously reset in the middle of the next.
+ */
+const israelDay = () => israelNow().date;
+
 export class ConflictError extends Error {
   constructor(public readonly current: number) {
     super('מישהו אחר שינה את זה בינתיים. רענן את הדף');
@@ -1005,6 +1014,57 @@ export function createRepo(db: Database) {
         .where(eq(users.id, userId))
         .returning({ phone: users.phone });
       return row ?? { phone: null };
+    },
+
+    /**
+     * Claims one AI call for this person, today.
+     *
+     * The count is incremented BEFORE the model is called, and the caller is
+     * told whether it may proceed. That ordering is the point: counting
+     * afterwards means a burst of parallel requests all read the same low
+     * number and all pass, which is exactly the shape of the runaway this is
+     * supposed to stop.
+     *
+     * A failed call still counts. It cost the provider time either way, and a
+     * limit that forgives failures is a limit somebody can retry past.
+     */
+    async claimAiCall(userId: string, perPersonPerDay: number, perWorkspacePerDay: number) {
+      const today = israelDay();
+
+      const [row] = await db
+        .insert(aiUsage)
+        .values({ userId, day: today, calls: 1 })
+        .onConflictDoUpdate({
+          target: [aiUsage.userId, aiUsage.day],
+          set: { calls: sql`${aiUsage.calls} + 1`, updatedAt: new Date() }
+        })
+        .returning({ calls: aiUsage.calls });
+
+      if (row.calls > perPersonPerDay) {
+        return { allowed: false as const, reason: 'person' as const, used: row.calls };
+      }
+
+      const [total] = await db
+        .select({ calls: sql<number>`coalesce(sum(${aiUsage.calls}), 0)::int` })
+        .from(aiUsage)
+        .where(eq(aiUsage.day, today));
+
+      if (total.calls > perWorkspacePerDay) {
+        return { allowed: false as const, reason: 'workspace' as const, used: total.calls };
+      }
+
+      return { allowed: true as const, reason: null, used: row.calls };
+    },
+
+    /** What the provider actually charged for, once the answer is back. */
+    async recordAiTokens(userId: string, input: number, output: number) {
+      await db
+        .update(aiUsage)
+        .set({
+          inputTokens: sql`${aiUsage.inputTokens} + ${input}`,
+          outputTokens: sql`${aiUsage.outputTokens} + ${output}`
+        })
+        .where(and(eq(aiUsage.userId, userId), eq(aiUsage.day, israelDay())));
     },
 
     async findUserByEmail(email: string) {

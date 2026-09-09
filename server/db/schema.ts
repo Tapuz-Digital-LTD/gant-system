@@ -9,6 +9,8 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  primaryKey,
+  bigint,
   pgEnum
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
@@ -405,6 +407,27 @@ export const verifications = pgTable(
  * Kept in the database rather than in code so the workspace owner can change it
  * without a deploy. The owner always bypasses this table entirely.
  */
+/**
+ * What the assistant has cost today, per person.
+ *
+ * Replaces an in-memory counter that reset on every cold start and was kept
+ * separately by every warm instance — which on serverless is not a limit.
+ */
+export const aiUsage = pgTable(
+  'ai_usage',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    day: date('day').notNull(),
+    calls: integer('calls').notNull().default(0),
+    inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
+    outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })]
+);
+
 export const rolePermissions = pgTable(
   'role_permissions',
   {

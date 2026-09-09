@@ -69,23 +69,25 @@ export function aiConfigured(): boolean {
 }
 
 /*
- * Per-instance throttle.
+ * What the assistant may cost in a day.
  *
- * Real enforcement belongs at the edge; this exists so a stuck client cannot
- * run up a bill before that lands. It is per warm instance, which is enough for
- * the failure it is actually guarding against — a loop, not an attacker.
+ * Counted in the database, not in a module-level array. That array reset on
+ * every cold start and was kept separately by every warm instance, which on
+ * serverless is not a limit — ten instances allow ten times the traffic and a
+ * restart forgives everything.
+ *
+ * Two ceilings, because they catch different accidents. The per-person one
+ * catches a stuck client or somebody leaning on the button; the workspace one
+ * catches the case where that is happening to several people at once, which is
+ * the shape of a bill nobody expected.
+ *
+ * Deliberately generous: a person who genuinely plans thirty campaigns in a day
+ * should not be stopped, and the numbers exist to bound a runaway rather than
+ * to ration ordinary work. Both are environment variables so a real limit can
+ * be tightened without a deploy.
  */
-const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 10;
-const hits: number[] = [];
-
-function overLimit(): boolean {
-  const now = Date.now();
-  while (hits.length && now - hits[0] > WINDOW_MS) hits.shift();
-  if (hits.length >= MAX_PER_WINDOW) return true;
-  hits.push(now);
-  return false;
-}
+const perPersonPerDay = () => Number(process.env.GANTT_AI_DAILY_PER_USER ?? 40);
+const perWorkspacePerDay = () => Number(process.env.GANTT_AI_DAILY_TOTAL ?? 300);
 
 const SYSTEM = `אתה עוזר התכנון של מערכת ניהול הקמפיינים והאירועים של XTRA.
 המשתמשים הם אנשי שיווק, מכירות והנהלה. הם לא אנשי טכנולוגיה.
@@ -116,8 +118,9 @@ export function createAiRouter(): Router {
      * nothing about an open URL, and an open URL that bills the owner is not a
      * throttling problem.
      */
+    let actor;
     try {
-      requireActor(req.actor);
+      actor = requireActor(req.actor);
     } catch {
       return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'צריך להתחבר' } });
     }
@@ -134,10 +137,20 @@ export function createAiRouter(): Router {
       });
     }
 
-    if (overLimit()) {
+    const claim = await req.repo.claimAiCall(actor.id, perPersonPerDay(), perWorkspacePerDay());
+    if (!claim.allowed) {
+      console.warn(
+        JSON.stringify({ level: 'warn', msg: 'ai_limit_reached', scope: claim.reason, used: claim.used })
+      );
       return res.status(429).json({
         aiGenerated: false,
-        error: { code: 'RATE_LIMITED', message: 'יותר מדי בקשות. נסה שוב בעוד דקה.' }
+        error: {
+          code: 'RATE_LIMITED',
+          message:
+            claim.reason === 'person'
+              ? 'הגעת למכסת ההצעות היומית. אפשר להוסיף משימות ידנית, ומחר המכסה מתאפסת.'
+              : 'המערכת הגיעה למכסת ההצעות היומית. אפשר להוסיף משימות ידנית.'
+        }
       });
     }
 
@@ -176,6 +189,16 @@ export function createAiRouter(): Router {
           }
         ]
       });
+
+      /*
+       * What it actually cost, from the provider rather than from a guess.
+       *
+       * Recorded after the fact and never blocking: a failure to write the
+       * number must not fail a request the person already paid for.
+       */
+      void req.repo
+        .recordAiTokens(actor.id, response.usage?.input_tokens ?? 0, response.usage?.output_tokens ?? 0)
+        .catch(() => undefined);
 
       const text = response.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')

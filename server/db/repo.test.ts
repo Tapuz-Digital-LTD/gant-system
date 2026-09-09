@@ -450,5 +450,51 @@ assert.ok(actions.includes('archived'), 'archiving is recorded');
 const update = trail.find((a) => a.action === 'updated');
 assert.ok(update?.before && update?.after, 'the trail keeps both sides of a change');
 
+// ---------- what the assistant may cost in a day ----------
+{
+  const [spender] = (
+    await pg.query<{ id: string }>(
+      `insert into users (email, name, role, is_guest) values ('ai@xtra.co.il', 'משתמש AI', 'editor', false) returning id`
+    )
+  ).rows;
+
+  // Three allowed, the fourth refused — and the refusal names which ceiling.
+  for (let i = 1; i <= 3; i++) {
+    const claim = await repo.claimAiCall(spender.id, 3, 100);
+    assert.equal(claim.allowed, true, `call ${i} is within the daily allowance`);
+  }
+  const over = await repo.claimAiCall(spender.id, 3, 100);
+  assert.equal(over.allowed, false, 'the fourth is not');
+  assert.equal(over.reason, 'person', 'and it says which ceiling was hit');
+
+  /*
+   * The count is claimed before the model runs, so a refused call still counts.
+   * A limit that forgives failures is a limit somebody retries past.
+   */
+  assert.equal((await repo.claimAiCall(spender.id, 3, 100)).used, 5, 'refused calls are still counted');
+
+  // The workspace ceiling catches what the per-person one cannot: several
+  // people each below their own limit, adding up to a bill nobody expected.
+  const [other] = (
+    await pg.query<{ id: string }>(
+      `insert into users (email, name, role, is_guest) values ('ai2@xtra.co.il', 'משתמש AI ב', 'editor', false) returning id`
+    )
+  ).rows;
+  const shared = await repo.claimAiCall(other.id, 100, 5);
+  assert.equal(shared.allowed, false, 'somebody well inside their own allowance is still stopped');
+  assert.equal(shared.reason, 'workspace');
+
+  // Tokens come from the provider, so a spend question has an answer.
+  await repo.recordAiTokens(spender.id, 1200, 800);
+  await repo.recordAiTokens(spender.id, 300, 200);
+  const [usage] = (
+    await pg.query<{ input_tokens: string; output_tokens: string }>(
+      `select input_tokens, output_tokens from ai_usage where user_id = $1`, [spender.id]
+    )
+  ).rows;
+  assert.equal(Number(usage.input_tokens), 1500, 'token counts accumulate across calls');
+  assert.equal(Number(usage.output_tokens), 1000);
+}
+
 await pg.close();
 console.log('repo: כל הבדיקות עברו ✓');
