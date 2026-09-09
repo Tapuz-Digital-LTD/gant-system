@@ -7,6 +7,7 @@ import { createAiRouter } from './ai.js';
 import { PERMISSIONS, ROLE_LABELS, type Role } from './permissions.js';
 import { holidaysBetween } from './holidays.js';
 import { digestFor, digestText, hasAnything } from './notifications/digest.js';
+import { cronAuthorised, cronConfigured, runDigestJob } from './notifications/cron.js';
 import { israelNow } from './notifications/prefs.js';
 import {
   type Actor,
@@ -288,6 +289,31 @@ export function createApiRouter(
     const actor = await requirePermission(req.repo, req.actor, 'permissions.manage', 'הגדרות התראות');
     const input = v.notificationPrefsInput.parse(req.body);
     res.json({ data: await req.repo.saveWorkspaceNotificationDefaults(input, actor.id) });
+  }));
+
+  /*
+   * The scheduler's own door.
+   *
+   * No session, so it is guarded by a shared secret instead — and with no
+   * secret configured it refuses outright rather than running open. It writes
+   * nothing and sends nothing today: every digest goes to the log, to be read
+   * for a week before anybody's phone is involved.
+   */
+  api.all('/cron/digest', asyncRoute(async (req, res) => {
+    if (!cronConfigured()) {
+      res.status(503).json({ error: { code: 'CRON_NOT_CONFIGURED', message: 'CRON_SECRET לא מוגדר' } });
+      return;
+    }
+    if (!cronAuthorised(req.get('authorization'))) {
+      res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'לא מורשה' } });
+      return;
+    }
+
+    const run = await runDigestJob(req.repo);
+    console.log(JSON.stringify({ level: 'info', msg: 'digest_run', ...run, outcomes: undefined }));
+
+    // The bodies stay in the log; the response is a receipt, not a mailbox.
+    res.json({ data: { at: run.at, mode: run.mode, considered: run.considered, due: run.due, logged: run.logged } });
   }));
 
   // ---------------- notifications ----------------

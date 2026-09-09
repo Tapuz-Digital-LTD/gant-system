@@ -6,6 +6,7 @@ import express from 'express';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { createApiRouter } from './api.ts';
+import { israelNow } from './notifications/prefs.ts';
 import { createRepo } from './db/repo.ts';
 import type { Database } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -36,10 +37,10 @@ const server = app.listen(0);
 const port = (server.address() as { port: number }).port;
 const base = `http://127.0.0.1:${port}/api`;
 
-async function call(method: string, path: string, body?: unknown) {
+async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(base + path, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: body ? { 'Content-Type': 'application/json', ...headers } : headers,
     body: body ? JSON.stringify(body) : undefined
   });
   const text = await res.text();
@@ -152,6 +153,73 @@ assert.ok(!body.includes('at '), 'no stack frames in responses');
 // ---------- activity trail is queryable ----------
 r = await call('GET', `/events/${event.id}/activity`);
 assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
+
+// ---------- the daily digest job sends nothing ----------
+{
+  // Work that is actually late, on this person's plate, so there is something
+  // to say at all. Yesterday in Israel, whatever the machine's clock is set to.
+  const now = israelNow();
+  const [y, m, d] = now.date.split('-').map(Number);
+  const yesterday = new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+  r = await call('POST', `/events/${event.id}/tasks`, { title: 'משימה באיחור', dueDate: yesterday });
+  await call('PATCH', `/tasks/${r.json.data.id}`, {
+    assigneeId: staff.id,
+    version: r.json.data.version
+  });
+
+  // An open endpoint that walks everybody's work is not a default.
+  delete process.env.CRON_SECRET;
+  assert.equal((await call('GET', '/cron/digest')).status, 503, 'no secret configured means the job will not run');
+
+  process.env.CRON_SECRET = 'test-secret';
+  assert.equal((await call('GET', '/cron/digest')).status, 401, 'and no secret supplied is not the scheduler');
+  assert.equal(
+    (await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secre' })).status,
+    401,
+    'a prefix of the secret is not the secret'
+  );
+
+  // Not this person's hour: considered, and left alone.
+  await call('PUT', '/my/notification-prefs', { digestHour: (now.hour + 3) % 24, digestDays: [0, 1, 2, 3, 4, 5, 6] });
+  r = await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secret' });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.data.considered, 1);
+  assert.equal(r.json.data.due, 0, 'the hour is the setting, so the wrong hour is nobody');
+
+  // Their hour: one digest — into the log, and nowhere else.
+  await call('PUT', '/my/notification-prefs', { digestHour: now.hour, digestDays: [0, 1, 2, 3, 4, 5, 6] });
+  const lines: string[] = [];
+  const realLog = console.log;
+  console.log = (line: string) => void lines.push(String(line));
+  r = await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secret' });
+  console.log = realLog;
+
+  assert.equal(r.json.data.due, 1);
+  assert.equal(r.json.data.logged, 1, 'a person with late work gets a digest');
+  assert.equal(r.json.data.mode, 'log-only');
+  assert.ok(!JSON.stringify(r.json).includes('משימה באיחור'), 'the response is a receipt, not a mailbox');
+
+  const logged = lines.map((l) => JSON.parse(l)).find((l) => l.msg === 'digest_log_only');
+  assert.ok(logged, 'the digest itself goes to the log');
+  assert.ok(logged.text.includes('משימה באיחור'), 'and it is the real text, in full');
+  assert.ok(logged.text.includes('דורש טיפול'), 'grouped by what it needs from the reader');
+
+  // Nothing to say is not a message. Switch every rule off and the same person,
+  // in the same hour, gets nothing at all.
+  await call('PUT', '/my/notification-prefs', {
+    digestHour: now.hour,
+    digestDays: [0, 1, 2, 3, 4, 5, 6],
+    overdue: false,
+    dueBeforeDays: 0,
+    stalledAfterDays: 0,
+    milestoneBeforeDays: 0
+  });
+  r = await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secret' });
+  assert.equal(r.json.data.due, 1, 'still their hour');
+  assert.equal(r.json.data.logged, 0, 'but nothing worth saying is nothing sent');
+
+  delete process.env.CRON_SECRET;
+}
 
 // ---------- archive removes it from reads ----------
 assert.equal((await call('DELETE', `/events/${event.id}`)).status, 204);
