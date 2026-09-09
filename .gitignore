@@ -12,3 +12,4 @@ coverage/
 # screenshots taken while checking work in the browser
 /*.png
 .playwright-mcp/
+.backups/
