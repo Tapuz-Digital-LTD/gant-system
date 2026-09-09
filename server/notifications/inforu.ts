@@ -129,7 +129,20 @@ async function post(path: string, body: unknown): Promise<SendResult> {
 
       if (response.ok) {
         const data = (await response.json()) as InforuResponse;
-        if (data.StatusId === 1) return { ok: true, providerMessageId: data.RequestId ?? null };
+        if (data.StatusId === 1) {
+          /*
+           * A send that worked leaves a line too.
+           *
+           * Without it the only evidence of delivery is the absence of an
+           * error, and "nothing in the log" is equally consistent with the
+           * code never having run. The RequestId is the handle Inforu support
+           * asks for when a message did not arrive.
+           */
+          console.log(
+            JSON.stringify({ level: 'info', msg: 'inforu_sent', path, requestId: data.RequestId ?? null })
+          );
+          return { ok: true, providerMessageId: data.RequestId ?? null };
+        }
         return {
           ok: false,
           error: `Inforu StatusId=${data.StatusId} ${data.StatusDescription ?? ''}`.trim(),
