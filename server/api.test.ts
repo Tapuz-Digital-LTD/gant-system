@@ -194,12 +194,27 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
     'a prefix of the secret is not the secret'
   );
 
-  // Not this person's hour: considered, and left alone.
+  /*
+   * Not this person's hour — so no email is due. The bell is filled anyway:
+   * in-app interrupts nobody, and making somebody wait until 08:00 to learn a
+   * task went overdue is withholding it for no reason.
+   */
   await call('PUT', '/my/notification-prefs', { digestHour: (now.hour + 3) % 24, digestDays: [0, 1, 2, 3, 4, 5, 6] });
   r = await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secret' });
   assert.equal(r.status, 200);
   assert.equal(r.json.data.considered, 1);
   assert.equal(r.json.data.due, 0, 'the hour is the setting, so the wrong hour is nobody');
+  assert.equal(r.json.data.toBell, 1, 'but the overdue task still reached the bell');
+
+  const bell = (await call('GET', '/notifications')).json.data.items;
+  assert.ok(
+    bell.some((n: { kind: string; title: string }) => n.kind === 'task_overdue' && n.title.includes('משימה באיחור')),
+    'and it is the reminder itself, not a summary of one'
+  );
+
+  // Said once. Running the job again an hour later must not repeat it.
+  r = await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secret' });
+  assert.equal(r.json.data.toBell, 0, 'a reminder is news once, not once an hour');
 
   // Their hour: one digest — into the log, and nowhere else.
   await call('PUT', '/my/notification-prefs', { digestHour: now.hour, digestDays: [0, 1, 2, 3, 4, 5, 6] });
@@ -211,10 +226,11 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
 
   assert.equal(r.json.data.due, 1);
   assert.equal(r.json.data.logged, 1, 'a person with late work gets a digest');
-  assert.equal(r.json.data.mode, 'log-only');
+  assert.notEqual(r.json.data.mode, 'send', 'no credentials here, so nothing could go out anyway');
+  assert.equal(r.json.data.sent, 0, 'and nothing did');
   assert.ok(!JSON.stringify(r.json).includes('משימה באיחור'), 'the response is a receipt, not a mailbox');
 
-  const logged = lines.map((l) => JSON.parse(l)).find((l) => l.msg === 'digest_log_only');
+  const logged = lines.map((l) => JSON.parse(l)).find((l) => l.msg === 'digest');
   assert.ok(logged, 'the digest itself goes to the log');
   assert.ok(logged.text.includes('משימה באיחור'), 'and it is the real text, in full');
   assert.ok(logged.text.includes('דורש טיפול'), 'grouped by what it needs from the reader');
@@ -232,6 +248,8 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
   r = await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secret' });
   assert.equal(r.json.data.due, 1, 'still their hour');
   assert.equal(r.json.data.logged, 0, 'but nothing worth saying is nothing sent');
+
+
 
   delete process.env.CRON_SECRET;
 }

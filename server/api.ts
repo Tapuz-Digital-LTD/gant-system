@@ -370,7 +370,17 @@ export function createApiRouter(
     console.log(JSON.stringify({ level: 'info', msg: 'digest_run', ...run, outcomes: undefined }));
 
     // The bodies stay in the log; the response is a receipt, not a mailbox.
-    res.json({ data: { at: run.at, mode: run.mode, considered: run.considered, due: run.due, logged: run.logged } });
+    res.json({
+      data: {
+        at: run.at,
+        mode: run.mode,
+        considered: run.considered,
+        due: run.due,
+        logged: run.logged,
+        sent: run.sent,
+        toBell: run.toBell
+      }
+    });
   }));
 
   // ---------------- notifications ----------------
