@@ -269,21 +269,40 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <Badge tone={prio.tone}>{prio.label}</Badge>
                     )}
 
+                    {/*
+                      The state, as the same pill it is everywhere else.
+                      
+                      This was a native <select> carrying four options, on every
+                      row — five of them stacked down a short list, which is the
+                      heaviest thing on the screen and the least like reading a
+                      list of work. A pill says the state in the same shape the
+                      board and the list use, and clicking it offers the four
+                      choices only to somebody who wants one.
+                    */}
                     {canEdit ? (
-                      <Select
-                        value={task.status}
-                        onChange={(e) =>
-                          onUpdateTask(task.id, task.version, { status: e.target.value as TaskStatus })
+                      <Menu
+                        align="end"
+                        trigger={
+                          <button
+                            aria-label={`מצב: ${STATUS_META[task.status].label}. לחץ לשינוי`}
+                            className="shrink-0 rounded-full transition hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                          >
+                            <StatusPill fill={STATUS_META[task.status].fill}>
+                              {STATUS_META[task.status].label}
+                            </StatusPill>
+                          </button>
                         }
-                        aria-label={`שנה את המצב של ${task.title}`}
-                        className="h-8 w-36 shrink-0 text-sm"
                       >
-                        {(Object.keys(STATUS_META) as TaskStatus[]).map((s) => (
-                          <option key={s} value={s}>
-                            {STATUS_META[s].label}
-                          </option>
+                        {(Object.keys(STATUS_META) as TaskStatus[]).map((next) => (
+                          <MenuItem
+                            key={next}
+                            active={next === task.status}
+                            onSelect={() => onUpdateTask(task.id, task.version, { status: next })}
+                          >
+                            <StatusPill fill={STATUS_META[next].fill}>{STATUS_META[next].label}</StatusPill>
+                          </MenuItem>
                         ))}
-                      </Select>
+                      </Menu>
                     ) : (
                       <StatusPill fill={STATUS_META[task.status].fill}>{STATUS_META[task.status].label}</StatusPill>
                     )}
@@ -304,9 +323,17 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     />
 
                     {task.dueDate && (
-                      <span className={cn('w-16 shrink-0 text-sm tnum', late ? 'font-semibold text-late' : 'text-ink-tertiary')}>
-                        {formatDate(task.dueDate)}
-                      </span>
+                      // A bare date says nothing about which date it is.
+                      <Tooltip label={late ? 'תאריך היעד עבר' : 'תאריך יעד'}>
+                        <span
+                          className={cn(
+                            'w-16 shrink-0 text-sm tnum',
+                            late ? 'font-semibold text-late' : 'text-ink-tertiary'
+                          )}
+                        >
+                          {formatDate(task.dueDate)}
+                        </span>
+                      </Tooltip>
                     )}
 
                     {canEdit && (

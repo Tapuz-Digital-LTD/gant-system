@@ -3,7 +3,7 @@
 // The rules that decide whether people keep notifications switched on. Every
 // one of them is an argument about when NOT to say something.
 import assert from 'node:assert/strict';
-import { DEFAULT_PREFS, isDigestTime, readPrefs, israelNow } from './prefs.ts';
+import { DEFAULT_PREFS, isDigestDue, readPrefs, israelNow } from './prefs.ts';
 import { buildDigest, remindersForMilestones, remindersForTasks } from './reminders.ts';
 import type { ReminderMilestone, ReminderTask } from './reminders.ts';
 
@@ -180,14 +180,32 @@ assert.deepEqual(
 
 // ---------- when the digest goes out ----------
 {
-  assert.ok(isDigestTime(DEFAULT_PREFS, { hour: 8, weekday: 0 }), 'Sunday at eight');
-  assert.ok(!isDigestTime(DEFAULT_PREFS, { hour: 9, weekday: 0 }), 'not an hour later');
-  assert.ok(!isDigestTime(DEFAULT_PREFS, { hour: 8, weekday: 5 }), 'not on Friday');
-  assert.ok(!isDigestTime(DEFAULT_PREFS, { hour: 8, weekday: 6 }), 'not on Saturday');
+  const day = (hour: number, weekday: number, date = '2026-09-06') => ({ hour, weekday, date });
+
+  assert.ok(isDigestDue(DEFAULT_PREFS, day(8, 0), null), 'Sunday at eight');
+  assert.ok(!isDigestDue(DEFAULT_PREFS, day(8, 5), null), 'not on Friday');
+  assert.ok(!isDigestDue(DEFAULT_PREFS, day(8, 6), null), 'not on Saturday');
+  assert.ok(!isDigestDue(DEFAULT_PREFS, day(7, 0), null), 'and not before the hour they chose');
+
+  /*
+   * Past the hour still counts, and this is the point of the rule.
+   *
+   * On a schedule that runs once a day, an exact-hour match sends nothing at
+   * all: the run lands at 07:00, everybody chose 08:00, and nothing looks
+   * broken because nothing threw. It also means a missed run is caught by the
+   * next one instead of being lost.
+   */
+  assert.ok(isDigestDue(DEFAULT_PREFS, day(9, 0), null), 'an hour late is still today');
+  assert.ok(isDigestDue(DEFAULT_PREFS, day(23, 0), null), 'and so is much later');
+
+  // But only once. Every later run of the same day finds it already handled.
+  assert.ok(!isDigestDue(DEFAULT_PREFS, day(9, 0), '2026-09-06'), 'nobody gets two morning digests');
+  assert.ok(isDigestDue(DEFAULT_PREFS, day(9, 1, '2026-09-07'), '2026-09-06'), 'and tomorrow is a new day');
 
   const evening = readPrefs({ digestHour: 17, digestDays: [1, 3] });
-  assert.ok(isDigestTime(evening, { hour: 17, weekday: 3 }), 'the hour is a setting, not a deploy');
-  assert.ok(!isDigestTime(evening, { hour: 8, weekday: 0 }));
+  assert.ok(isDigestDue(evening, day(17, 3), null), 'the hour is a setting, not a deploy');
+  assert.ok(!isDigestDue(evening, day(8, 3), null), 'before their hour is too early');
+  assert.ok(!isDigestDue(evening, day(17, 0), null), 'and not on a day they did not choose');
 }
 
 // ---------- preferences survive anything stored ----------

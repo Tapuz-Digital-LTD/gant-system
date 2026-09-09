@@ -661,8 +661,24 @@ export function createRepo(db: Database) {
     /** Everybody the daily job has to consider. Guests included: they own work too. */
     async peopleForDigest() {
       return db
-        .select({ id: users.id, name: users.name, email: users.email, role: users.role, isGuest: users.isGuest })
-        .from(users);
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          role: users.role,
+          isGuest: users.isGuest,
+          lastDigestOn: notificationPrefs.lastDigestOn
+        })
+        .from(users)
+        .leftJoin(notificationPrefs, eq(notificationPrefs.userId, users.id));
+    },
+
+    /** Records that today's digest went out, so it cannot go out twice. */
+    async markDigestSent(userId: string, day: string) {
+      await db
+        .insert(notificationPrefs)
+        .values({ userId, lastDigestOn: day })
+        .onConflictDoUpdate({ target: notificationPrefs.userId, set: { lastDigestOn: day } });
     },
 
     /**

@@ -293,6 +293,8 @@ export const notificationPrefs = pgTable('notification_prefs', {
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
   prefs: jsonb('prefs').notNull().default({}),
+  /** The last day a digest actually went out, so one is never sent twice. */
+  lastDigestOn: date('last_digest_on'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 

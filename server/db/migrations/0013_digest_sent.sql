@@ -1,0 +1,11 @@
+-- The last day this person's digest actually went out.
+--
+-- The rule used to be "is it exactly their hour?", which needs the job to run
+-- every hour. On a plan that allows one run a day that rule silently sends
+-- nothing: the single run lands at 07:00, everybody chose 08:00, nobody
+-- matches, and no error is raised because nothing went wrong.
+--
+-- With this, the rule becomes "their hour has arrived and they have not had
+-- today's yet" — correct on an hourly schedule, correct on a daily one, and
+-- self-healing when a run is missed entirely.
+ALTER TABLE "notification_prefs" ADD COLUMN IF NOT EXISTS "last_digest_on" date;

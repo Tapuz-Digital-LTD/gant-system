@@ -103,14 +103,25 @@ function sanitisePartial(r: Record<string, unknown> | Partial<NotificationPrefs>
 }
 
 /**
- * Is this the hour, on a day this person asked for?
+ * Has this person's digest come due, and have they not had today's yet?
  *
- * The job runs hourly and asks each person this question, rather than the job
- * owning one schedule. That is what makes the hour a setting rather than a
- * deploy.
+ * The rule used to be "is it exactly their hour", which requires the job to run
+ * every hour. On a schedule that runs once a day that rule sends nothing at
+ * all, silently: the single run lands at 07:00, everybody chose 08:00, nobody
+ * matches, and nothing looks broken because nothing threw.
+ *
+ * "Their hour has arrived, and not yet today" is correct on both schedules, and
+ * it self-heals — a run that never happened is caught by the next one rather
+ * than being lost.
  */
-export function isDigestTime(prefs: NotificationPrefs, at: { hour: number; weekday: number }): boolean {
-  return prefs.digestHour === at.hour && prefs.digestDays.includes(at.weekday);
+export function isDigestDue(
+  prefs: NotificationPrefs,
+  at: { hour: number; weekday: number; date: string },
+  lastSentOn: string | null
+): boolean {
+  if (!prefs.digestDays.includes(at.weekday)) return false;
+  if (at.hour < prefs.digestHour) return false;
+  return lastSentOn !== at.date;
 }
 
 /** The hour and weekday in Israel, whatever the server's own clock is set to. */

@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { Repo } from '../db/repo.js';
 import { digestFor, digestText, hasAnything } from './digest.js';
 import { deliveryMode, sendEmail } from './inforu.js';
-import { isDigestTime, israelNow } from './prefs.js';
+import { isDigestDue, israelNow } from './prefs.js';
 
 /**
  * The hourly job behind every reminder.
@@ -89,7 +89,7 @@ export async function runDigestJob(repo: Repo, at = israelNow()): Promise<Digest
 
     const base = { userId: person.id, name: person.name, toBell };
 
-    if (!isDigestTime(prefs, at)) {
+    if (!isDigestDue(prefs, at, person.lastDigestOn ?? null)) {
       outcomes.push({ ...base, skipped: 'not_their_hour' });
       continue;
     }
@@ -98,9 +98,16 @@ export async function runDigestJob(repo: Repo, at = israelNow()): Promise<Digest
       continue;
     }
 
-    // Silence is a feature. "You have nothing today" is a message about
-    // nothing, and it is the message that teaches people to stop looking.
+    /*
+     * Silence is a feature. "You have nothing today" is a message about
+     * nothing, and it is the message that teaches people to stop looking.
+     *
+     * A quiet day is still marked as handled: otherwise every later run of the
+     * day reconsiders this person, and the first hour that produces anything
+     * sends them a "morning digest" in the afternoon.
+     */
     if (!hasAnything(digest)) {
+      await repo.markDigestSent(person.id, at.date);
       outcomes.push({ ...base, skipped: 'nothing_to_say' });
       continue;
     }
@@ -131,6 +138,7 @@ export async function runDigestJob(repo: Repo, at = israelNow()): Promise<Digest
       }
     }
 
+    await repo.markDigestSent(person.id, at.date);
     outcomes.push({ ...base, sections: digest.sections.length, items, text, emailed });
   }
 
