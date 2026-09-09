@@ -5,8 +5,29 @@ import { Pool } from 'pg';
 
 dotenv.config({ path: ['.env.local', '.env'], quiet: true });
 
-const url = process.env.DATABASE_URL;
+/*
+ * Schema changes go down a direct connection, never a transaction pooler.
+ *
+ * A pooler hands the same server connection to whoever asks next, so anything
+ * left on it — a SET, a session state — leaks. DDL also does not belong in
+ * transaction pooling. Neon and Vercel both publish an unpooled URL alongside
+ * the pooled one; use it when it exists.
+ */
+const url =
+  process.env.DATABASE_URL_UNPOOLED ??
+  process.env.EU_DATABASE_URL_UNPOOLED ??
+  process.env.POSTGRES_URL_NON_POOLING ??
+  process.env.EU_POSTGRES_URL_NON_POOLING ??
+  process.env.DATABASE_URL;
+
 if (!url) throw new Error('DATABASE_URL is not set');
+
+const pooled = url === process.env.DATABASE_URL && /-pooler\./.test(url);
+console.log(
+  pooled
+    ? '⚠️  רץ דרך מאגד חיבורים. עדיף להגדיר DATABASE_URL_UNPOOLED'
+    : `▲ חיבור ישיר: ${url.replace(/\/\/[^@]*@/, '//***@').slice(0, 55)}…`
+);
 
 const pool = new Pool({ connectionString: url, max: 1 });
 const dir = new URL('./migrations/', import.meta.url);
