@@ -16,7 +16,7 @@ if (!to) {
   process.exit(1);
 }
 
-const mode = deliveryMode();
+const mode = deliveryMode('notification');
 console.log(`מצב שליחה: ${mode}`);
 if (mode !== 'send') {
   console.log('שום דבר לא ייצא החוצה — ההודעה תיכתב ללוג בלבד.');
@@ -29,9 +29,10 @@ const result = isEmail
       to,
       subject: 'בדיקת חיבור — מערכת תכנון האירועים',
       html: `<div dir="rtl" style="font-family:Arial,sans-serif;font-size:16px">${text}</div>`,
-      text
+      text,
+      purpose: 'notification'
     })
-  : await sendSms(to, text);
+  : await sendSms(to, text, 'notification');
 
 console.log(JSON.stringify({ channel: isEmail ? 'email' : 'sms', to, ...result }, null, 2));
 process.exit(result.ok ? 0 : 1);

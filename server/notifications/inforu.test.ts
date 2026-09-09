@@ -30,20 +30,53 @@ const reset = () => {
   delete process.env.GANTT_INFORU_API_URL;
   delete process.env.GANTT_INFORU_AUTH;
   delete process.env.GANTT_NOTIFICATIONS_SEND;
+  delete process.env.GANTT_AUTH_SEND;
 };
 
 reset();
-assert.equal(deliveryMode(), 'unconfigured', 'no credentials, and the settings screen can say so');
+assert.equal(deliveryMode('notification'), 'unconfigured', 'no credentials, and the settings screen can say so');
+assert.equal(deliveryMode('auth'), 'unconfigured');
 
 process.env.GANTT_INFORU_API_URL = 'https://example.invalid';
 process.env.GANTT_INFORU_AUTH = 'not-a-real-key';
-assert.equal(deliveryMode(), 'log', 'credentials alone do not switch sending on');
+assert.equal(deliveryMode('notification'), 'log', 'credentials alone do not switch sending on');
+assert.equal(deliveryMode('auth'), 'log');
 
 process.env.GANTT_NOTIFICATIONS_SEND = 'true';
-assert.equal(deliveryMode(), 'send', 'sending is a deliberate act');
+assert.equal(deliveryMode('notification'), 'send', 'sending is a deliberate act');
 
 process.env.GANTT_NOTIFICATIONS_SEND = 'yes';
-assert.equal(deliveryMode(), 'log', 'and only that exact word means it');
+assert.equal(deliveryMode('notification'), 'log', 'and only that exact word means it');
+
+/*
+ * The two switches are independent, and this is the bug that proved it matters.
+ *
+ * Sign-in codes were gated by GANTT_AUTH_SEND in one file and then blocked by
+ * GANTT_NOTIFICATIONS_SEND inside the shared client. The login screen said
+ * "codes are being sent", the code went to a log line, and nobody could get in.
+ */
+{
+  reset();
+  process.env.GANTT_INFORU_API_URL = 'https://example.invalid';
+  process.env.GANTT_INFORU_AUTH = 'not-a-real-key';
+
+  process.env.GANTT_AUTH_SEND = 'true';
+  assert.equal(deliveryMode('auth'), 'send', 'letting people sign in is its own decision');
+  assert.equal(
+    deliveryMode('notification'),
+    'log',
+    'and it must not quietly switch the morning reminders on with it'
+  );
+
+  delete process.env.GANTT_AUTH_SEND;
+  process.env.GANTT_NOTIFICATIONS_SEND = 'true';
+  assert.equal(deliveryMode('notification'), 'send');
+  assert.equal(
+    deliveryMode('auth'),
+    'log',
+    'and turning reminders on must not answer for the login codes either'
+  );
+}
 
 // ---------- log-only reports failure, not success ----------
 {
@@ -52,8 +85,14 @@ assert.equal(deliveryMode(), 'log', 'and only that exact word means it');
   const lines: string[] = [];
   console.log = (l: string) => void lines.push(String(l));
 
-  const sms = await sendSms('052-577-0223', 'תזכורת בדיקה');
-  const mail = await sendEmail({ to: 'tomer@xtra.co.il', subject: 'בדיקה', html: '<p>בדיקה</p>', text: 'בדיקה' });
+  const sms = await sendSms('052-577-0223', 'תזכורת בדיקה', 'notification');
+  const mail = await sendEmail({
+    to: 'tomer@xtra.co.il',
+    subject: 'בדיקה',
+    html: '<p>בדיקה</p>',
+    text: 'בדיקה',
+    purpose: 'notification'
+  });
   console.log = quiet;
 
   // Saying "sent" about a message that never left the process is how a screen
@@ -78,7 +117,7 @@ assert.equal(deliveryMode(), 'log', 'and only that exact word means it');
     calls++;
     return new Response('nope', { status: 401, statusText: 'Unauthorized' });
   }) as typeof fetch;
-  let r = await sendSms('0525770223', 'בדיקה');
+  let r = await sendSms('0525770223', 'בדיקה', 'notification');
   assert.equal(calls, 1, 'a bad key is still a bad key on the second try — spending quota to prove it is waste');
   assert.equal(r.ok, false);
   assert.ok(r.error?.includes('401'));
@@ -94,7 +133,7 @@ assert.equal(deliveryMode(), 'log', 'and only that exact word means it');
           headers: { 'Content-Type': 'application/json' }
         });
   }) as typeof fetch;
-  r = await sendSms('0525770223', 'בדיקה');
+  r = await sendSms('0525770223', 'בדיקה', 'notification');
   assert.equal(calls, 3, 'and a fault on the far side gets retried');
   assert.equal(r.ok, true);
   assert.equal(r.providerMessageId, 'req-7', 'the provider handle comes back, for chasing a delivery later');
@@ -105,7 +144,7 @@ assert.equal(deliveryMode(), 'log', 'and only that exact word means it');
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     })) as typeof fetch;
-  r = await sendSms('0525770223', 'בדיקה');
+  r = await sendSms('0525770223', 'בדיקה', 'notification');
   assert.equal(r.ok, false, 'HTTP 200 is not the same as "sent"');
   assert.ok(r.error?.includes('Invalid sender'));
 
@@ -113,7 +152,7 @@ assert.equal(deliveryMode(), 'log', 'and only that exact word means it');
 }
 
 // ---------- a number nobody can text is not a send ----------
-assert.equal((await sendSms('לא מספר', 'בדיקה')).error, 'invalid_phone');
+assert.equal((await sendSms('לא מספר', 'בדיקה', 'notification')).error, 'invalid_phone');
 
 process.env = env;
 console.log('inforu: כל הבדיקות עברו ✓');

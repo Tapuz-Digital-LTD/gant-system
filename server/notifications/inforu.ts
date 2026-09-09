@@ -34,6 +34,21 @@ export interface SendResult {
 
 export type DeliveryMode = 'send' | 'log' | 'unconfigured';
 
+/**
+ * Why this message is going out — and therefore which switch governs it.
+ *
+ * A sign-in code was asked for thirty seconds ago by somebody staring at a
+ * login screen. A reminder at eight in the morning was not. They carry
+ * different risk, so they get different switches, and this is the parameter
+ * that keeps one from silently answering for the other.
+ */
+export type SendPurpose = 'auth' | 'notification';
+
+const SWITCH: Record<SendPurpose, string> = {
+  auth: 'GANTT_AUTH_SEND',
+  notification: 'GANTT_NOTIFICATIONS_SEND'
+};
+
 function credentials() {
   return {
     baseUrl: process.env.GANTT_INFORU_API_URL?.replace(/\/+$/, '') ?? '',
@@ -47,10 +62,10 @@ function credentials() {
  * Three states, not a boolean, because "nothing was sent" has two very
  * different causes and the settings screen has to be able to say which.
  */
-export function deliveryMode(): DeliveryMode {
+export function deliveryMode(purpose: SendPurpose): DeliveryMode {
   const { baseUrl, auth } = credentials();
   if (!baseUrl || !auth) return 'unconfigured';
-  return process.env.GANTT_NOTIFICATIONS_SEND === 'true' ? 'send' : 'log';
+  return process.env[SWITCH[purpose]] === 'true' ? 'send' : 'log';
 }
 
 /**
@@ -144,17 +159,18 @@ async function post(path: string, body: unknown): Promise<SendResult> {
  * deployment look exactly like a working one, and then a screen says "נשלח"
  * about a message that never left the process.
  */
-function logInstead(channel: 'sms' | 'email', to: string, text: string): SendResult {
-  const reason = deliveryMode() === 'unconfigured' ? 'inforu_not_configured' : 'GANTT_NOTIFICATIONS_SEND!=true';
+function logInstead(channel: 'sms' | 'email', purpose: SendPurpose, to: string, text: string): SendResult {
+  const reason =
+    deliveryMode(purpose) === 'unconfigured' ? 'inforu_not_configured' : `${SWITCH[purpose]}!=true`;
   console.log(JSON.stringify({ level: 'info', msg: 'notification_not_sent', channel, to, reason, text }));
   return { ok: false, error: `not_sent:${reason}`, providerMessageId: null };
 }
 
-export async function sendSms(to: string, text: string): Promise<SendResult> {
+export async function sendSms(to: string, text: string, purpose: SendPurpose): Promise<SendResult> {
   const phone = israeliMobile(to);
   if (!phone) return { ok: false, error: 'invalid_phone', providerMessageId: null };
 
-  if (deliveryMode() !== 'send') return logInstead('sms', phone, text);
+  if (deliveryMode(purpose) !== 'send') return logInstead('sms', purpose, phone, text);
 
   return post(SMS_PATH, {
     Data: {
@@ -171,8 +187,9 @@ export async function sendEmail(opts: {
   subject: string;
   html: string;
   text: string;
+  purpose: SendPurpose;
 }): Promise<SendResult> {
-  if (deliveryMode() !== 'send') return logInstead('email', opts.to, opts.text);
+  if (deliveryMode(opts.purpose) !== 'send') return logInstead('email', opts.purpose, opts.to, opts.text);
 
   // Inforu derives CampaignRefId from CampaignName, and rejects a repeat.
   const campaign = `gantt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

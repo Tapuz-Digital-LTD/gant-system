@@ -19,7 +19,7 @@ import { deliveryMode, sendEmail, sendSms } from './notifications/inforu.js';
 
 /** True when a real sign-in code — by either route — would leave the building. */
 export function isMailConfigured(): boolean {
-  return deliveryMode() !== 'unconfigured' && process.env.GANTT_AUTH_SEND === 'true';
+  return deliveryMode('auth') === 'send';
 }
 
 function codeEmail(code: string): string {
@@ -53,7 +53,7 @@ export async function sendSignInCode(email: string, code: string): Promise<void>
       JSON.stringify({
         level: 'warn',
         msg: 'signin_code_not_sent',
-        reason: deliveryMode() === 'unconfigured' ? 'inforu_not_configured' : 'GANTT_AUTH_SEND!=true',
+        reason: deliveryMode('auth') === 'unconfigured' ? 'inforu_not_configured' : 'GANTT_AUTH_SEND!=true',
         email,
         code
       })
@@ -65,7 +65,8 @@ export async function sendSignInCode(email: string, code: string): Promise<void>
     to: email,
     subject: `${code} — קוד הכניסה שלך`,
     html: codeEmail(code),
-    text: `קוד הכניסה שלך לתכנון האירועים: ${code}. תקף ל-10 דקות.`
+    text: `קוד הכניסה שלך לתכנון האירועים: ${code}. תקף ל-10 דקות.`,
+    purpose: 'auth'
   });
 
   // Thrown, not swallowed: better-auth turns this into "we could not send the
@@ -89,7 +90,7 @@ export async function sendSignInSms(phone: string, code: string): Promise<void> 
         level: 'warn',
         msg: 'signin_code_not_sent',
         channel: 'sms',
-        reason: deliveryMode() === 'unconfigured' ? 'inforu_not_configured' : 'GANTT_AUTH_SEND!=true',
+        reason: deliveryMode('auth') === 'unconfigured' ? 'inforu_not_configured' : 'GANTT_AUTH_SEND!=true',
         phone,
         code
       })
@@ -97,6 +98,6 @@ export async function sendSignInSms(phone: string, code: string): Promise<void> 
     return;
   }
 
-  const result = await sendSms(phone, `${code} — קוד הכניסה שלך לתכנון האירועים. תקף ל-10 דקות.`);
+  const result = await sendSms(phone, `${code} — קוד הכניסה שלך לתכנון האירועים. תקף ל-10 דקות.`, 'auth');
   if (!result.ok) throw new Error(`sign-in code not sent: ${result.error ?? 'unknown'}`);
 }
