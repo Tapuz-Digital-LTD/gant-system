@@ -31,7 +31,7 @@ const suggestInput = z.object({
 /** Shaped so the client can render it without guessing. */
 const suggestion = z.object({
   title: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(400).default(''),
+  description: z.string().trim().max(160).default(''),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
   /** Which department would usually own it. A hint, never an assignment. */
   suggestedRole: z.string().trim().max(60).default('')
@@ -39,12 +39,24 @@ const suggestion = z.object({
 
 const suggestOutput = z.object({
   recommendedTasks: z.array(suggestion).max(12),
-  strategicTips: z.array(z.string().trim().max(300)).max(5).default([])
+  strategicTips: z.array(z.string().trim().max(200)).max(5).default([])
 });
 
-export const AI_MODEL = process.env.GANTT_AI_MODEL ?? 'claude-sonnet-5';
+/*
+ * Haiku, not Sonnet.
+ *
+ * XTRA Sign runs Sonnet because its assistant reasons across tools and
+ * approvals. This asks for six short lines of Hebrew in a fixed shape, which is
+ * not the same job — and on Sonnet it took 22 seconds warm and 45 cold, which
+ * is a person watching a spinner and deciding the feature is broken.
+ *
+ * Overridable, so a bad answer is a variable to change rather than a deploy.
+ */
+export const AI_MODEL = process.env.GANTT_AI_MODEL ?? 'claude-haiku-4-5-20251001';
 
-const MAX_TOKENS = 2048;
+// Enough for six tasks and two tips in Hebrew, which is token-expensive. The
+// cap is a stop, not a target: the prompt asks for less than this.
+const MAX_TOKENS = 1200;
 const TIMEOUT_MS = 25_000;
 
 export function aiConfigured(): boolean {
@@ -76,7 +88,9 @@ const SYSTEM = `אתה עוזר התכנון של מערכת ניהול הקמפ
 עקרונות:
 - ענה תמיד בעברית פשוטה. משימה היא משפט שאדם יכול לקרוא ולדעת מה לעשות.
 - משימות קונקרטיות בלבד: "לאשר מקדמה מול הספק", לא "לתכנן את הקמפיין".
-- בין 5 ל-10 משימות. רשימה ארוכה מדי היא רשימה שאף אחד לא קורא.
+- בין 5 ל-7 משימות. רשימה ארוכה מדי היא רשימה שאף אחד לא קורא.
+- description: משפט אחד קצר, עד 15 מילים. לא פסקה.
+- strategicTips: לכל היותר שניים, ורק אם באמת יש מה להוסיף.
 - אל תמציא תאריכים, תקציבים, שמות ספקים או נתונים שלא נמסרו לך.
 - אל תציין מזהים טכניים או שמות שדות.
 
