@@ -284,7 +284,9 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         align="end"
                         trigger={
                           <button
-                            aria-label={`מצב: ${STATUS_META[task.status].label}. לחץ לשינוי`}
+                            // The task's name belongs in here. Read aloud, five
+                            // pills saying only "עוד לא התחיל" name nothing.
+                            aria-label={`${task.title} — מצב: ${STATUS_META[task.status].label}. לחץ לשינוי`}
                             className="shrink-0 rounded-full transition hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                           >
                             <StatusPill fill={STATUS_META[task.status].fill}>
