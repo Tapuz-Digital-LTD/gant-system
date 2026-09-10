@@ -12,9 +12,17 @@ import {
   Plus,
   RefreshCw,
   Sheet,
+  Table2,
   Upload
 } from 'lucide-react';
-import { GanttBoard, ImportPreview, ImportResult, PlannedImportEvent } from '../types';
+import {
+  GanttBoard,
+  ImportBoardPlan,
+  ImportPreview,
+  ImportResult,
+  PlannedImportEvent,
+  SheetChoice
+} from '../types';
 import { api } from '../services/api';
 import { describeError } from '../hooks/useBoardData';
 import { MILESTONES } from '../data/milestones';
@@ -39,7 +47,7 @@ type Step = 1 | 2 | 3 | 4;
 
 const STEPS: { id: Step; label: string }[] = [
   { id: 1, label: 'הקובץ' },
-  { id: 2, label: 'לאיזה פרויקט' },
+  { id: 2, label: 'גיליונות ולוחות' },
   { id: 3, label: 'מה ייכנס' },
   { id: 4, label: 'סיום' }
 ];
@@ -84,11 +92,13 @@ export function ImportScreen({
   const [file, setFile] = useState<{ name: string; size: number; base64: string } | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const [target, setTarget] = useState<{ mode: 'existing' | 'new'; boardId: string; name: string }>({
-    mode: boards.length > 0 ? 'existing' : 'new',
-    boardId: boards[0]?.id ?? '',
-    name: 'תכנון שנתי'
-  });
+  /**
+   * Where each sheet goes.
+   *
+   * Empty until the file has been read once — the server names the sheets, and
+   * the default for every one of them is a board of its own name.
+   */
+  const [sheets, setSheets] = useState<SheetChoice[]>([]);
 
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -112,8 +122,6 @@ export function ImportScreen({
   const accepted = useMemo(() => new Set(decisions.accepted), [decisions.accepted]);
   const rejected = useMemo(() => new Set(decisions.rejected), [decisions.rejected]);
 
-  const boardId = target.mode === 'existing' ? target.boardId : null;
-
   const pick = async (chosen: File | null | undefined) => {
     if (!chosen) return;
     setError(null);
@@ -126,34 +134,48 @@ export function ImportScreen({
       const base64 = await toBase64(chosen);
       setFile({ name: chosen.name, size: chosen.size, base64 });
       setPreview(null);
+      setDecisions({ accepted: [], rejected: [], excluded: [] });
+      // The mapping cannot be shown until the sheets are known, and only the
+      // server can read them — so the first look happens now, and writes nothing.
+      const first = await api.imports.preview({ fileName: chosen.name, fileBase64: base64 });
+      setPreview(first);
+      setSheets(first.plan.boards.map((b) => ({ sheet: b.sheet, boardName: b.boardName, boardId: b.boardId, include: b.include })));
       setStep(2);
-    } catch {
-      setError('לא הצלחנו לקרוא את הקובץ מהמחשב. נסה שוב.');
+    } catch (e) {
+      setError(e instanceof Error && e.message === 'read failed'
+        ? 'לא הצלחנו לקרוא את הקובץ מהמחשב. נסה שוב.'
+        : describeError(e));
     } finally {
       setBusy(false);
     }
   };
 
-  const runPreview = async () => {
+  const runPreview = async (nextSheets = sheets) => {
     if (!file) return;
     setBusy(true);
     setError(null);
     try {
-      const fresh = { accepted: [], rejected: [], excluded: [] };
       const next = await api.imports.preview({
         fileName: file.name,
         fileBase64: file.base64,
-        boardId,
-        ...fresh
+        sheets: nextSheets,
+        ...decisions
       });
       setPreview(next);
-      setDecisions(fresh);
-      setStep(3);
+      return next;
     } catch (e) {
       setError(describeError(e));
+      return undefined;
     } finally {
       setBusy(false);
     }
+  };
+
+  /** One sheet's mapping changed. Re-ask the server so the counts follow. */
+  const remap = async (sheet: string, patch: Partial<SheetChoice>) => {
+    const next = sheets.map((c) => (c.sheet === sheet ? { ...c, ...patch } : c));
+    setSheets(next);
+    await runPreview(next);
   };
 
   /**
@@ -162,15 +184,16 @@ export function ImportScreen({
    * happens, and the server refuses if the two ever disagree.
    */
   const counts = useMemo(() => {
-    const events = preview?.plan.events ?? [];
-    const live = events.filter((e) => !excluded.has(e.sourceKey));
+    const live = (preview?.plan.boards ?? []).filter((b) => b.include);
+    const events = live.flatMap((b) => b.events);
     return {
-      create: live.filter((e) => e.action === 'create').length,
-      update: live.filter((e) => e.action === 'update').length,
-      unchanged: live.filter((e) => e.action === 'unchanged').length,
-      skip: events.length - live.filter((e) => e.action !== 'skip').length
+      boards: live.length,
+      create: events.filter((e) => e.action === 'create').length,
+      update: events.filter((e) => e.action === 'update').length,
+      unchanged: events.filter((e) => e.action === 'unchanged').length,
+      skip: events.filter((e) => e.action === 'skip').length
     };
-  }, [preview, excluded]);
+  }, [preview]);
 
   const commit = async () => {
     if (!file || !preview) return;
@@ -180,14 +203,13 @@ export function ImportScreen({
       const done = await api.imports.commit({
         fileName: file.name,
         fileBase64: file.base64,
-        boardId,
-        boardName: target.mode === 'new' ? target.name.trim() : null,
+        sheets,
         ...decisions,
-        expect: { create: counts.create, update: counts.update }
+        expect: { boards: counts.boards, create: counts.create, update: counts.update }
       });
       setResult(done);
       setStep(4);
-      notify('success', `נוספו ${done.created} אירועים`);
+      notify('success', `נוספו ${done.created} אירועים ב-${done.boards.length} לוחות`);
     } catch (e) {
       setError(describeError(e));
     } finally {
@@ -270,7 +292,7 @@ export function ImportScreen({
         )}
 
         {/* -------------------------------------------------- 2 · which board */}
-        {step === 2 && file && (
+        {step === 2 && file && preview && (
           <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
             <div className="flex items-center gap-2.5 rounded-lg bg-canvas px-3 py-2.5">
               <FileSpreadsheet className="h-5 w-5 shrink-0 text-ink-tertiary" aria-hidden="true" />
@@ -281,64 +303,102 @@ export function ImportScreen({
               </Button>
             </div>
 
-            <h2 className="text-md font-bold text-ink">לאיזה פרויקט להכניס את האירועים?</h2>
-
-            <div className="flex flex-col gap-2">
-              <Choice
-                active={target.mode === 'existing'}
-                disabled={boards.length === 0}
-                onSelect={() => setTarget((t) => ({ ...t, mode: 'existing' }))}
-                title="לפרויקט קיים"
-                hint={
-                  boards.length === 0
-                    ? 'אין עדיין פרויקטים'
-                    : 'אירוע שכבר קיים יתעדכן במקום להיווצר פעם שנייה'
-                }
-              >
-                <Field label="הפרויקט" htmlFor="imp-board">
-                  <Select
-                    id="imp-board"
-                    value={target.boardId}
-                    onChange={(e) => setTarget((t) => ({ ...t, boardId: e.target.value }))}
-                  >
-                    {boards.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name} ({b.eventCount} אירועים)
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </Choice>
-
-              <Choice
-                active={target.mode === 'new'}
-                onSelect={() => setTarget((t) => ({ ...t, mode: 'new' }))}
-                title="לפרויקט חדש"
-                hint="ניצור פרויקט ריק ונכניס אליו את כל מה שבקובץ"
-              >
-                <Field label="שם הפרויקט" htmlFor="imp-name">
-                  <Input
-                    id="imp-name"
-                    value={target.name}
-                    onChange={(e) => setTarget((t) => ({ ...t, name: e.target.value }))}
-                    placeholder="תכנון שנתי 2027"
-                  />
-                </Field>
-              </Choice>
+            <div>
+              <h2 className="text-md font-bold text-ink">כל גיליון נכנס ללוח משלו</h2>
+              <p className="mt-0.5 text-base text-ink-secondary">
+                זה המבנה של הקובץ, וזה המבנה שייכנס. אפשר לשנות כל שם לוח כאן, או לוותר על גיליון.
+              </p>
             </div>
+
+            <ul className="flex flex-col gap-2">
+              {preview.plan.boards.map((board) => {
+                const choice = sheets.find((c) => c.sheet === board.sheet);
+                return (
+                  <li
+                    key={board.sheet}
+                    className={cn(
+                      'flex flex-wrap items-center gap-3 rounded-lg border p-3 transition-colors',
+                      board.include ? 'border-line bg-surface' : 'border-dashed border-line-strong opacity-60'
+                    )}
+                  >
+                    <label className="flex shrink-0 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={board.include}
+                        disabled={busy}
+                        onChange={() => void remap(board.sheet, { include: !board.include })}
+                        aria-label={`לייבא את הגיליון ${board.sheet}`}
+                        className="h-4.5 w-4.5 accent-primary"
+                      />
+                      <span className="flex items-center gap-1.5">
+                        <Sheet className="h-4.5 w-4.5 text-ink-tertiary" aria-hidden="true" />
+                        <span className="text-base font-semibold text-ink">{board.sheet}</span>
+                      </span>
+                    </label>
+
+                    <ArrowLeft className="hidden h-4 w-4 shrink-0 text-ink-disabled sm:block" aria-hidden="true" />
+
+                    <label className="flex min-w-52 flex-1 items-center gap-2">
+                      <span className="sr-only">שם הלוח עבור {board.sheet}</span>
+                      <Input
+                        value={choice?.boardName ?? board.boardName}
+                        disabled={busy || !board.include}
+                        onChange={(e) =>
+                          setSheets((prev) =>
+                            prev.map((c) => (c.sheet === board.sheet ? { ...c, boardName: e.target.value } : c))
+                          )
+                        }
+                        onBlur={(e) => void remap(board.sheet, { boardName: e.target.value })}
+                        className="h-9"
+                      />
+                    </label>
+
+                    <span className="shrink-0 text-base text-ink-secondary">
+                      <b className="text-ink tnum">{board.summary.events}</b> אירועים
+                    </span>
+
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold',
+                        board.boardId ? 'bg-primary-soft text-primary' : 'bg-done-soft text-done'
+                      )}
+                    >
+                      {board.boardId ? 'לוח קיים — יתעדכן' : 'לוח חדש'}
+                    </span>
+                  </li>
+                );
+              })}
+
+              {preview.plan.skipped.map((s) => (
+                <li
+                  key={s.sheet}
+                  className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-line px-3 py-2.5"
+                >
+                  <Sheet className="h-4.5 w-4.5 shrink-0 text-ink-disabled" aria-hidden="true" />
+                  <span className="text-base font-semibold text-ink-tertiary">{s.sheet}</span>
+                  <span className="text-base text-ink-tertiary">— לא לוח. {s.reason}</span>
+                </li>
+              ))}
+            </ul>
+
+            {/*
+              The one sentence that makes the previous mistake impossible: the
+              totals are stated here, before anything is written, in the shape
+              "so many boards, so many events".
+            */}
+            <p className="rounded-lg bg-canvas px-3 py-2.5 text-base text-ink">
+              ייווצרו <b>{counts.boards} לוחות</b> עם <b>{counts.create + counts.update} אירועים</b> בסך הכול,
+              מתוך {preview.plan.summary.sourceRows} שורות בקובץ.
+            </p>
 
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setStep(1)}>
                 <ArrowRight className="h-5 w-5" />
                 חזור
               </Button>
-              <Button
-                variant="primary"
-                onClick={runPreview}
-                disabled={busy || (target.mode === 'existing' ? !target.boardId : !target.name.trim())}
-              >
+              <Button variant="primary" onClick={() => setStep(3)} disabled={busy || counts.boards === 0}>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowLeft className="h-5 w-5" />}
-                {busy ? 'קורא את הקובץ…' : 'הצג לי מה יש בקובץ'}
+                {busy ? 'קורא…' : 'הצג לי מה ייכנס'}
               </Button>
             </div>
           </section>
@@ -388,7 +448,7 @@ export function ImportScreen({
     setBusy(true);
     try {
       setPreview(
-        await api.imports.preview({ fileName: file.name, fileBase64: file.base64, boardId, ...next })
+        await api.imports.preview({ fileName: file.name, fileBase64: file.base64, sheets, ...next })
       );
     } catch (e) {
       setError(describeError(e));
@@ -494,7 +554,7 @@ function Preview({
   onCommit
 }: {
   preview: ImportPreview;
-  counts: { create: number; update: number; unchanged: number; skip: number };
+  counts: { boards: number; create: number; update: number; unchanged: number; skip: number };
   excluded: Set<string>;
   accepted: Set<string>;
   rejected: Set<string>;
@@ -507,12 +567,14 @@ function Preview({
   onCommit: () => void;
 }) {
   const { plan, sheets } = preview;
-  const problems = plan.events.flatMap((e) => e.issues.map((i) => ({ ...i, title: e.title })));
+  const live = plan.boards.filter((b) => b.include);
+  const events = live.flatMap((b) => b.events);
+  const problems = events.flatMap((e) => e.issues.map((i) => ({ ...i, title: e.title, board: e.sheet })));
   const errors = problems.filter((p) => p.severity === 'error');
   const warnings = problems.filter((p) => p.severity === 'warning');
-  const conflicts = plan.events.flatMap((e) => e.conflicts.map((c) => ({ ...c, title: e.title })));
-  const suggestions = plan.events.flatMap((e) =>
-    e.suggestions.map((s) => ({ ...s, title: e.title, key: `${e.sourceKey}:${s.field}` }))
+  const conflicts = events.flatMap((e) => e.conflicts.map((c) => ({ ...c, title: e.title, board: e.sheet })));
+  const suggestions = events.flatMap((e) =>
+    e.suggestions.map((s) => ({ ...s, title: e.title, board: e.sheet, key: `${e.planKey}:${s.field}` }))
   );
 
   const willWrite = counts.create + counts.update;
@@ -524,12 +586,13 @@ function Preview({
         <h2 className="mb-1 text-md font-bold text-ink">מה יש בקובץ</h2>
         <p className="mb-3 text-base text-ink-secondary">
           {plan.summary.sourceRows} שורות בקובץ מתארות{' '}
-          <b className="text-ink">{plan.summary.events} אירועים</b>. אותה פעילות מופיעה בכמה
-          גיליונות, ולכן היא נספרת פעם אחת.
+          <b className="text-ink">{plan.summary.events} אירועים</b> ב-
+          <b className="text-ink">{live.length} לוחות</b>. בתוך גיליון, אותה פעילות שכתובה
+          בשני מקומות נספרת פעם אחת; בין גיליונות היא לא מאוחדת — אלה לוחות שונים.
         </p>
         <ul className="flex flex-col gap-1.5">
           {sheets.map((s) => (
-            <li key={s.name} className="flex items-center gap-2 text-base">
+            <li key={s.name} className="flex flex-wrap items-center gap-2 text-base">
               <Sheet
                 className={cn('h-4.5 w-4.5 shrink-0', s.used ? 'text-done' : 'text-ink-disabled')}
                 aria-hidden="true"
@@ -551,6 +614,18 @@ function Preview({
         <Stat label="לא ייכנסו" value={counts.skip} tone={counts.skip ? 'late' : 'neutral'} icon={Minus} />
       </section>
 
+      {/* The mapping again, one line, so it is on screen while the rows are read. */}
+      <section className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-canvas px-3 py-2.5 text-base">
+        <Table2 className="h-4.5 w-4.5 shrink-0 text-ink-tertiary" aria-hidden="true" />
+        {live.map((b, i) => (
+          <span key={b.sheet} className="flex items-center gap-1.5">
+            {i > 0 && <span className="text-ink-disabled">·</span>}
+            <b className="text-ink">{b.boardName}</b>
+            <span className="text-ink-tertiary tnum">{b.summary.events}</span>
+          </span>
+        ))}
+      </section>
+
       <p className="text-base text-ink-secondary">
         בקובץ הזה <b className="text-ink">אין משימות</b> — רק אירועים ותאריכים. את המשימות מחלקים
         בישיבת ההתנעה, אחרי הייבוא.
@@ -560,7 +635,7 @@ function Preview({
       {errors.length > 0 && (
         <Panel tone="late" icon={AlertTriangle} title={`${errors.length} דברים שלא נכנסים`}>
           {errors.map((p, i) => (
-            <Line key={i} where={p.where} title={p.title} message={p.message} />
+            <Line key={i} where={p.where} title={`[${p.board}] ${p.title}`} message={p.message} />
           ))}
         </Panel>
       )}
@@ -568,7 +643,7 @@ function Preview({
       {warnings.length > 0 && (
         <Panel tone="progress" icon={AlertTriangle} title={`${warnings.length} דברים ששווה לבדוק`}>
           {warnings.map((p, i) => (
-            <Line key={i} where={p.where} title={p.title} message={p.message} />
+            <Line key={i} where={p.where} title={`[${p.board}] ${p.title}`} message={p.message} />
           ))}
         </Panel>
       )}
@@ -578,7 +653,7 @@ function Preview({
           {conflicts.map((c, i) => (
             <div key={i} className="flex flex-col gap-1 border-b border-line py-2 last:border-0">
               <span className="text-base font-semibold text-ink">
-                {c.title} · {c.fieldLabel}
+                <span className="text-ink-tertiary">[{c.board}]</span> {c.title} · {c.fieldLabel}
               </span>
               <div className="flex flex-wrap items-center gap-2">
                 {c.values.map((v) => (
@@ -621,7 +696,7 @@ function Preview({
                 />
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-base text-ink">
-                    <b>{s.title}</b> · {s.fieldLabel}:{' '}
+                    <span className="text-ink-tertiary">[{s.board}]</span> <b>{s.title}</b> · {s.fieldLabel}:{' '}
                     <span className="text-late line-through">{asShown(s.from)}</span> →{' '}
                     <span className="font-bold text-done">{formatDate(s.to)}</span>
                   </span>
@@ -638,10 +713,14 @@ function Preview({
         </Panel>
       )}
 
-      {/* the rows */}
-      <section className="overflow-hidden rounded-xl border border-line bg-surface shadow-card">
-        <h2 className="border-b border-line px-4 py-3 text-md font-bold text-ink">
-          כל האירועים שזוהו
+      {/* the rows, one table per board */}
+      {live.map((board) => (
+      <section key={board.sheet} className="overflow-hidden rounded-xl border border-line bg-surface shadow-card">
+        <h2 className="flex flex-wrap items-baseline gap-2 border-b border-line px-4 py-3">
+          <span className="text-md font-bold text-ink">{board.boardName}</span>
+          <span className="text-sm text-ink-tertiary">
+            מהגיליון «{board.sheet}» · {board.summary.events} אירועים
+          </span>
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full min-w-3xl text-start">
@@ -658,26 +737,27 @@ function Preview({
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {plan.events.map((e) => (
+              {board.events.map((e) => (
                 <Row
-                  key={e.sourceKey}
+                  key={e.planKey}
                   event={e}
-                  excluded={excluded.has(e.sourceKey)}
-                  open={openRow === e.sourceKey}
-                  onToggleOpen={() => onToggleRow(e.sourceKey)}
-                  onToggleExcluded={() => onToggleExcluded(e.sourceKey)}
+                  excluded={excluded.has(e.planKey)}
+                  open={openRow === e.planKey}
+                  onToggleOpen={() => onToggleRow(e.planKey)}
+                  onToggleExcluded={() => onToggleExcluded(e.planKey)}
                 />
               ))}
             </tbody>
           </table>
         </div>
       </section>
+      ))}
 
       <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-2 border-t border-line bg-surface/95 px-1 py-3 backdrop-blur">
         <span className="me-auto text-base text-ink-secondary">
           {willWrite === 0
             ? 'אין מה לייבא — הכול כבר קיים במערכת'
-            : `עומדים להיכנס ${counts.create} אירועים חדשים ולהתעדכן ${counts.update}`}
+            : `${counts.boards} לוחות · ${counts.create} אירועים חדשים · ${counts.update} עדכונים`}
         </span>
         <Button variant="ghost" onClick={onBack} disabled={busy}>
           <ArrowRight className="h-5 w-5" />
@@ -836,6 +916,8 @@ function Report({
   onOpenBoard: (boardId: string) => void;
   onBackHome: () => void;
 }) {
+  const created = result.boards.filter((b) => b.boardCreated).length;
+
   return (
     <div className="flex flex-col gap-4">
       <section className="flex items-start gap-3 rounded-xl border border-done/30 bg-done-soft p-4">
@@ -843,7 +925,7 @@ function Report({
         <div>
           <h2 className="text-md font-bold text-ink">הייבוא הסתיים</h2>
           <p className="text-base text-ink-secondary">
-            {result.boardCreated ? `נוצר הפרויקט «${result.board.name}» ו` : ''}
+            {created > 0 ? `נוצרו ${created} לוחות ו` : ''}
             נוספו {result.created} אירועים
             {result.updated > 0 ? `, ${result.updated} התעדכנו` : ''}
             {result.unchanged > 0 ? `, ${result.unchanged} כבר היו זהים` : ''}
@@ -853,9 +935,9 @@ function Report({
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="לוחות" value={result.boards.length} tone="primary" icon={Table2} />
         <Stat label="אירועים שנוצרו" value={result.created} tone="done" icon={Plus} />
         <Stat label="אירועים שעודכנו" value={result.updated} tone="primary" icon={RefreshCw} />
-        <Stat label="משימות" value={result.tasks} tone="neutral" icon={Check} />
         <Stat
           label="דברים שדרשו תיקון"
           value={result.warnings}
@@ -864,61 +946,74 @@ function Report({
         />
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-line bg-surface shadow-card">
-        <div className="border-b border-line px-4 py-3">
-          <h2 className="text-md font-bold text-ink">עשר רשומות לבדיקה מול האקסל</h2>
-          <p className="text-sm text-ink-tertiary">
-            כל שורה כאן מציינת מאיזה גיליון ואיזו שורה בקובץ היא הגיעה. אפשר לפתוח את האקסל
-            ולהשוות.
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-2xl">
-            <thead>
-              <tr className="border-b border-line bg-canvas text-xs font-semibold text-ink-tertiary">
-                <th className="px-3 py-2 text-start">שם האירוע</th>
-                <th className="px-3 py-2 text-start">ישיבת התנעה</th>
-                <th className="px-3 py-2 text-start">עלייה לאוויר</th>
-                <th className="px-3 py-2 text-start">תאריך האירוע</th>
-                <th className="px-3 py-2 text-start">הכנה</th>
-                <th className="px-3 py-2 text-start">שורות המקור</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line text-base">
-              {result.sample.map((row) => (
-                <tr key={row.title + row.actualDate}>
-                  <td className="px-3 py-2 font-semibold text-ink">{row.title}</td>
-                  <td className="px-3 py-2 text-ink-secondary tnum">
-                    {row.kickoffMeetingDate ? formatDate(row.kickoffMeetingDate) : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-ink-secondary tnum">
-                    {row.kickoffDate ? formatDate(row.kickoffDate) : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-ink-secondary tnum">{formatDate(row.actualDate)}</td>
-                  <td className="px-3 py-2 text-ink-secondary tnum">{row.prepMonths || '—'}</td>
-                  <td className="px-3 py-2 text-sm text-ink-tertiary">{row.sources.join(' · ')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {result.boards.map((board) => (
+        <section key={board.boardId} className="overflow-hidden rounded-xl border border-line bg-surface shadow-card">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-md font-bold text-ink">{board.boardName}</h2>
+              <p className="text-sm text-ink-tertiary">
+                מהגיליון «{board.sheet}» · {board.created} נוצרו
+                {board.updated > 0 ? ` · ${board.updated} עודכנו` : ''}
+                {board.unchanged > 0 ? ` · ${board.unchanged} ללא שינוי` : ''}
+              </p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => onOpenBoard(board.boardId)}>
+              <ArrowLeft className="h-4.5 w-4.5" />
+              פתח
+            </Button>
+          </div>
 
-      {preview && preview.plan.summary.warnings > 0 && (
-        <p className="text-base text-ink-secondary">
-          {preview.plan.summary.warnings} אזהרות נרשמו ביומן הפעילות של הפרויקט. אף תאריך לא שונה
-          בלי אישור.
-        </p>
-      )}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-2xl">
+              <thead>
+                <tr className="border-b border-line bg-canvas text-xs font-semibold text-ink-tertiary">
+                  <th className="px-3 py-2 text-start">שם האירוע</th>
+                  <th className="px-3 py-2 text-start">ישיבת התנעה</th>
+                  <th className="px-3 py-2 text-start">עלייה לאוויר</th>
+                  <th className="px-3 py-2 text-start">תאריך האירוע</th>
+                  <th className="px-3 py-2 text-start">הכנה</th>
+                  <th className="px-3 py-2 text-start">שורות המקור</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line text-base">
+                {board.sample.map((row) => (
+                  <tr key={row.title + row.actualDate}>
+                    <td className="px-3 py-2 font-semibold text-ink">{row.title}</td>
+                    <td className="px-3 py-2 text-ink-secondary tnum">
+                      {row.kickoffMeetingDate ? formatDate(row.kickoffMeetingDate) : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-ink-secondary tnum">
+                      {row.kickoffDate ? formatDate(row.kickoffDate) : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-ink-secondary tnum">{formatDate(row.actualDate)}</td>
+                    <td className="px-3 py-2 text-ink-secondary tnum">{row.prepMonths || '—'}</td>
+                    <td className="px-3 py-2 text-sm text-ink-tertiary">{row.sources.join(' · ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+
+      <p className="text-base text-ink-secondary">
+        בכל שורה כתוב מאיזה גיליון ואיזו שורה בקובץ היא הגיעה, כדי שאפשר יהיה לפתוח את האקסל
+        ולהשוות.
+        {preview && preview.plan.summary.warnings > 0
+          ? ` ${preview.plan.summary.warnings} אזהרות נרשמו ביומן הפעילות. אף תאריך לא שונה בלי אישור.`
+          : ''}
+      </p>
 
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" onClick={onBackHome}>
           למסך הראשי
         </Button>
-        <Button variant="primary" onClick={() => onOpenBoard(result.board.id)}>
-          <ArrowLeft className="h-5 w-5" />
-          פתח את הפרויקט
-        </Button>
+        {result.boards[0] && (
+          <Button variant="primary" onClick={() => onOpenBoard(result.boards[0].boardId)}>
+            <ArrowLeft className="h-5 w-5" />
+            פתח את «{result.boards[0].boardName}»
+          </Button>
+        )}
       </div>
     </div>
   );

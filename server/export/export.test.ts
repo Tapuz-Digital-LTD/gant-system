@@ -10,7 +10,7 @@ import { buildWorkbook, SHEET, type ExportData, type ExportEvent } from './xlsx.
 import { createExportRouter } from './routes.ts';
 import { columnFor } from '../import/parse.ts';
 import { readWorkbook } from '../import/workbook.ts';
-import { buildPlan } from '../import/plan.ts';
+import { allEvents, buildPlan } from '../import/plan.ts';
 
 const ExcelJS = (await import('exceljs')).default;
 
@@ -229,7 +229,11 @@ await wb.xlsx.load(file);
 {
   const parsed = await readWorkbook(file);
   const plan = buildPlan(parsed.rows);
+  // One sheet in, one board out — the flat list is that board's events.
+  const planned = allEvents(plan);
 
+  assert.equal(plan.boards.length, 1, 'one importable sheet becomes one board');
+  assert.equal(plan.boards[0].boardName, SHEET.events, 'named after the sheet it came from');
   assert.equal(plan.summary.events, data.events.length, 'every event comes back, and nothing else does');
   assert.equal(plan.summary.skip, 0, 'and every one of them is importable');
 
@@ -249,7 +253,7 @@ await wb.xlsx.load(file);
   for (const source of data.events) {
     // The one title that changes on the way out is the one that had to.
     const title = /^[=+\-@\t\r]/.test(source.title) ? `'${source.title}` : source.title;
-    const back = plan.events.find((e) => e.title === title);
+    const back = planned.find((e) => e.title === title);
     assert.ok(back, `"${title}" did not survive the round trip`);
     for (const field of DATES) {
       assert.equal(back!.values[field], source[field], `${title}: ${field} came back different`);
@@ -268,7 +272,7 @@ await wb.xlsx.load(file);
   }
 
   assert.equal(
-    plan.events.find((e) => e.title === 'חנוכה 2026')!.values.note,
+    planned.find((e) => e.title === 'חנוכה 2026')!.values.note,
     'נר ראשון',
     'the free text comes back too'
   );
@@ -283,7 +287,7 @@ await wb.xlsx.load(file);
    * above check. See `eventDate` in xlsx.ts for why the alternative, a "דיוק"
    * column beside the date, would cost four whole columns instead.
    */
-  const floating = plan.events.find((e) => e.title === 'מבצע קיץ 2027')!;
+  const floating = planned.find((e) => e.title === 'מבצע קיץ 2027')!;
   assert.equal(floating.values.actualDate, '2027-07-01', 'the stored day is unchanged');
   assert.equal(floating.values.actualPrecision, 'day', 'the precision flag is what a number format cannot carry');
 }

@@ -86,6 +86,47 @@ async function readUpload(base64: string, res: Response) {
   }
 }
 
+/**
+ * Each sheet's target board, resolved against what already exists.
+ *
+ * A sheet defaults to a board of its own name; if one is already there, this is
+ * an import into it rather than a second board with the same name. Board access
+ * is checked here, once, for every board the workbook is about to touch —
+ * naming a board in the request can only ever reach one the session already
+ * allows.
+ */
+async function resolveSheetBoards(
+  req: Request,
+  actor: Actor,
+  parsed: { rows: { sheet: string }[] },
+  choices: { sheet: string; boardName?: string; boardId?: string | null; include?: boolean }[]
+) {
+  const chosen = new Map(choices.map((c) => [c.sheet, c]));
+  const sheets: string[] = [];
+  for (const row of parsed.rows) if (!sheets.includes(row.sheet)) sheets.push(row.sheet);
+
+  const visible = await req.repo.visibleBoardIds(actor);
+  const boards = await req.repo.listBoards(visible);
+  const byName = new Map(boards.map((b) => [b.name.trim(), b.id]));
+
+  const resolved: { sheet: string; boardName: string; boardId: string | null; include: boolean }[] = [];
+  const existing = new Map<string, Awaited<ReturnType<typeof req.repo.eventsForImport>>>();
+
+  for (const sheet of sheets) {
+    const choice = chosen.get(sheet);
+    const boardName = choice?.boardName?.trim() || sheet;
+    const boardId = choice?.boardId ?? byName.get(boardName) ?? null;
+
+    if (boardId) {
+      await assertBoardWrite(req.repo, actor, boardId);
+      if (!existing.has(boardId)) existing.set(boardId, await req.repo.eventsForImport(boardId));
+    }
+    resolved.push({ sheet, boardName, boardId, include: choice?.include ?? true });
+  }
+
+  return { choices: resolved, existing };
+}
+
 /** What each sheet contributed, so a sheet that gave nothing is visible. */
 function describeSheets(parsed: { sheetNames: string[]; rows: { sheet: string }[]; skipped: { sheet: string; reason: string }[] }) {
   return parsed.sheetNames.map((name) => {
@@ -822,23 +863,23 @@ export function createApiRouter(
     const parsed = await readUpload(input.fileBase64, res);
     if (!parsed) return;
 
-    let existing;
-    if (input.boardId) {
-      await assertBoardWrite(req.repo, actor, input.boardId);
-      existing = await req.repo.eventsForImport(input.boardId);
-    }
-
     const { buildPlan } = await import('./import/plan.js');
+    const resolved = await resolveSheetBoards(req, actor, parsed, input.sheets);
+
     res.json({
       data: {
         fileName: input.fileName,
         sheets: describeSheets(parsed),
-        plan: buildPlan(parsed.rows, {
-          existing,
-          accepted: new Set(input.accepted),
-          rejected: new Set(input.rejected),
-          excluded: new Set(input.excluded)
-        })
+        plan: {
+          ...buildPlan(parsed.rows, {
+            sheets: resolved.choices,
+            existingByBoard: resolved.existing,
+            accepted: new Set(input.accepted),
+            rejected: new Set(input.rejected),
+            excluded: new Set(input.excluded)
+          }),
+          skipped: parsed.skipped
+        }
       }
     });
   }));
@@ -846,9 +887,10 @@ export function createApiRouter(
   /**
    * The same plan, run for real.
    *
-   * `expect` is the safety catch: the screen says what it is about to do, and
-   * a file that no longer produces those numbers is a different file. Better a
-   * refusal than an import nobody approved.
+   * `expect` is the safety catch: the screen says what it is about to do, and a
+   * file that no longer produces those numbers is a different file. The number
+   * of boards is part of it, because a workbook landing in one board instead of
+   * three is precisely the mistake this feature was rebuilt to make visible.
    */
   api.post('/import/commit', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'import.run', 'ייבוא מקובץ');
@@ -857,66 +899,72 @@ export function createApiRouter(
     const parsed = await readUpload(input.fileBase64, res);
     if (!parsed) return;
 
-    let boardId = input.boardId ?? null;
-    let createdBoard: { id: string; name: string } | null = null;
-
-    if (!boardId) {
-      if (!input.boardName) throw new NotFoundError('לא נבחר לוח לייבוא');
-      await requirePermission(req.repo, req.actor, 'board.create', 'יצירת לוח');
-      if (actor.isGuest) throw new ForbiddenError('אורח אינו יכול ליצור לוח');
-      const board = await req.repo.createBoard({ name: input.boardName }, actor.id);
-      boardId = board.id;
-      createdBoard = { id: board.id, name: board.name };
-    } else {
-      await assertBoardWrite(req.repo, actor, boardId);
-    }
-
     const { buildPlan } = await import('./import/plan.js');
+    const resolved = await resolveSheetBoards(req, actor, parsed, input.sheets);
+
     const plan = buildPlan(parsed.rows, {
-      existing: await req.repo.eventsForImport(boardId),
+      sheets: resolved.choices,
+      existingByBoard: resolved.existing,
       accepted: new Set(input.accepted),
       rejected: new Set(input.rejected),
       excluded: new Set(input.excluded)
     });
 
-    if (plan.summary.create !== input.expect.create || plan.summary.update !== input.expect.update) {
+    const live = plan.boards.filter((b) => b.include);
+
+    if (
+      live.length !== input.expect.boards ||
+      plan.summary.create !== input.expect.create ||
+      plan.summary.update !== input.expect.update
+    ) {
       res.status(409).json({
         error: {
           code: 'IMPORT_CHANGED',
           message:
             `מה שהקובץ מבקש לעשות השתנה מאז המסך הקודם ` +
-            `(${plan.summary.create} חדשים ו-${plan.summary.update} עדכונים, במקום ` +
-            `${input.expect.create} ו-${input.expect.update}). פתח את התצוגה המקדימה שוב.`
+            `(${live.length} לוחות, ${plan.summary.create} אירועים חדשים ו-${plan.summary.update} עדכונים, ` +
+            `במקום ${input.expect.boards}, ${input.expect.create} ו-${input.expect.update}). ` +
+            `פתח את התצוגה המקדימה שוב.`
         }
       });
       return;
     }
 
-    const result = await req.repo.applyImport(boardId, plan.events, actor.id);
+    if (live.some((b) => !b.boardId)) {
+      await requirePermission(req.repo, req.actor, 'board.create', 'יצירת לוח');
+      if (actor.isGuest) throw new ForbiddenError('אורח אינו יכול ליצור לוח');
+    }
+
+    const report = await req.repo.applyImport(
+      live.map((b) => ({ boardName: b.boardName, boardId: b.boardId, events: b.events })),
+      actor.id
+    );
 
     res.json({
       data: {
-        board: createdBoard ?? { id: boardId, name: null },
-        boardCreated: Boolean(createdBoard),
-        created: result.created.length,
-        updated: result.updated.length,
-        unchanged: result.unchanged,
-        skipped: result.skipped,
+        boards: report.map((b, i) => ({
+          ...b,
+          sheet: live[i].sheet,
+          /* Rows a person can check against their own spreadsheet, per board. */
+          sample: live[i].events
+            .filter((e) => e.action !== 'skip')
+            .slice(0, 10)
+            .map((e) => ({
+              title: e.title,
+              sources: e.sources,
+              actualDate: e.values.actualDate,
+              kickoffMeetingDate: e.values.kickoffMeetingDate,
+              kickoffDate: e.values.kickoffDate,
+              prepMonths: e.values.prepMonths
+            }))
+        })),
+        created: report.reduce((n, b) => n + b.created, 0),
+        updated: report.reduce((n, b) => n + b.updated, 0),
+        unchanged: report.reduce((n, b) => n + b.unchanged, 0),
+        skipped: report.reduce((n, b) => n + b.skipped, 0),
         tasks: 0,
         warnings: plan.summary.warnings,
-        errors: plan.summary.errors,
-        /* Ten rows a person can check against their own spreadsheet. */
-        sample: plan.events
-          .filter((e) => e.action !== 'skip')
-          .slice(0, 10)
-          .map((e) => ({
-            title: e.title,
-            sources: e.sources,
-            actualDate: e.values.actualDate,
-            kickoffMeetingDate: e.values.kickoffMeetingDate,
-            kickoffDate: e.values.kickoffDate,
-            prepMonths: e.values.prepMonths
-          }))
+        errors: plan.summary.errors
       }
     });
   }));

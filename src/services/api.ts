@@ -26,6 +26,7 @@ import {
   SearchHit,
   ImportPreview,
   ImportResult,
+  SheetChoice,
   Dashboard,
   ReportDefinition,
   ReportModel,
@@ -303,7 +304,7 @@ export const api = {
     preview: (input: {
       fileName: string;
       fileBase64: string;
-      boardId?: string | null;
+      sheets?: SheetChoice[];
       accepted?: string[];
       rejected?: string[];
       excluded?: string[];
@@ -311,12 +312,11 @@ export const api = {
     commit: (input: {
       fileName: string;
       fileBase64: string;
-      boardId?: string | null;
-      boardName?: string | null;
+      sheets: SheetChoice[];
       accepted: string[];
       rejected: string[];
       excluded: string[];
-      expect: { create: number; update: number };
+      expect: { boards: number; create: number; update: number };
     }) => request<ImportResult>('/import/commit', { method: 'POST', ...body(input) })
   },
 

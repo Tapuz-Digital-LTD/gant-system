@@ -610,101 +610,130 @@ export function createRepo(db: Database) {
     /**
      * The import itself: all of it, or none of it.
      *
-     * One transaction, so a file that fails on its fortieth row leaves the
-     * board exactly as it was rather than half-loaded — and a half-loaded board
-     * is worse than an empty one, because nobody can tell which half.
+     * One transaction across every board, so a workbook that fails on its
+     * fortieth row leaves nothing behind — not a half-loaded board and not an
+     * empty board that was created on the way to failing.
+     *
+     * A workbook is a set of sheets and each sheet is a board, so this takes a
+     * list of boards rather than one. Boards that do not exist yet are created
+     * inside the same transaction, which is what makes "none of it" true.
      *
      * Only the fields the file spoke about are written. A spreadsheet that says
      * nothing about the review date is not asking for the review date to be
      * deleted.
      */
     async applyImport(
-      boardId: string,
-      planned: {
-        sourceKey: string;
-        action: 'create' | 'update' | 'unchanged' | 'skip';
-        existingId?: string;
-        stated: string[];
-        /** The planner's EventValues, read here as a bag of fields. */
-        values: { readonly title: string } & object;
+      boards_: {
+        boardName: string;
+        boardId: string | null;
+        events: {
+          sourceKey: string;
+          action: 'create' | 'update' | 'unchanged' | 'skip';
+          existingId?: string;
+          stated: string[];
+          /** The planner's EventValues, read here as a bag of fields. */
+          values: { readonly title: string } & object;
+        }[];
       }[],
       actorId: string | null
     ) {
-      const [board] = await db.select({ id: boards.id }).from(boards).where(eq(boards.id, boardId));
-      if (!board) throw new NotFoundError('לא מצאנו את הלוח. רענן את הדף ונסה שוב');
-
       return db.transaction(async (tx) => {
-        const created: { id: string; title: string }[] = [];
-        const updated: { id: string; title: string; fields: string[] }[] = [];
-        let unchanged = 0;
-        let skipped = 0;
+        const report: {
+          boardId: string;
+          boardName: string;
+          created: number;
+          updated: number;
+          unchanged: number;
+          skipped: number;
+          boardCreated: boolean;
+        }[] = [];
 
-        for (const p of planned) {
-          if (p.action === 'skip') {
-            skipped++;
-            continue;
-          }
-          if (p.action === 'unchanged') {
-            unchanged++;
-            continue;
-          }
+        for (const target of boards_) {
+          let boardId = target.boardId;
+          let boardCreated = false;
 
-          const says = new Set(p.stated);
-          const writable: Record<string, unknown> = {};
-          for (const [field, value] of Object.entries(p.values as Record<string, unknown>)) {
-            if (!says.has(field)) continue;
-            if (value === null || value === '') continue;
-            writable[field] = value;
-          }
-
-          if (p.action === 'update' && p.existingId) {
-            const [before] = await tx.select().from(events).where(eq(events.id, p.existingId));
-            if (!before) throw new NotFoundError(`האירוע "${p.values.title}" כבר לא קיים. רענן ונסה שוב`);
-
-            const [row] = await tx
-              .update(events)
-              .set({
-                ...writable,
-                // Claimed on the way through, so the next import of this file
-                // finds this row by key instead of by guessing at its name.
-                sourceKey: p.sourceKey,
-                version: before.version + 1,
-                updatedAt: new Date()
-              })
-              .where(eq(events.id, p.existingId))
-              .returning();
-
-            await log(tx as unknown as Database, actorId, 'event', row.id, 'imported', before, row);
-            updated.push({
-              id: row.id,
-              title: row.title,
-              fields: Object.keys(writable).filter(
-                (f) => String((before as unknown as Record<string, unknown>)[f] ?? '') !== String(writable[f])
-              )
-            });
+          if (boardId) {
+            const [found] = await tx.select({ id: boards.id }).from(boards).where(eq(boards.id, boardId));
+            if (!found) throw new NotFoundError(`הלוח «${target.boardName}» כבר לא קיים. רענן ונסה שוב`);
           } else {
-            const [row] = await tx
-              .insert(events)
-              .values({
-                ...(writable as typeof events.$inferInsert),
-                boardId,
-                sourceKey: p.sourceKey,
-                createdBy: actorId
-              })
+            const [created] = await tx
+              .insert(boards)
+              .values({ name: target.boardName, createdBy: actorId })
               .returning();
-            await log(tx as unknown as Database, actorId, 'event', row.id, 'imported', null, row);
-            created.push({ id: row.id, title: row.title });
+            boardId = created.id;
+            boardCreated = true;
+            await log(tx as unknown as Database, actorId, 'board', boardId, 'created', null, created);
           }
+
+          let created = 0;
+          let updated = 0;
+          let unchanged = 0;
+          let skipped = 0;
+
+          for (const p of target.events) {
+            if (p.action === 'skip') {
+              skipped++;
+              continue;
+            }
+            if (p.action === 'unchanged') {
+              unchanged++;
+              continue;
+            }
+
+            const says = new Set(p.stated);
+            const writable: Record<string, unknown> = {};
+            for (const [field, value] of Object.entries(p.values as Record<string, unknown>)) {
+              if (!says.has(field)) continue;
+              if (value === null || value === '') continue;
+              writable[field] = value;
+            }
+
+            if (p.action === 'update' && p.existingId) {
+              const [before] = await tx.select().from(events).where(eq(events.id, p.existingId));
+              if (!before) throw new NotFoundError(`האירוע "${p.values.title}" כבר לא קיים. רענן ונסה שוב`);
+
+              const [row] = await tx
+                .update(events)
+                .set({
+                  ...writable,
+                  // Claimed on the way through, so the next import of this file
+                  // finds this row by key instead of by guessing at its name.
+                  sourceKey: p.sourceKey,
+                  version: before.version + 1,
+                  updatedAt: new Date()
+                })
+                .where(eq(events.id, p.existingId))
+                .returning();
+
+              await log(tx as unknown as Database, actorId, 'event', row.id, 'imported', before, row);
+              updated++;
+            } else {
+              const [row] = await tx
+                .insert(events)
+                .values({
+                  ...(writable as typeof events.$inferInsert),
+                  boardId,
+                  sourceKey: p.sourceKey,
+                  createdBy: actorId
+                })
+                .returning();
+              await log(tx as unknown as Database, actorId, 'event', row.id, 'imported', null, row);
+              created++;
+            }
+          }
+
+          await log(tx as unknown as Database, actorId, 'board', boardId, 'import_run', null, {
+            sheetBoard: target.boardName,
+            created,
+            updated,
+            unchanged,
+            skipped
+          });
+
+          report.push({ boardId, boardName: target.boardName, created, updated, unchanged, skipped, boardCreated });
         }
 
-        await log(tx as unknown as Database, actorId, 'board', boardId, 'import_run', null, {
-          created: created.length,
-          updated: updated.length,
-          unchanged,
-          skipped
-        });
-
-        return { created, updated, unchanged, skipped };
+        return report;
       });
     },
 

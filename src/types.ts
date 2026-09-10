@@ -421,6 +421,9 @@ export interface ImportEventValues {
 
 export interface PlannedImportEvent {
   sourceKey: string;
+  /** Unique across the whole plan: which sheet, and which activity in it. */
+  planKey: string;
+  sheet: string;
   title: string;
   action: ImportAction;
   values: ImportEventValues;
@@ -433,22 +436,48 @@ export interface PlannedImportEvent {
   changes?: { field: string; fieldLabel: string; from: string; to: string }[];
 }
 
-export interface ImportPlan {
+export interface ImportPlanSummary {
+  sourceRows: number;
+  events: number;
+  create: number;
+  update: number;
+  unchanged: number;
+  skip: number;
+  tasks: number;
+  errors: number;
+  warnings: number;
+  conflicts: number;
+  suggestions: number;
+}
+
+/**
+ * One sheet, and the board it becomes.
+ *
+ * A workbook is a set of sheets, and each sheet that holds a table is a board.
+ * The mapping is shown before anything is written and can be changed there, so
+ * a whole workbook can never land in one board without somebody having seen it.
+ */
+export interface ImportBoardPlan {
+  sheet: string;
+  boardName: string;
+  boardId: string | null;
+  include: boolean;
   events: PlannedImportEvent[];
-  issues: ImportIssue[];
-  summary: {
-    sourceRows: number;
-    events: number;
-    create: number;
-    update: number;
-    unchanged: number;
-    skip: number;
-    tasks: number;
-    errors: number;
-    warnings: number;
-    conflicts: number;
-    suggestions: number;
-  };
+  summary: ImportPlanSummary;
+}
+
+export interface ImportPlan {
+  boards: ImportBoardPlan[];
+  skipped: { sheet: string; rows: number; reason: string }[];
+  summary: ImportPlanSummary;
+}
+
+/** What a person changed about where a sheet goes. */
+export interface SheetChoice {
+  sheet: string;
+  boardName?: string;
+  boardId?: string | null;
+  include?: boolean;
 }
 
 export interface ImportPreview {
@@ -458,17 +487,16 @@ export interface ImportPreview {
   plan: ImportPlan;
 }
 
-export interface ImportResult {
-  board: { id: string; name: string | null };
+export interface ImportedBoard {
+  boardId: string;
+  boardName: string;
+  sheet: string;
   boardCreated: boolean;
   created: number;
   updated: number;
   unchanged: number;
   skipped: number;
-  tasks: number;
-  warnings: number;
-  errors: number;
-  /** Ten rows to check against the spreadsheet by eye. */
+  /** Ten rows per board, to check against the spreadsheet by eye. */
   sample: {
     title: string;
     sources: string[];
@@ -477,6 +505,17 @@ export interface ImportResult {
     kickoffDate: string | null;
     prepMonths: number;
   }[];
+}
+
+export interface ImportResult {
+  boards: ImportedBoard[];
+  created: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  tasks: number;
+  warnings: number;
+  errors: number;
 }
 
 

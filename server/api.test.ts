@@ -531,11 +531,28 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
 
     const boardsBefore = (await call('GET', '/boards')).json.data.length;
 
-    // --- the preview writes nothing ---
+    /*
+     * --- the preview writes nothing, and states the shape of the workbook ---
+     *
+     * Each sheet is a board. The first version of this read all three sheets
+     * into one board of 51 events, which silently merged three teams' views of
+     * the same year, so the mapping is now the first thing the preview says.
+     */
     r = await call('POST', '/import/preview', { fileName, fileBase64 });
     assert.equal(r.status, 200);
-    assert.equal(r.json.data.plan.summary.events, 51);
-    assert.equal(r.json.data.plan.summary.create, 51);
+    assert.deepEqual(
+      r.json.data.plan.boards.map((b: { sheet: string; boardName: string; summary: { events: number } }) =>
+        `${b.sheet} → ${b.boardName} → ${b.summary.events}`
+      ),
+      [
+        'גאנט 26-27-28 → גאנט 26-27-28 → 45',
+        'לוח שנה 2026-27 → לוח שנה 2026-27 → 45',
+        'גאנט קמפיין מכירות → גאנט קמפיין מכירות → 51'
+      ],
+      'sheet → board → count, before anything is written'
+    );
+    assert.equal(r.json.data.plan.summary.events, 141);
+    assert.equal(r.json.data.plan.summary.create, 141);
     assert.equal(r.json.data.sheets.length, 4, 'every sheet is accounted for');
     assert.ok(
       r.json.data.sheets.some((s: { used: boolean; reason: string | null }) => !s.used && s.reason),
@@ -547,21 +564,42 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
       'and after all that, nothing has been created'
     );
 
+    // --- a commit that expects the wrong number of boards is refused ---
+    r = await call('POST', '/import/commit', {
+      fileName,
+      fileBase64,
+      expect: { boards: 1, create: 141, update: 0 }
+    });
+    assert.equal(r.status, 409, 'a workbook landing in one board is not what the screen showed');
+    assert.equal(r.json.error.code, 'IMPORT_CHANGED');
+    assert.equal(
+      (await call('GET', '/boards')).json.data.length,
+      boardsBefore,
+      'and the refusal creates nothing'
+    );
+
     // --- the commit ---
     r = await call('POST', '/import/commit', {
       fileName,
       fileBase64,
-      boardName: 'תכנון שנתי',
-      expect: { create: 51, update: 0 }
+      expect: { boards: 3, create: 141, update: 0 }
     });
     assert.equal(r.status, 200);
-    assert.equal(r.json.data.created, 51);
-    assert.equal(r.json.data.boardCreated, true);
+    assert.equal(r.json.data.created, 141);
+    assert.equal(r.json.data.boards.length, 3, 'three sheets became three boards');
+    assert.ok(
+      r.json.data.boards.every((b: { boardCreated: boolean }) => b.boardCreated),
+      'all three were new'
+    );
+    assert.deepEqual(
+      r.json.data.boards.map((b: { boardName: string; created: number }) => `${b.boardName}=${b.created}`),
+      ['גאנט 26-27-28=45', 'לוח שנה 2026-27=45', 'גאנט קמפיין מכירות=51']
+    );
     assert.equal(r.json.data.tasks, 0, 'the file holds no tasks, and none are invented');
-    assert.equal(r.json.data.sample.length, 10, 'ten rows to check against the spreadsheet');
-    assert.ok(r.json.data.sample[0].sources.length > 0, 'each naming the sheet and row it came from');
+    assert.equal(r.json.data.boards[0].sample.length, 10, 'ten rows per board to check by eye');
+    assert.ok(r.json.data.boards[0].sample[0].sources.length > 0, 'each naming the sheet and row');
 
-    const importedBoard: string = r.json.data.board.id;
+    const importedBoard: string = r.json.data.boards[2].boardId;
     const events = (await call('GET', `/boards/${importedBoard}/events?from=2020-01-01&to=2040-01-01`))
       .json.data;
     assert.equal(events.length, 51, 'and they are all readable through the ordinary API');
@@ -580,34 +618,68 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
       'the two dates the whole product is about are still two dates'
     );
 
-    // --- the same file again ---
-    r = await call('POST', '/import/preview', { fileName, fileBase64, boardId: importedBoard });
+    /*
+     * --- the same file again ---
+     *
+     * The sheets now match boards that exist, by name, so the second run finds
+     * every row it wrote rather than building three more boards beside them.
+     */
+    r = await call('POST', '/import/preview', { fileName, fileBase64 });
     assert.equal(r.json.data.plan.summary.create, 0, 'the same file twice creates nothing');
-    assert.equal(r.json.data.plan.summary.unchanged, 51, 'it recognises every row it wrote');
+    assert.equal(r.json.data.plan.summary.unchanged, 141, 'it recognises every row it wrote');
+    assert.ok(
+      r.json.data.plan.boards.every((b: { boardId: string | null }) => b.boardId),
+      'and every sheet is pointed at the board it made last time'
+    );
 
     r = await call('POST', '/import/commit', {
       fileName,
       fileBase64,
-      boardId: importedBoard,
-      expect: { create: 0, update: 0 }
+      expect: { boards: 3, create: 0, update: 0 }
     });
     assert.equal(r.json.data.created, 0);
-    assert.equal(r.json.data.unchanged, 51);
+    assert.equal(r.json.data.unchanged, 141);
     assert.equal(
       (await call('GET', `/boards/${importedBoard}/events?from=2020-01-01&to=2040-01-01`)).json.data.length,
       51,
       'and the board still holds 51 events, not 102'
+    );
+    assert.equal(
+      (await call('GET', '/boards')).json.data.length,
+      boardsBefore + 3,
+      'and there are still three boards, not six'
     );
 
     // --- a plan that moved under the person's feet is refused ---
     r = await call('POST', '/import/commit', {
       fileName,
       fileBase64,
-      boardId: importedBoard,
-      expect: { create: 51, update: 0 }
+      expect: { boards: 3, create: 141, update: 0 }
     });
     assert.equal(r.status, 409, 'numbers that no longer match are not an import anybody approved');
     assert.equal(r.json.error.code, 'IMPORT_CHANGED');
+
+    /*
+     * --- a sheet can be sent somewhere else, or left out ---
+     *
+     * The mapping is a decision, and the preview has to follow it. Renaming a
+     * sheet's board makes it a new board; excluding one takes it out entirely.
+     */
+    r = await call('POST', '/import/preview', {
+      fileName,
+      fileBase64,
+      sheets: [
+        { sheet: 'גאנט 26-27-28', boardName: 'הגאנט הראשי' },
+        { sheet: 'לוח שנה 2026-27', include: false }
+      ]
+    });
+    const renamed = r.json.data.plan.boards.find((b: { sheet: string }) => b.sheet === 'גאנט 26-27-28');
+    assert.equal(renamed.boardName, 'הגאנט הראשי', 'a renamed sheet targets a different board');
+    assert.equal(renamed.boardId, null, 'which does not exist yet, so it would be created');
+    assert.equal(renamed.summary.create, 45, 'and all of its rows are new there');
+    const dropped = r.json.data.plan.boards.find((b: { sheet: string }) => b.sheet === 'לוח שנה 2026-27');
+    assert.equal(dropped.include, false, 'an excluded sheet stays visible, and out of the totals');
+    assert.equal(r.json.data.plan.summary.events, 96, '45 + 51, with the excluded sheet left out');
 
     /*
      * --- out and straight back in ---
@@ -634,10 +706,15 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
       const workbook = Buffer.from(await exported.arrayBuffer());
       assert.equal(workbook.subarray(0, 2).toString(), 'PK', 'and a real zip, which is what xlsx is');
 
+      /*
+       * The exported sheet is named "אירועים", so it would land in a board of
+       * that name. Pointing it back at the board it came from is the mapping
+       * doing its job — and then not one row may differ.
+       */
       r = await call('POST', '/import/preview', {
         fileName: 'round-trip.xlsx',
         fileBase64: workbook.toString('base64'),
-        boardId: importedBoard
+        sheets: [{ sheet: 'אירועים', boardId: importedBoard }]
       });
       assert.equal(r.json.data.plan.summary.events, 51, 'every event is found again');
       assert.equal(r.json.data.plan.summary.create, 0, 'and none of them is a new one');
@@ -654,8 +731,7 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
     await call('POST', '/import/commit', {
       fileName,
       fileBase64,
-      boardId: importedBoard,
-      expect: { create: 0, update: 0 }
+      expect: { boards: 3, create: 0, update: 0 }
     });
     r = await call('GET', `/events/${target.id}`);
     assert.equal(r.json.data.note, 'לתאם עם הספק', 'a file that says nothing about a note does not erase it');

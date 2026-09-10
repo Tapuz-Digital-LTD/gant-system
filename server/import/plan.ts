@@ -73,6 +73,17 @@ export interface EventValues {
 export interface PlannedEvent {
   /** Stable across re-imports of the same file. Stored on the row. */
   sourceKey: string;
+  /**
+   * This row's address in the plan: which sheet, and which activity in it.
+   *
+   * A source key is unique inside a board, and the same activity can appear on
+   * two sheets — which are now two boards. Decisions a person makes on screen
+   * are keyed by this, so ticking a repair on one board cannot silently apply
+   * it on another.
+   */
+  planKey: string;
+  /** The sheet the rows came from. */
+  sheet: string;
   title: string;
   action: Action;
   values: EventValues;
@@ -95,22 +106,46 @@ export interface PlannedEvent {
   changes?: { field: string; fieldLabel: string; from: string; to: string }[];
 }
 
-export interface ImportPlan {
+export interface PlanSummary {
+  sourceRows: number;
+  events: number;
+  create: number;
+  update: number;
+  unchanged: number;
+  skip: number;
+  tasks: number;
+  errors: number;
+  warnings: number;
+  conflicts: number;
+  suggestions: number;
+}
+
+/**
+ * One sheet, and the board it becomes.
+ *
+ * The structure of the workbook is the structure of the import: a workbook is a
+ * set of sheets, and each sheet that holds a table is a board. Reading three
+ * sheets into one board merges campaigns that the people who wrote the file
+ * deliberately kept apart, and it does it invisibly — which is exactly what
+ * happened the first time this ran.
+ */
+export interface BoardPlan {
+  sheet: string;
+  /** Defaults to the sheet's own name, and a person may change it. */
+  boardName: string;
+  /** Set when a board of that name is already there; null means it is created. */
+  boardId: string | null;
+  include: boolean;
   events: PlannedEvent[];
-  issues: ImportIssue[];
-  summary: {
-    sourceRows: number;
-    events: number;
-    create: number;
-    update: number;
-    unchanged: number;
-    skip: number;
-    tasks: number;
-    errors: number;
-    warnings: number;
-    conflicts: number;
-    suggestions: number;
-  };
+  summary: PlanSummary;
+}
+
+export interface ImportPlan {
+  boards: BoardPlan[];
+  /** Sheets that produced no table, and the reason, so nothing goes missing quietly. */
+  skipped: { sheet: string; rows: number; reason: string }[];
+  /** Totals across the boards that are actually going in. */
+  summary: PlanSummary;
 }
 
 /** The names a person sees. Mirrors src/data/milestones.ts on purpose. */
@@ -282,49 +317,89 @@ function toCandidate(row: SourceRow): Candidate {
  *
  * The kickoff meeting is the anchor when there is one: it is typed by hand,
  * never computed, and no two instances of a campaign share it. Everything else
- * falls back to name plus year — the file holds "חנוכה" three times, once per
- * year, and those are three events.
+ * — the "master" rows, which carry only a date and a preparation count — falls
+ * back to the activity's own date.
+ *
+ * Pairing the two halves is the hard part, and matching them on the year was
+ * wrong. One sheet holds "הכנת תקציב" three times, and one of those plan rows
+ * ends on 1 January, so its year is the *next* one; the year rule handed it the
+ * following year's master and left the real one orphaned with no preparation
+ * months at all. Two of the three came out describing a year nobody wrote down.
+ *
+ * So they are matched on how close their dates actually are, nearest first, one
+ * partner each. A master and its plan row describe the same instance and land
+ * within days of each other; two instances of the same activity are a year
+ * apart. Sixty days is comfortably inside that gap.
  */
-function group(candidates: Candidate[]): Candidate[][] {
-  const yearOf = (c: Candidate) =>
-    c.fields.actualDate?.iso?.slice(0, 4) ??
-    c.fields.campaignEndDate?.iso?.slice(0, 4) ??
-    c.fields.kickoffMeetingDate?.iso?.slice(0, 4) ??
-    '?';
+const SAME_INSTANCE_DAYS = 60;
 
-  const byMeeting = new Map<string, Candidate[]>();
-  const byYear = new Map<string, Candidate[]>();
+function group(candidates: Candidate[]): Candidate[][] {
+  const anchorOf = (c: Candidate) =>
+    c.fields.actualDate?.iso ?? c.fields.campaignEndDate?.iso ?? c.fields.kickoffMeetingDate?.iso ?? null;
+
+  const withMeeting = new Map<string, Candidate[]>();
+  const withoutMeeting = new Map<string, Candidate[]>();
 
   for (const c of candidates) {
     const meeting = c.fields.kickoffMeetingDate?.iso;
-    const key = meeting ? `${c.title}|m:${meeting}` : `${c.title}|y:${yearOf(c)}`;
-    const target = meeting ? byMeeting : byYear;
+    const key = meeting ? `${c.title}|m:${meeting}` : `${c.title}|d:${anchorOf(c) ?? '?'}`;
+    const target = meeting ? withMeeting : withoutMeeting;
     if (!target.has(key)) target.set(key, []);
     target.get(key)!.push(c);
   }
 
-  /** The year a meeting-anchored group belongs to: the one most of its rows say. */
-  const groupYear = (list: Candidate[]) => {
-    const counts = new Map<string, number>();
-    for (const c of list) counts.set(yearOf(c), (counts.get(yearOf(c)) ?? 0) + 1);
-    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
+  /** A group's own date: what the rows in it say the activity happens on. */
+  const groupAnchor = (list: Candidate[]) => {
+    const dates = list.map(anchorOf).filter((d): d is string => Boolean(d)).sort();
+    return dates[0] ?? null;
   };
 
-  // A master row carries no meeting date, so it lands in the year map. Fold it
-  // into the meeting group for the same activity and year, or the file's two
-  // halves become two events.
-  const out: Candidate[][] = [];
-  for (const list of byMeeting.values()) {
-    const yearKey = `${list[0].title}|y:${groupYear(list)}`;
-    const siblings = byYear.get(yearKey);
-    if (siblings) {
-      byYear.delete(yearKey);
-      out.push([...list, ...siblings]);
-    } else {
-      out.push(list);
-    }
+  const meetingGroups = [...withMeeting.values()].map((list) => ({ list, anchor: groupAnchor(list) }));
+  const masterGroups = [...withoutMeeting.values()].map((list) => ({
+    list,
+    anchor: groupAnchor(list),
+    title: list[0].title
+  }));
+
+  const days = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000;
+
+  /*
+   * Nearest first, one partner each.
+   *
+   * Greedy over a sorted list of candidate pairs: the closest pair in the whole
+   * activity is certainly right, so it is taken, and both sides are then out of
+   * the running. What is left is matched the same way until nothing is close
+   * enough, and whatever remains stands on its own.
+   */
+  const pairs: { m: number; y: number; distance: number }[] = [];
+  meetingGroups.forEach((m, mi) => {
+    masterGroups.forEach((y, yi) => {
+      if (y.title !== m.list[0].title) return;
+      if (!m.anchor || !y.anchor) return;
+      const distance = days(m.anchor, y.anchor);
+      if (distance <= SAME_INSTANCE_DAYS) pairs.push({ m: mi, y: yi, distance });
+    });
+  });
+  pairs.sort((a, b) => a.distance - b.distance);
+
+  const takenMeeting = new Set<number>();
+  const takenMaster = new Set<number>();
+  const merged = new Map<number, number>();
+  for (const pair of pairs) {
+    if (takenMeeting.has(pair.m) || takenMaster.has(pair.y)) continue;
+    takenMeeting.add(pair.m);
+    takenMaster.add(pair.y);
+    merged.set(pair.m, pair.y);
   }
-  out.push(...byYear.values());
+
+  const out: Candidate[][] = [];
+  meetingGroups.forEach((m, mi) => {
+    const partner = merged.get(mi);
+    out.push(partner === undefined ? m.list : [...m.list, ...masterGroups[partner].list]);
+  });
+  masterGroups.forEach((y, yi) => {
+    if (!takenMaster.has(yi)) out.push(y.list);
+  });
   return out;
 }
 
@@ -453,6 +528,52 @@ function resolveDate(field: string, list: Candidate[]): Resolved<ParsedDate> {
   }
 
   return { value, conflict, issues, suggestions };
+}
+
+/**
+ * The same activity, elsewhere in the workbook, with a date that can be read.
+ *
+ * Matched on the name plus a date within the same instance — a campaign's
+ * instances are a year apart, so a sixty-day window cannot pick up the wrong
+ * one. Returns nothing at all when the workbook does not contain the answer;
+ * there is no code here that invents a day.
+ */
+function repairFromWorkbook(
+  field: string,
+  list: Candidate[],
+  pool: Candidate[]
+): { value: ParsedDate; where: string; suggestion: Suggestion } | null {
+  const broken = list.find((c) => c.fields[field]?.error);
+  if (!broken) return null;
+
+  const anchorOf = (c: Candidate) =>
+    c.fields.actualDate?.iso ?? c.fields.campaignEndDate?.iso ?? c.fields.kickoffMeetingDate?.iso ?? null;
+  const mine = list.map(anchorOf).find(Boolean) ?? null;
+
+  const answer = pool.find((c) => {
+    if (c.title !== broken.title) return false;
+    if (list.includes(c)) return false;
+    const parsed = c.fields[field];
+    if (!parsed?.iso || parsed.error) return false;
+    const theirs = anchorOf(c);
+    if (!mine || !theirs) return false;
+    return Math.abs(Date.parse(mine) - Date.parse(theirs)) / 86_400_000 <= SAME_INSTANCE_DAYS;
+  });
+  if (!answer) return null;
+
+  return {
+    value: answer.fields[field]!,
+    where: answer.where,
+    suggestion: {
+      field,
+      fieldLabel: FIELD_LABELS[field] ?? field,
+      from: broken.fields[field]!.raw,
+      to: answer.fields[field]!.iso!,
+      reason: `בגיליון אחר (${answer.where}) אותה פעילות רשומה כ-${answer.fields[field]!.iso}`,
+      fromFile: true,
+      applied: true
+    }
+  };
 }
 
 /* ------------------------------------------------------------------- order */
@@ -586,23 +707,125 @@ export interface ExistingEvent {
   values: EventValues;
 }
 
+/** How one sheet should be treated, as the person on the screen decided. */
+export interface SheetChoice {
+  sheet: string;
+  boardName?: string;
+  boardId?: string | null;
+  include?: boolean;
+}
+
 export interface PlanOptions {
-  /** Events already on the board, for matching. */
-  existing?: ExistingEvent[];
-  /** Rule-based suggestions the person ticked, keyed by `${sourceKey}:${field}`. */
+  /** What a person changed about the sheet-to-board mapping. */
+  sheets?: SheetChoice[];
+  /** Events already on each target board, keyed by board id. */
+  existingByBoard?: Map<string, ExistingEvent[]>;
+  /** Rule-based suggestions the person ticked, keyed by `${planKey}:${field}`. */
   accepted?: Set<string>;
   /** File-based repairs the person un-ticked. The field is then left empty. */
   rejected?: Set<string>;
-  /** Events the person chose not to import, by source key. */
+  /** Events the person chose to leave out, by plan key. */
   excluded?: Set<string>;
 }
 
+/**
+ * The whole workbook, as the boards it describes.
+ *
+ * One plan per sheet, because a sheet is a board. Deduplication happens inside
+ * a sheet and never across them: two sheets that both mention "פסח 2027" are
+ * two boards that both track it, and quietly folding them into one loses the
+ * distinction whoever built the workbook was making.
+ */
 export function buildPlan(rows: SourceRow[], options: PlanOptions = {}): ImportPlan {
+  const choices = new Map((options.sheets ?? []).map((c) => [c.sheet, c]));
+
+  /*
+   * Every row in the workbook, for one purpose only: repairing a cell that
+   * cannot be read.
+   *
+   * Sheets do not merge — they are separate boards. But "31.09.2027" is not a
+   * date, and when the very same activity is written "01.10.2027" two sheets
+   * over, that is the file answering its own question, not another board's
+   * opinion. The repair is offered with the sheet and row it came from so it
+   * can be seen and refused; nothing else ever crosses a sheet boundary.
+   */
+  const pool = rows.map(toCandidate).filter((c) => c.title);
+
+  // Sheet order is the workbook's own, so the screen reads like the file.
+  const sheets: string[] = [];
+  for (const row of rows) if (!sheets.includes(row.sheet)) sheets.push(row.sheet);
+
+  const boards = sheets.map((sheet) => {
+    const choice = choices.get(sheet);
+    const boardName = choice?.boardName?.trim() || sheet;
+    const boardId = choice?.boardId ?? null;
+    const include = choice?.include ?? true;
+
+    const events = planSheet(
+      rows.filter((r) => r.sheet === sheet),
+      sheet,
+      boardId ? options.existingByBoard?.get(boardId) : undefined,
+      options,
+      pool
+    );
+
+    return {
+      sheet,
+      boardName,
+      boardId,
+      include,
+      events,
+      summary: summarise(rows.filter((r) => r.sheet === sheet).length, events)
+    };
+  });
+
+  const live = boards.filter((b) => b.include);
+
+  return {
+    boards,
+    skipped: [],
+    summary: summarise(
+      live.reduce((n, b) => n + b.summary.sourceRows, 0),
+      live.flatMap((b) => b.events)
+    )
+  };
+}
+
+/** Every event across the boards that are going in. For callers that want the flat list. */
+export function allEvents(plan: ImportPlan): PlannedEvent[] {
+  return plan.boards.filter((b) => b.include).flatMap((b) => b.events);
+}
+
+function summarise(sourceRows: number, events: PlannedEvent[]): PlanSummary {
+  const count = (a: Action) => events.filter((e) => e.action === a).length;
+  const issues = events.flatMap((e) => e.issues);
+  return {
+    sourceRows,
+    events: events.length,
+    create: count('create'),
+    update: count('update'),
+    unchanged: count('unchanged'),
+    skip: count('skip'),
+    tasks: 0,
+    errors: issues.filter((i) => i.severity === 'error').length,
+    warnings: issues.filter((i) => i.severity === 'warning').length,
+    conflicts: events.reduce((n, e) => n + e.conflicts.length, 0),
+    suggestions: events.reduce((n, e) => n + e.suggestions.length, 0)
+  };
+}
+
+/** One sheet's rows, reconciled into the events that sheet describes. */
+function planSheet(
+  rows: SourceRow[],
+  sheet: string,
+  existing: ExistingEvent[] | undefined,
+  options: PlanOptions,
+  pool: Candidate[]
+): PlannedEvent[] {
   const accepted = options.accepted ?? new Set<string>();
   const rejected = options.rejected ?? new Set<string>();
   const excluded = options.excluded ?? new Set<string>();
   const candidates = rows.map(toCandidate).filter((c) => c.title);
-  const planIssues: ImportIssue[] = [];
 
   const events: PlannedEvent[] = [];
 
@@ -620,14 +843,43 @@ export function buildPlan(rows: SourceRow[], options: PlanOptions = {}): ImportP
       issues.push(...r.issues);
       if (r.conflict) conflicts.push(r.conflict);
       suggestions.push(...r.suggestions);
+
+      // Nothing readable on this sheet: ask the rest of the workbook before
+      // giving up on the date entirely.
+      if (!r.value) {
+        const repair = repairFromWorkbook(field, list, pool);
+        if (repair) {
+          resolved[field] = repair.value;
+          for (const i of issues) {
+            if (i.field === field && i.severity === 'error') {
+              i.severity = 'warning';
+              i.message = i.message.replace(' — התאריך הזה לא ייובא', ` — השתמשנו ב-${repair.value.iso} מ${repair.where}`);
+            }
+          }
+          suggestions.push(repair.suggestion);
+        }
+      }
     }
 
     const actual = resolved.actualDate;
-    const sourceKey = `${title}|${actual?.iso?.slice(0, 4) ?? resolved.kickoffMeetingDate?.iso?.slice(0, 4) ?? '?'}`;
+    /*
+     * The identity of a row inside its board.
+     *
+     * The year alone is not enough. One sheet holds "העברת תקציב נותר לשנה
+     * הבאה" three times, and two of those instances share a year once a
+     * campaign runs into January — keying on the year gave them the same key,
+     * and the unique index on (board_id, source_key) would have refused the
+     * second one. The date makes them distinct, and it is also what the
+     * fallback match uses when a date is corrected and the file re-imported.
+     */
+    const sourceKey = `${title}|${actual?.iso ?? resolved.kickoffMeetingDate?.iso ?? '?'}`;
+    const planKey = `${sheet}::${sourceKey}`;
 
     if (!actual?.iso) {
       events.push({
         sourceKey,
+        planKey,
+        sheet,
         title,
         action: 'skip',
         values: emptyValues(title),
@@ -650,7 +902,8 @@ export function buildPlan(rows: SourceRow[], options: PlanOptions = {}): ImportP
 
     // Preparation months: the typed block wins, and a value out of range is
     // clamped with a note rather than silently.
-    const prepRow = list.find((c) => c.master && c.prepMonths !== undefined) ?? list.find((c) => c.prepMonths !== undefined);
+    const prepRow =
+      list.find((c) => c.master && c.prepMonths !== undefined) ?? list.find((c) => c.prepMonths !== undefined);
     let prepMonths = prepRow?.prepMonths ?? 0;
     if (!Number.isInteger(prepMonths) || prepMonths < 0 || prepMonths > 12) {
       issues.push({
@@ -722,7 +975,7 @@ export function buildPlan(rows: SourceRow[], options: PlanOptions = {}): ImportP
      * A repair derived from a rule does nothing until it is ticked.
      */
     for (const s of suggestions) {
-      const key = `${sourceKey}:${s.field}`;
+      const key = `${planKey}:${s.field}`;
       const target = values as unknown as Record<string, string | null>;
       if (s.fromFile) {
         if (rejected.has(key)) {
@@ -744,11 +997,14 @@ export function buildPlan(rows: SourceRow[], options: PlanOptions = {}): ImportP
       values.campaignEndDate = null;
     }
 
+    /*
+     * Matching is scoped to the board this sheet becomes, and never wider. Two
+     * boards may legitimately hold the same campaign; that is not a duplicate,
+     * it is two teams tracking the same date.
+     */
     const match =
-      options.existing?.find((e) => e.sourceKey === sourceKey) ??
-      options.existing?.find(
-        (e) => normaliseTitle(e.title) === title && e.actualDate === values.actualDate
-      );
+      existing?.find((e) => e.sourceKey === sourceKey) ??
+      existing?.find((e) => normaliseTitle(e.title) === title && e.actualDate === values.actualDate);
 
     let action: Action = match ? 'update' : 'create';
     let changes: PlannedEvent['changes'];
@@ -758,10 +1014,12 @@ export function buildPlan(rows: SourceRow[], options: PlanOptions = {}): ImportP
     }
     // An error on a field is never a reason to throw the whole event away: the
     // field is left empty, and the row says which one and why.
-    if (excluded.has(sourceKey)) action = 'skip';
+    if (excluded.has(planKey)) action = 'skip';
 
     events.push({
       sourceKey,
+      planKey,
+      sheet,
       title,
       action,
       values,
@@ -776,27 +1034,95 @@ export function buildPlan(rows: SourceRow[], options: PlanOptions = {}): ImportP
   }
 
   events.sort((a, b) => a.values.actualDate.localeCompare(b.values.actualDate) || a.title.localeCompare(b.title));
+  flagYearDrift(events, accepted);
+  return events;
+}
 
-  const count = (a: Action) => events.filter((e) => e.action === a).length;
-  const all = [...planIssues, ...events.flatMap((e) => e.issues)];
+/**
+ * A year typed wrong that the story order cannot see.
+ *
+ * Ordering catches a date shoved past the ones after it. It cannot catch a date
+ * shoved a year *earlier*, because earlier is where that date is supposed to be
+ * anyway: a kickoff meeting typed 2027 instead of 2028 still comes before the
+ * go-live and before the event, and the plan reads as valid while describing a
+ * campaign that starts seventeen months out.
+ *
+ * The evidence is in the sheet already. A campaign that runs every year runs to
+ * the same shape every year — Purim's meeting is three months before Purim,
+ * every time — so an instance whose interval is a year off the ones its
+ * siblings agree on is a year typed wrong. Three instances are required, so two
+ * can agree and one can be the odd one out; below that there is no pattern,
+ * only two numbers.
+ *
+ * Reported, and offered. Never applied.
+ */
+function flagYearDrift(events: PlannedEvent[], accepted: Set<string>): void {
+  const byTitle = new Map<string, PlannedEvent[]>();
+  for (const e of events) {
+    if (e.action === 'skip') continue;
+    const list = byTitle.get(e.title) ?? [];
+    list.push(e);
+    byTitle.set(e.title, list);
+  }
 
-  return {
-    events,
-    issues: planIssues,
-    summary: {
-      sourceRows: rows.length,
-      events: events.length,
-      create: count('create'),
-      update: count('update'),
-      unchanged: count('unchanged'),
-      skip: count('skip'),
-      tasks: 0,
-      errors: all.filter((i) => i.severity === 'error').length,
-      warnings: all.filter((i) => i.severity === 'warning').length,
-      conflicts: events.reduce((n, e) => n + e.conflicts.length, 0),
-      suggestions: events.reduce((n, e) => n + e.suggestions.length, 0)
+  const YEAR = 365;
+  /** Leap years and month lengths move a gap by a handful of days, never by a month. */
+  const SLACK = 40;
+
+  for (const list of byTitle.values()) {
+    if (list.length < 3) continue;
+
+    for (const field of DATE_FIELDS) {
+      const measured = list
+        .map((e) => {
+          const value = (e.values as unknown as Record<string, string | null>)[field];
+          if (!value) return null;
+          return { event: e, gap: (Date.parse(e.values.actualDate) - Date.parse(value)) / 86_400_000 };
+        })
+        .filter((x): x is { event: PlannedEvent; gap: number } => x !== null);
+
+      if (measured.length < 3) continue;
+
+      const sorted = [...measured].map((m) => m.gap).sort((a, b) => a - b);
+      const typical = sorted[Math.floor(sorted.length / 2)];
+
+      for (const m of measured) {
+        const drift = m.gap - typical;
+        if (Math.abs(Math.abs(drift) - YEAR) > SLACK) continue;
+
+        // The ordering rule may already have this one. One repair per field.
+        if (m.event.suggestions.some((s) => s.field === field)) continue;
+
+        const current = (m.event.values as unknown as Record<string, string>)[field];
+        const moved = `${Number(current.slice(0, 4)) + (drift > 0 ? 1 : -1)}${current.slice(4)}`;
+
+        m.event.issues.push({
+          severity: 'warning',
+          where: m.event.sources[0],
+          field,
+          message:
+            `${FIELD_LABELS[field]} רחוק מתאריך האירוע ב-${Math.round(m.gap)} ימים, ` +
+            `ובשאר השנים של «${m.event.title}» המרווח הוא ${Math.round(typical)} ימים`
+        });
+
+        const suggestion: Suggestion = {
+          field,
+          fieldLabel: FIELD_LABELS[field] ?? field,
+          from: current,
+          to: moved,
+          reason: `בשאר המופעים של «${m.event.title}» המרווח מתאריך האירוע קבוע. כאן הוא חורג בשנה בדיוק`,
+          fromFile: false,
+          applied: false
+        };
+
+        if (accepted.has(`${m.event.planKey}:${field}`)) {
+          (m.event.values as unknown as Record<string, string>)[field] = moved;
+          suggestion.applied = true;
+        }
+        m.event.suggestions.push(suggestion);
+      }
     }
-  };
+  }
 }
 
 function emptyValues(title: string): EventValues {

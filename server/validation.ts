@@ -221,34 +221,52 @@ const importFile = {
   fileBase64: z.string().min(1).max(25_000_000)
 };
 
+/**
+ * The sheet-to-board mapping, as the person on the screen left it.
+ *
+ * A workbook is a set of sheets and each sheet is a board. Sending the mapping
+ * on both calls is what makes it impossible to import a whole workbook into one
+ * board without having seen that happen first.
+ */
+const sheetChoice = z.object({
+  sheet: z.string().trim().min(1).max(120),
+  boardName: z.string().trim().min(1).max(120).optional(),
+  /** An existing board to add to, instead of creating one. */
+  boardId: z.string().uuid().nullish(),
+  include: z.boolean().optional()
+});
+
 /** Decisions a person has made so far. The preview is recomputed with them. */
 const importDecisions = {
-  /** `${sourceKey}:${field}` for rule-based suggestions the person ticked. */
-  accepted: z.array(z.string().max(300)).max(2000).default([]),
+  sheets: z.array(sheetChoice).max(50).default([]),
+  /** `${planKey}:${field}` for rule-based suggestions the person ticked. */
+  accepted: z.array(z.string().max(400)).max(4000).default([]),
   /** The same, for file-supplied repairs they un-ticked. */
-  rejected: z.array(z.string().max(300)).max(2000).default([]),
-  /** Source keys of events they chose to leave out. */
-  excluded: z.array(z.string().max(300)).max(2000).default([])
+  rejected: z.array(z.string().max(400)).max(4000).default([]),
+  /** Plan keys of events they chose to leave out. */
+  excluded: z.array(z.string().max(400)).max(4000).default([])
 };
 
 export const importPreview = z.object({
   ...importFile,
-  ...importDecisions,
-  boardId: z.string().uuid().nullish()
+  ...importDecisions
 });
 
 export const importCommit = z.object({
   ...importFile,
   ...importDecisions,
-  boardId: z.string().uuid().nullish(),
-  /** A new board to put them in, when no boardId is given. */
-  boardName: z.string().trim().min(1).max(120).nullish(),
   /**
    * What the screen said would happen. The server re-derives the plan and
    * refuses if the counts moved — a file swapped between the preview and the
-   * button is an import nobody actually approved.
+   * button is an import nobody actually approved. `boards` is in there because
+   * importing three sheets into three boards and importing them into one are
+   * different acts, and the number is what tells them apart.
    */
-  expect: z.object({ create: z.number().int().min(0), update: z.number().int().min(0) })
+  expect: z.object({
+    boards: z.number().int().min(0),
+    create: z.number().int().min(0),
+    update: z.number().int().min(0)
+  })
 });
 
 export const searchQuery = z.object({ q: z.string().trim().min(2, 'צריך לפחות 2 תווים').max(100) });
