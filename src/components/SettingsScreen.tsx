@@ -254,20 +254,43 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
             {mayManage && (
               <Card
                 icon={Users}
-                title="עדכונים על הצוות"
-                blurb="רק דברים שדורשים טיפול — משימות באיחור ומשימות שלא יצאו לדרך. לא עדכון על כל פעולה."
+                title="מעקב אחרי עבודה של אחרים"
+                blurb="אם אתה מנהל צוות או פרויקט, אפשר להוסיף לסיכום היומי שלך גם משימות של אנשים אחרים."
               >
-                <Row label="מה לכלול בסיכום שלי">
+                <Row
+                  label="האם להוסיף לסיכום היומי גם משימות של אחרים?"
+                  hint="רק מה שתקוע: משימות שעבר להן התאריך, ומשימות שאף אחד לא התחיל. לא עדכון על כל פעולה שמישהו עושה."
+                >
                   <Pills
                     options={[
-                      { value: 'none' as const, label: 'רק המשימות שלי' },
-                      { value: 'team' as const, label: 'גם של הצוות שלי' },
-                      { value: 'all' as const, label: 'של כל העובדים' }
+                      { value: 'none' as const, label: 'לא, רק המשימות שלי' },
+                      { value: 'team' as const, label: 'כן, של הצוות שלי' },
+                      { value: 'all' as const, label: 'כן, של כל העובדים' }
                     ]}
                     value={prefs.managerScope}
                     onChange={(managerScope) => set({ managerScope })}
                   />
                 </Row>
+
+                {/*
+                  An example, because "scope" is an abstraction and a line of a
+                  real message is not. This is exactly what the extra section
+                  looks like when it appears.
+                */}
+                {prefs.managerScope !== 'none' && (
+                  <div className="rounded-lg bg-canvas px-3 py-2.5">
+                    <p className="text-sm font-semibold text-ink-secondary">
+                      איך זה ייראה בסיכום שלך
+                    </p>
+                    <p className="mt-1 text-base text-ink" dir="rtl">
+                      אצל הצוות
+                      <br />
+                      <span className="text-ink-secondary">
+                        · באיחור: הכנת דיוור ללקוחות — חנוכה · אצל שיר
+                      </span>
+                    </p>
+                  </div>
+                )}
               </Card>
             )}
 

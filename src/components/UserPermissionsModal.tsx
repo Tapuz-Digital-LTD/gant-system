@@ -13,6 +13,14 @@ interface UserPermissionsModalProps {
   onClose: () => void;
   boards: GanttBoard[];
   currentUser: UserAccess;
+  /**
+   * Render the body without the dialog around it.
+   *
+   * Managing people is a settings job, not an interruption — it belongs on a
+   * page somebody navigates to. The same component serves both so the two can
+   * never drift into different screens for the same thing.
+   */
+  inline?: boolean;
 }
 
 const ROLES: { value: UserRole; label: string; hint: string }[] = [
@@ -25,7 +33,8 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
   isOpen,
   onClose,
   boards,
-  currentUser
+  currentUser,
+  inline = false
 }) => {
   const { notify } = useToast();
   const isAdmin = currentUser.role === 'admin';
@@ -89,15 +98,7 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
 
   const list: Person[] = people.data ?? [];
 
-  return (
-    <Modal
-      open={isOpen}
-      onOpenChange={(o) => !o && onClose()}
-      size="lg"
-      title="אנשים וגישה"
-      description={`${list.length} אנשים`}
-      footer={<Button variant="secondary" onClick={onClose}>סגור</Button>}
-    >
+  const bodyContent = (
       <div className="flex flex-col gap-5">
         <div className="flex items-center gap-1 border-b border-line" role="tablist">
           {([
@@ -307,7 +308,21 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
         )}
         </>
         )}
-      </div>
+    </div>
+  );
+
+  if (inline) return bodyContent;
+
+  return (
+    <Modal
+      open={isOpen}
+      onOpenChange={(o) => !o && onClose()}
+      size="lg"
+      title="אנשים וגישה"
+      description={`${list.length} אנשים`}
+      footer={<Button variant="secondary" onClick={onClose}>סגור</Button>}
+    >
+      {bodyContent}
     </Modal>
   );
 };

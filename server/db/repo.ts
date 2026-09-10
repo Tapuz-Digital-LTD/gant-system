@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './client.js';
 import { israelNow } from '../notifications/prefs.js';
+import { sendEmail } from '../notifications/inforu.js';
 import { boards, boardMembers, events, tasks, checklistItems, taskAttachments, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions, aiUsage } from './schema.js';
 import { DEFAULT_PREFS, readPrefs, type NotificationPrefs } from '../notifications/prefs.js';
 import { MILESTONE_LABELS } from '../notifications/milestone-labels.js';
@@ -14,6 +15,58 @@ import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permiss
  * working day and then finds mysteriously reset in the middle of the next.
  */
 const israelDay = () => israelNow().date;
+
+/**
+ * Where this deployment lives, for links inside emails.
+ *
+ * A relative path in an email is a dead link — there is no page it is relative
+ * to. Falls back to the production address rather than to nothing, because a
+ * link to the right place beats a link to nowhere.
+ */
+const appUrl = () => (process.env.APP_URL || 'https://xtra-gantt.vercel.app').replace(/\/+$/, '');
+
+/** What an assignment email needs to know. Spelled out rather than inferred
+ *  from the repository's own type, which would make `Repo` reference itself. */
+interface TaskContext {
+  taskTitle: string;
+  eventTitle: string;
+  eventId: string;
+  eventDate: string;
+  boardId: string;
+  dueDate: string | null;
+}
+
+/** The assignment email. Plain, and about one thing. */
+function assignmentEmail(o: { name: string; task: string; event: string; due: string | null; link: string }) {
+  return `<!doctype html>
+<html lang="he" dir="rtl"><body style="margin:0;background:#faf8f7;font-family:Arial,Helvetica,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:24px 16px">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+             style="max-width:480px;background:#fff;border-radius:12px;padding:28px;text-align:right">
+        <tr><td>
+          <p style="margin:0 0 4px;font-size:15px;color:#5c524e">שלום ${o.name},</p>
+          <p style="margin:0 0 18px;font-size:15px;color:#5c524e">משימה חדשה נרשמה על שמך.</p>
+
+          <p style="margin:0 0 6px;font-size:20px;font-weight:700;color:#2a2422">${o.task}</p>
+          <p style="margin:0 0 4px;font-size:15px;color:#5c524e">${o.event}</p>
+          ${o.due ? `<p style="margin:0 0 20px;font-size:15px;color:#5c524e">עד ${o.due}</p>` : '<div style="height:20px"></div>'}
+
+          <a href="${o.link}"
+             style="display:inline-block;background:#2f4bd0;color:#fff;text-decoration:none;
+                    padding:11px 22px;border-radius:8px;font-size:15px;font-weight:700">
+            פתיחת המשימה
+          </a>
+
+          <p style="margin:22px 0 0;font-size:12px;color:#8b807b">
+            אפשר לשנות מה נשלח ומתי, במסך ההגדרות במערכת.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
 
 /** The host of a URL, or null when it is not one. Used to name a bare link. */
 function hostOf(url: string): string | null {
@@ -923,7 +976,7 @@ export function createRepo(db: Database) {
       // The campaign and the deadline. The board name is org structure, and it
       // was pushing the one actionable part of the line off the end.
       const due = ctx.dueDate ? ` · עד ${ctx.dueDate.split('-').reverse().join('.')}` : '';
-      return this.notify({
+      const fresh = await this.notify({
         userId: assigneeId,
         kind: 'task_assigned',
         title: `משימה חדשה: ${ctx.taskTitle}`,
@@ -935,6 +988,66 @@ export function createRepo(db: Database) {
         // it away and back does not make it news again.
         dedupeKey: `task_assigned:${taskId}:${assigneeId}`
       });
+
+      /*
+       * And a mail, now rather than tomorrow morning.
+       *
+       * Being handed work is the one notification that cannot wait for the
+       * daily digest: somebody has just decided this is yours, and until they
+       * know you have seen it they will chase you about it. The digest is for
+       * things that accumulate; this is an event.
+       *
+       * Only when the notification was actually new — `notify` returns false
+       * for a key that already exists — so re-saving a task does not re-send.
+       */
+      /*
+       * Awaited, not fired and forgotten.
+       *
+       * A serverless instance is frozen the moment its response is written, so
+       * a floating promise here is an email that never leaves — the same way
+       * the AI token counter silently recorded zero for a week. Assigning a
+       * task waits the extra moment.
+       */
+      if (fresh) await this.mailAssignment(assigneeId, ctx);
+      return fresh;
+    },
+
+    /**
+     * The assignment email.
+     *
+     * Never throws into the caller: a task that was assigned but whose mail
+     * failed is still assigned, and rolling that back would be worse than a
+     * missing email. The failure goes to the log.
+     */
+    async mailAssignment(assigneeId: string, ctx: TaskContext) {
+      const prefs = await this.notificationPrefsFor(assigneeId);
+      // Somebody who turned email off meant it, for this too.
+      if (prefs.email === 'off') return;
+
+      const [person] = await db
+        .select({ name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, assigneeId));
+      if (!person?.email) return;
+
+      const due = ctx.dueDate ? ctx.dueDate.split('-').reverse().join('.') : null;
+      const link = `${appUrl()}/b/${ctx.boardId}/calendar?d=${ctx.eventDate}&e=${ctx.eventId}`;
+      const subject = `משימה חדשה עבורך: ${ctx.taskTitle}`;
+
+      const result = await sendEmail({
+        to: person.email,
+        name: person.name,
+        subject,
+        text: `${ctx.taskTitle}\n${ctx.eventTitle}${due ? ` · עד ${due}` : ''}\n${link}`,
+        html: assignmentEmail({ name: person.name, task: ctx.taskTitle, event: ctx.eventTitle, due, link }),
+        purpose: 'notification'
+      });
+
+      if (!result.ok) {
+        console.error(
+          JSON.stringify({ level: 'error', msg: 'assignment_mail_failed', assigneeId, error: result.error })
+        );
+      }
     },
 
     async createTask(eventId: string, input: Omit<NewTask, 'eventId'>, actorId: string | null) {

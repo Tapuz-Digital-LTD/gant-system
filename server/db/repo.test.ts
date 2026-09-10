@@ -509,6 +509,69 @@ assert.ok(update?.before && update?.after, 'the trail keeps both sides of a chan
   );
 }
 
+/*
+ * ---------- being handed work is an email, not a line in tomorrow's digest ----------
+ *
+ * Somebody has just decided this is yours. Until they know you have seen it
+ * they will chase you about it — so it cannot wait for 08:00.
+ */
+{
+  const [giver] = (
+    await pg.query<{ id: string }>(
+      `insert into users (email, name, role, is_guest) values ('giver@xtra.co.il', 'נותן', 'editor', false) returning id`
+    )
+  ).rows;
+  const [taker] = (
+    await pg.query<{ id: string }>(
+      `insert into users (email, name, role, is_guest) values ('taker@xtra.co.il', 'מקבל', 'editor', false) returning id`
+    )
+  ).rows;
+
+  const mailBoard = await repo.createBoard({ name: 'לוח שיוך' }, null);
+  const mailEvent = await repo.createEvent(mailBoard.id, { title: 'קמפיין', actualDate: '2027-05-01' }, null);
+
+  const sent: string[] = [];
+  const realLog = console.log;
+  console.log = (line: string) => {
+    const text = String(line);
+    if (text.includes('notification_not_sent')) sent.push(text);
+    else realLog(line);
+  };
+
+  const handed = await repo.createTask(
+    mailEvent.id,
+    { title: 'להכין בריף', assigneeId: taker.id, dueDate: '2027-04-20' },
+    giver.id
+  );
+  console.log = realLog;
+
+  const bell = await repo.listNotifications(taker.id);
+  assert.ok(
+    bell.items.some((n) => n.kind === 'task_assigned'),
+    'the bell is told'
+  );
+
+  /*
+   * And an email was attempted. It cannot leave in a test — the environment
+   * refuses — so what is asserted is that the attempt was made and carried the
+   * right thing, which is the part that was missing entirely.
+   */
+  const attempt = sent.find((line) => line.includes('taker@xtra.co.il'));
+  assert.ok(attempt, 'and an email was attempted, not left for the morning digest');
+  assert.ok(attempt.includes('להכין בריף'), 'carrying the task');
+  assert.ok(attempt.includes('20.04.2027'), 'and the date it is due');
+
+  // Saving the task again must not send it a second time.
+  sent.length = 0;
+  console.log = (line: string) => {
+    const text = String(line);
+    if (text.includes('notification_not_sent')) sent.push(text);
+  };
+  await repo.updateTask(handed.id, handed.version, { assigneeId: taker.id }, giver.id);
+  console.log = realLog;
+  assert.deepEqual(sent, [], 're-saving the same owner is not news, and not another email');
+}
+
 // ---------- what the assistant may cost in a day ----------
 {
   const [spender] = (
