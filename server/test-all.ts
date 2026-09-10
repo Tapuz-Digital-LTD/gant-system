@@ -38,6 +38,7 @@ const env = {
   // switches that would let it out are cleared for the run.
   GANTT_ALLOW_REAL_SEND: '',
   GANTT_AUTH_SEND: '',
+  GANTT_ASSIGNMENT_SEND: '',
   GANTT_NOTIFICATIONS_SEND: ''
 };
 

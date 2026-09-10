@@ -1059,7 +1059,7 @@ export function createRepo(db: Database) {
         subject,
         text: `${ctx.taskTitle}\n${ctx.eventTitle}${due ? ` · עד ${due}` : ''}\n${link}`,
         html: assignmentEmail({ name: person.name, task: ctx.taskTitle, event: ctx.eventTitle, due, link }),
-        purpose: 'notification'
+        purpose: 'assignment'
       });
 
       if (!result.ok) {

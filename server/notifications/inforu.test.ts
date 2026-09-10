@@ -31,6 +31,7 @@ const reset = () => {
   delete process.env.GANTT_INFORU_AUTH;
   delete process.env.GANTT_NOTIFICATIONS_SEND;
   delete process.env.GANTT_AUTH_SEND;
+  delete process.env.GANTT_ASSIGNMENT_SEND;
   delete process.env.GANTT_ALLOW_REAL_SEND;
 };
 
@@ -169,6 +170,32 @@ assert.equal(asProduction(() => deliveryMode('notification')), 'log', 'and only 
     'log',
     'and turning reminders on must not answer for the login codes either'
   );
+
+  /*
+   * The third switch, and the one this test exists to protect.
+   *
+   * "Tell me when somebody hands me a task" is one message to one person who
+   * just had their name typed into a field. "Send everyone their morning
+   * digest" is a broadcast to the whole company on a timer. Wiring them to one
+   * variable means the first request silently grants the second — which is how
+   * eight people receive the same email about a campaign none of them are on.
+   */
+  reset();
+  process.env.GANTT_INFORU_API_URL = 'https://example.invalid';
+  process.env.GANTT_INFORU_AUTH = 'not-a-real-key';
+
+  process.env.GANTT_ASSIGNMENT_SEND = 'true';
+  assert.equal(
+    asProduction(() => deliveryMode('assignment')),
+    'send',
+    'being handed work is worth an email the moment it happens'
+  );
+  assert.equal(
+    asProduction(() => deliveryMode('notification')),
+    'log',
+    'without starting the morning broadcast to everybody'
+  );
+  assert.equal(asProduction(() => deliveryMode('auth')), 'log', 'or the sign-in codes');
 }
 
 // ---------- log-only reports failure, not success ----------

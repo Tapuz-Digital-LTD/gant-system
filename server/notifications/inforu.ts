@@ -41,11 +41,19 @@ export type DeliveryMode = 'send' | 'log' | 'unconfigured';
  * login screen. A reminder at eight in the morning was not. They carry
  * different risk, so they get different switches, and this is the parameter
  * that keeps one from silently answering for the other.
+ *
+ * 'assignment' is the middle case, and it earns its own switch for the same
+ * reason. Somebody just pressed save on a task with a colleague's name on it:
+ * one message, to one person, that they are already expecting — much closer to
+ * a sign-in code than to the morning digest. The digest is a broadcast to every
+ * employee on a timer, and turning that on is a separate decision that should
+ * not ride along with this one.
  */
-export type SendPurpose = 'auth' | 'notification';
+export type SendPurpose = 'auth' | 'assignment' | 'notification';
 
 const SWITCH: Record<SendPurpose, string> = {
   auth: 'GANTT_AUTH_SEND',
+  assignment: 'GANTT_ASSIGNMENT_SEND',
   notification: 'GANTT_NOTIFICATIONS_SEND'
 };
 
