@@ -5,6 +5,7 @@ import { sendEmail } from '../notifications/inforu.js';
 import { boards, boardMembers, events, tasks, checklistItems, taskAttachments, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions, aiUsage } from './schema.js';
 import { DEFAULT_PREFS, readPrefs, type NotificationPrefs } from '../notifications/prefs.js';
 import { MILESTONE_LABELS } from '../notifications/milestone-labels.js';
+import { readChannels, type ChannelSwitches } from '../notifications/channels.js';
 import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permissions.js';
 
 /** Thrown when a write carries a stale `version`. Routes turn this into 409. */
@@ -733,6 +734,25 @@ export function createRepo(db: Database) {
       return row ? readPrefs(row.notificationDefaults) : {};
     },
 
+    /** The organisation's master switches, defaults filled in. */
+    async channelSwitches(): Promise<ChannelSwitches> {
+      const [row] = await db.select().from(workspaceSettings).limit(1);
+      return readChannels(row?.channels);
+    },
+
+    async saveChannelSwitches(next: Partial<ChannelSwitches>, actorId: string | null) {
+      const clean = readChannels({ ...(await this.channelSwitches()), ...next });
+      await db
+        .insert(workspaceSettings)
+        .values({ id: true, channels: clean })
+        .onConflictDoUpdate({
+          target: workspaceSettings.id,
+          set: { channels: clean, updatedAt: new Date() }
+        });
+      await log(db, actorId, 'settings', actorId ?? 'workspace', 'channels_updated', null, clean);
+      return clean;
+    },
+
     async saveWorkspaceNotificationDefaults(prefs: Partial<NotificationPrefs>, actorId: string | null) {
       const clean = readPrefs(prefs);
       await db
@@ -1038,6 +1058,9 @@ export function createRepo(db: Database) {
      * missing email. The failure goes to the log.
      */
     async mailAssignment(taskId: string, assigneeId: string, ctx: TaskContext) {
+      // The organisation's switch, above anybody's own preferences.
+      if (!(await this.channelSwitches()).assignment) return;
+
       const prefs = await this.notificationPrefsFor(assigneeId);
       // Somebody who turned email off meant it, for this too.
       if (prefs.email === 'off') return;

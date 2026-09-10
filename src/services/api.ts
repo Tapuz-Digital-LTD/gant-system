@@ -1,4 +1,5 @@
 import {
+  ChannelSettings,
   GanttBoard,
   EventItem,
   TaskItem,
@@ -165,6 +166,10 @@ export const api = {
     /** What today's digest would say. Reads only; sends nothing. */
     preview: () => request<DigestPreview>('/my/digest-preview'),
     orgDefaults: () => request<Partial<NotificationPrefs>>('/settings/notification-defaults'),
+    /** The master switches. Admin only; the server enforces that, not the screen. */
+    channels: () => request<ChannelSettings>('/settings/channels'),
+    saveChannels: (next: { assignment?: boolean; digest?: boolean }) =>
+      request<{ assignment: boolean; digest: boolean }>('/settings/channels', { method: 'PUT', ...body(next) }),
     saveOrgDefaults: (prefs: Partial<NotificationPrefs>) =>
       request<Partial<NotificationPrefs>>('/settings/notification-defaults', { method: 'PUT', ...body(prefs) }),
     markRead: (id?: string) =>

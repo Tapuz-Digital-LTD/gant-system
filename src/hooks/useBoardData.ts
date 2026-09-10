@@ -16,6 +16,7 @@ export const keys = {
   notifications: ['notifications'] as const,
   notificationPrefs: ['notification-prefs'] as const,
   digestPreview: ['digest-preview'] as const,
+  channels: ['settings', 'channels'] as const,
   users: ['users'] as const,
   events: (boardId: string, from: string, to: string) => ['events', boardId, from, to] as QueryKey,
   comments: (eventId: string) => ['comments', eventId] as QueryKey,
@@ -147,6 +148,24 @@ export function useNotificationPrefMutations() {
     mutationFn: api.notifications.savePrefs,
     onSuccess: (saved) => {
       qc.setQueryData(keys.notificationPrefs, saved);
+      qc.invalidateQueries({ queryKey: keys.digestPreview });
+    }
+  });
+}
+
+/** The organisation's master switches. Admin only — the server refuses others. */
+export function useChannels(enabled = true) {
+  return useQuery({ queryKey: keys.channels, queryFn: api.notifications.channels, enabled });
+}
+
+export function useSaveChannels() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.notifications.saveChannels,
+    onSuccess: () => {
+      // Refetched rather than patched: the server decides the *state* of each
+      // switch, and 'blocked' is not something the screen can work out.
+      qc.invalidateQueries({ queryKey: keys.channels });
       qc.invalidateQueries({ queryKey: keys.digestPreview });
     }
   });

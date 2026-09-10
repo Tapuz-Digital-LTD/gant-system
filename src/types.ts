@@ -192,6 +192,24 @@ export interface DigestPreview {
   assignmentDelivery: 'send' | 'log' | 'unconfigured';
 }
 
+/**
+ * A master switch, and why it is where it is.
+ *
+ * 'on'/'off' — an administrator's choice, and they can change it back.
+ * 'blocked'  — this deployment is not permitted to send that kind, so the
+ *              switch is shown but explained rather than pretending to work.
+ * 'unconfigured' — no provider connected at all.
+ */
+export interface ChannelState {
+  enabled: boolean;
+  state: 'on' | 'off' | 'blocked' | 'unconfigured';
+}
+
+export interface ChannelSettings {
+  assignment: ChannelState;
+  digest: ChannelState;
+}
+
 export interface ChecklistItem {
   id: string;
   text: string;

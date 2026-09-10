@@ -432,6 +432,38 @@ export function createApiRouter(
     });
   }));
 
+  /**
+   * Every switch an administrator can actually move, and the honest state of
+   * each one.
+   *
+   * 'off' means somebody here turned it off and can turn it back on. 'blocked'
+   * means this deployment is not allowed to send that kind at all, so the
+   * switch would be a lie — the screen says so rather than showing a control
+   * that does nothing.
+   */
+  api.get('/settings/channels', asyncRoute(async (req, res) => {
+    await requirePermission(req.repo, req.actor, 'permissions.manage', 'הגדרות שליחה');
+    const on = await req.repo.channelSwitches();
+    const state = (kind: 'assignment' | 'notification', enabled: boolean) => {
+      const env = deliveryMode(kind);
+      if (env !== 'send') return env === 'unconfigured' ? 'unconfigured' : 'blocked';
+      return enabled ? 'on' : 'off';
+    };
+    res.json({
+      data: {
+        assignment: { enabled: on.assignment, state: state('assignment', on.assignment) },
+        digest: { enabled: on.digest, state: state('notification', on.digest) }
+      }
+    });
+  }));
+
+  api.put('/settings/channels', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    await requirePermission(req.repo, req.actor, 'permissions.manage', 'הגדרות שליחה');
+    const next = v.channelSwitches.parse(req.body);
+    res.json({ data: await req.repo.saveChannelSwitches(next, actor.id) });
+  }));
+
   api.get('/settings/notification-defaults', asyncRoute(async (req, res) => {
     await requirePermission(req.repo, req.actor, 'permissions.manage', 'הגדרות התראות');
     res.json({ data: await req.repo.workspaceNotificationDefaults() });

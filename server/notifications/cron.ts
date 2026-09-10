@@ -58,7 +58,17 @@ export interface DigestRun {
 export async function runDigestJob(repo: Repo, at = israelNow()): Promise<DigestRun> {
   const people = await repo.peopleForDigest();
   const outcomes: DigestOutcome[] = [];
-  const mode = deliveryMode('notification');
+
+  /*
+   * Two gates, and the stricter one wins.
+   *
+   * The environment says whether this deployment may send at all; the switch
+   * says whether the organisation has turned the daily summary on. An admin who
+   * has switched it off sees exactly the same behaviour as before it was ever
+   * connected — the bell still fills, and the digest still goes to the log where
+   * it can be read.
+   */
+  const mode = (await repo.channelSwitches()).digest ? deliveryMode('notification') : 'log';
 
   for (const person of people) {
     const prefs = await repo.notificationPrefsFor(person.id);

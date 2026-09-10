@@ -163,6 +163,12 @@ export const personUpdate = z.object({
 /** Empty string clears it — a person taking their number back out is a save, not a delete. */
 export const phoneInput = z.object({ phone: z.string().trim().max(30).nullable() });
 
+/* Partial on purpose: the screen sends the one switch that was just moved. */
+export const channelSwitches = z
+  .object({ assignment: z.boolean(), digest: z.boolean() })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, 'לא נשלח שום שינוי');
+
 export const checklistCreate = z.object({ text: trimmed(200) });
 export const checklistUpdate = z.object({
   text: trimmed(200).optional(),

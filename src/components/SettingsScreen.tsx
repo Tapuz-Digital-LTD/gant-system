@@ -8,6 +8,7 @@ import {
   Eye,
   Loader2,
   Mail,
+  Send,
   MessageSquare,
   Smartphone,
   Users
@@ -19,6 +20,8 @@ import {
   useDigestPreview,
   useNotificationPrefs,
   useNotificationPrefMutations,
+  useChannels,
+  useSaveChannels,
   useSavePhone
 } from '../hooks/useBoardData';
 import { Button, cn } from './ui';
@@ -91,7 +94,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
    * people is a task somebody navigates to, not an interruption that deserves
    * a dialog over whatever they were doing.
    */
-  const [section, setSection] = useState<'notifications' | 'people'>('notifications');
+  const [section, setSection] = useState<'notifications' | 'sending' | 'people'>('notifications');
 
   return (
     <div className="min-h-dvh bg-canvas" dir="rtl">
@@ -142,6 +145,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
             {(
               [
                 { id: 'notifications' as const, label: 'התראות', icon: Bell },
+                { id: 'sending' as const, label: 'שליחה', icon: Send },
                 { id: 'people' as const, label: 'אנשים וגישה', icon: Users }
               ]
             ).map(({ id, label, icon: Icon }) => (
@@ -164,7 +168,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
           </nav>
         )}
 
-        {section === 'people' && mayManagePeople ? (
+        {section === 'sending' && mayManagePeople ? (
+          <ChannelsSection />
+        ) : section === 'people' && mayManagePeople ? (
           <UserPermissionsModal
             inline
             isOpen
@@ -481,6 +487,113 @@ const PhoneRow: React.FC<{ currentPhone: string | null }> = ({ currentPhone }) =
     </Row>
   );
 };
+
+/**
+ * Every master switch, in one place, with the truth next to it.
+ *
+ * This screen exists because "why didn't anybody get an email?" had no answer
+ * anywhere a person here could reach. The switches used to live only in
+ * environment variables, which means the answer was in a dashboard nobody in
+ * this company has an account for, and changing one needed a deploy.
+ *
+ * A switch that cannot work is still shown — greyed, with the reason. Hiding it
+ * would leave somebody hunting for a control that is simply not available yet.
+ */
+const CHANNELS: {
+  key: 'assignment' | 'digest';
+  title: string;
+  blurb: string;
+  example: string;
+  icon: typeof Mail;
+}[] = [
+  {
+    key: 'assignment',
+    title: 'מייל כששייכו לך משימה',
+    blurb: 'יוצא מיד, לאדם אחד — זה שהרגע שייכו אליו.',
+    example: 'לדוגמה: שמת את רומי על "הכנת באנרים" — רומי מקבלת מייל עם קישור ישר למשימה.',
+    icon: Mail
+  },
+  {
+    key: 'digest',
+    title: 'הסיכום היומי',
+    blurb: 'יוצא פעם ביום בבוקר, לכל מי שיש לו מה לקבל. אם אין — לא נשלח כלום.',
+    example: 'לדוגמה: בבוקר ראשון, מי שיש לו משימה שאיחרה או תאריך שמתקרב מקבל מייל אחד מרוכז.',
+    icon: CalendarClock
+  }
+];
+
+const CHANNEL_STATE: Record<
+  'on' | 'off' | 'blocked' | 'unconfigured',
+  { label: string; tone: string; note?: string }
+> = {
+  on: { label: 'פעיל', tone: 'bg-done-soft text-done' },
+  off: { label: 'כבוי', tone: 'bg-subtle text-ink-secondary' },
+  blocked: {
+    label: 'חסום',
+    tone: 'bg-progress-soft text-progress',
+    note: 'הסביבה הזאת לא מורשית לשלוח מהסוג הזה. המתג יעבוד אחרי שההרשאה תיפתח בפריסה.'
+  },
+  unconfigured: {
+    label: 'לא מחובר',
+    tone: 'bg-progress-soft text-progress',
+    note: 'אין ספק שליחה מחובר, אז אין מה להדליק עדיין.'
+  }
+};
+
+function ChannelsSection() {
+  const channels = useChannels();
+  const save = useSaveChannels();
+
+  if (!channels.data) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-16 text-ink-tertiary">
+        <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+        טוען…
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {CHANNELS.map(({ key, title, blurb, example, icon: Icon }) => {
+        const channel = channels.data[key];
+        const meta = CHANNEL_STATE[channel.state];
+        const movable = channel.state === 'on' || channel.state === 'off';
+
+        return (
+          <Card key={key} icon={Icon} title={title} blurb={blurb}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className={cn('rounded-md px-2 py-1 text-sm font-semibold', meta.tone)}>
+                {meta.label}
+              </span>
+              <Toggle
+                value={channel.enabled}
+                onChange={(next) => save.mutate({ [key]: next })}
+                onLabel="להדליק"
+                offLabel="לכבות"
+              />
+            </div>
+            <p className="text-base text-ink-secondary">{example}</p>
+            {meta.note && <p className="text-sm text-ink-tertiary">{meta.note}</p>}
+            {!movable && (
+              <p className="sr-only">המתג לא זמין כרגע בסביבה הזאת.</p>
+            )}
+          </Card>
+        );
+      })}
+
+      {/*
+       * The one that is deliberately not here.
+       *
+       * A switch that can lock every employee out of the system is not a
+       * setting. Saying so is better than leaving somebody looking for it.
+       */}
+      <p className="rounded-lg bg-subtle px-3 py-2.5 text-base text-ink-secondary">
+        קודי כניסה נשלחים תמיד, ואין להם מתג — בלעדיהם אף אחד לא יוכל להיכנס למערכת.
+      </p>
+    </div>
+  );
+}
 
 function Card({
   icon: Icon,

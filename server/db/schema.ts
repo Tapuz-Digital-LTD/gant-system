@@ -332,6 +332,8 @@ export const notificationPrefs = pgTable('notification_prefs', {
 export const workspaceSettings = pgTable('workspace_settings', {
   id: boolean('id').primaryKey().default(true),
   notificationDefaults: jsonb('notification_defaults').notNull().default({}),
+  /** Master switches per channel. See 0016_channel_switches.sql. */
+  channels: jsonb('channels').notNull().default({}),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 

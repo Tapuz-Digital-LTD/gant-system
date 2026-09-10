@@ -438,8 +438,52 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
   assert.equal(r.json.data.due, 1, 'still their hour');
   assert.equal(r.json.data.logged, 0, 'but every rule off is nothing worth saying, and nothing sent');
 
+  /*
+   * ---------- the admin's switch, and the environment's, are both gates ----------
+   *
+   * The screen has to tell the truth about which one is stopping a message, so
+   * the two must not collapse into each other. An administrator turning the
+   * digest off is a decision that holds even where sending is otherwise
+   * allowed; the environment refusing is a decision no screen can override.
+   */
+  // These are administrator settings, and the suite's actor is an editor —
+  // which the 403 below is worth keeping as a fact before promoting them.
+  assert.equal(
+    (await call('GET', '/settings/channels')).status,
+    403,
+    'an editor cannot see or change what the whole company receives'
+  );
+  await pg.query(`update users set role = 'admin' where id = $1`, [staff.id]);
 
+  const channels = await call('GET', '/settings/channels');
+  assert.equal(channels.status, 200);
+  assert.equal(channels.json.data.digest.enabled, false, 'the daily broadcast starts off');
+  assert.equal(
+    channels.json.data.assignment.enabled,
+    true,
+    'and being told you were handed work starts on'
+  );
+  // No provider is connected in a test, and the screen says exactly that
+  // rather than "off" — which would read as somebody's choice.
+  assert.equal(channels.json.data.digest.state, 'unconfigured');
 
+  // Turning it on is stored, and still does not make a test send.
+  assert.equal((await call('PUT', '/settings/channels', { digest: true })).status, 200);
+  const after = await call('GET', '/settings/channels');
+  assert.equal(after.json.data.digest.enabled, true, 'the choice persists');
+  assert.notEqual(after.json.data.digest.state, 'on', 'but it is not on, because nothing can send here');
+
+  await pg.query('update notification_prefs set last_digest_on = null');
+  r = await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secret' });
+  assert.equal(r.json.data.sent, 0, 'and no email leaves a test run, switch on or not');
+
+  // Off again: the job must report log mode even if the environment allowed it.
+  assert.equal((await call('PUT', '/settings/channels', { digest: false })).status, 200);
+  await pg.query('update notification_prefs set last_digest_on = null');
+  r = await call('GET', '/cron/digest', undefined, { authorization: 'Bearer test-secret' });
+  assert.equal(r.json.data.mode, 'log', 'an admin switch set to off is itself enough to stop it');
+
+  await pg.query(`update users set role = 'editor' where id = $1`, [staff.id]);
   delete process.env.CRON_SECRET;
 }
 
