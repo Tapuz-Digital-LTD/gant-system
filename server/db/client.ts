@@ -25,9 +25,21 @@ export async function initDb(): Promise<Database> {
   if (url) {
     pool = new Pool({
       connectionString: url,
-      max: 3,
+      /*
+       * Ten, because one instance serves several requests at once.
+       *
+       * At three, the home screen's five parallel requests queued two of them:
+       * each took 92ms alone and 285ms together, which is the pool and not the
+       * database. The connection string points at Neon's pooler, whose whole
+       * job is to absorb this — the ceiling that matters is thousands, not
+       * three.
+       */
+      max: 10,
       idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 5_000
+      connectionTimeoutMillis: 5_000,
+      // A serverless instance is idle between bursts; without this the first
+      // query after a pause pays a fresh TCP and TLS handshake.
+      keepAlive: true
     });
     db = drizzleNode(pool, { schema });
     return db;
