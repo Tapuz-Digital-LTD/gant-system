@@ -23,7 +23,9 @@ import {
   Person,
   PermissionMatrix,
   Holiday,
-  SearchHit
+  SearchHit,
+  ImportPreview,
+  ImportResult
 } from '../types';
 
 const BASE = '/api';
@@ -225,6 +227,35 @@ export const api = {
       request<void>(`/boards/${boardId}/members`, { method: 'POST', ...body({ userId, role }) }),
     revokeBoard: (boardId: string, userId: string) =>
       request<void>(`/boards/${boardId}/members/${userId}`, { method: 'DELETE' })
+  },
+
+  /**
+   * Excel in, and the same file twice.
+   *
+   * The file rides along on both calls. Nothing is stored between them, so
+   * there is no half-finished import to expire and no state for a second tab
+   * to trample — the server derives the plan from the file each time, and the
+   * client sends decisions rather than data.
+   */
+  imports: {
+    preview: (input: {
+      fileName: string;
+      fileBase64: string;
+      boardId?: string | null;
+      accepted?: string[];
+      rejected?: string[];
+      excluded?: string[];
+    }) => request<ImportPreview>('/import/preview', { method: 'POST', ...body(input) }),
+    commit: (input: {
+      fileName: string;
+      fileBase64: string;
+      boardId?: string | null;
+      boardName?: string | null;
+      accepted: string[];
+      rejected: string[];
+      excluded: string[];
+      expect: { create: number; update: number };
+    }) => request<ImportResult>('/import/commit', { method: 'POST', ...body(input) })
   },
 
   permissions: {

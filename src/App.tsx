@@ -54,6 +54,8 @@ const TaskPanel = React.lazy(() => import('./components/TaskPanel').then((m) => 
 const AIAssistantModal = React.lazy(() => import('./components/AIAssistantModal').then((m) => ({ default: m.AIAssistantModal })));
 const ArchiveModal = React.lazy(() => import('./components/ArchiveModal').then((m) => ({ default: m.ArchiveModal })));
 const SettingsScreen = React.lazy(() => import('./components/SettingsScreen').then((m) => ({ default: m.SettingsScreen })));
+/* The spreadsheet parser lives behind this door and nowhere else. */
+const ImportScreen = React.lazy(() => import('./components/ImportScreen').then((m) => ({ default: m.ImportScreen })));
 
 import { api } from './services/api';
 
@@ -514,6 +516,31 @@ export default function App() {
     </React.Suspense>
   );
 
+  // ------------------------------------------------------------- import
+
+  if (route.importing) {
+    if (!can('import.run')) {
+      return (
+        <NoPermission
+          title="אין לך גישה לייבוא מאקסל"
+          detail="ייבוא יכול לשנות תאריכים של שנה שלמה בלחיצה אחת, ולכן הוא ניתן בנפרד. בקש ממנהל המערכת."
+        />
+      );
+    }
+    return (
+      <>
+        <React.Suspense fallback={<FullScreenSpinner label="טוען…" />}>
+          <ImportScreen
+            boards={boards}
+            onBackHome={() => navigate('/')}
+            onOpenBoard={(id) => navigate(boardRoute(id))}
+          />
+        </React.Suspense>
+        {dialogs}
+      </>
+    );
+  }
+
   // ----------------------------------------------------------- settings
 
   if (route.settings) {
@@ -580,6 +607,7 @@ export default function App() {
           onPurgeBoard={setPurging}
           onOpenPeople={() => setIsPermissionsOpen(true)}
           onOpenSettings={() => navigate('/settings')}
+          onOpenImport={() => navigate('/import')}
           onSignOut={signOut}
         />
         {dialogs}

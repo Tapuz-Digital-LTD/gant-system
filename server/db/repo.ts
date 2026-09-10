@@ -1812,8 +1812,317 @@ export function createRepo(db: Database) {
         .limit(limit);
     },
 
+    // ---------------- export ----------------
+
+    /**
+     * The projects an export covers, and the count that makes each row worth
+     * reading.
+     *
+     * `boardIds` null means every active project. An archived one comes back
+     * only when it was asked for by name — putting a project away is a decision
+     * somebody made, and "download everything" is not a request to undo it.
+     * `includeArchived` is therefore set by the caller exactly when the caller
+     * named the ids, so a guest and a member get the same rule.
+     */
+    async exportBoards(boardIds: string[] | null, includeArchived = false) {
+      if (boardIds && boardIds.length === 0) return [];
+      const scope = boardIds ? inArray(boards.id, boardIds) : undefined;
+      return db
+        .select({
+          id: boards.id,
+          name: boards.name,
+          description: boards.description,
+          createdAt: boards.createdAt,
+          archivedAt: boards.archivedAt,
+          eventCount: sql<number>`count(${events.id})::int`
+        })
+        .from(boards)
+        .leftJoin(events, and(eq(events.boardId, boards.id), isNull(events.archivedAt)))
+        .where(includeArchived ? scope : and(scope, isNull(boards.archivedAt)))
+        .groupBy(boards.id)
+        .orderBy(asc(boards.position), asc(boards.createdAt));
+    },
+
+    /**
+     * Events for a spreadsheet: every stored date, plus the two things a
+     * spreadsheet is read for that no single row holds — which project it
+     * belongs to and how much of its work is done.
+     *
+     * `boardIds` is the scope the session already decided; it is never widened
+     * here, and an empty list means an empty file rather than every board.
+     */
+    async exportEvents(
+      boardIds: string[],
+      filter: {
+        from?: string;
+        to?: string;
+        categories?: (typeof events.$inferSelect)['category'][];
+        statuses?: (typeof events.$inferSelect)['status'][];
+      } = {}
+    ) {
+      if (boardIds.length === 0) return [];
+      return db
+        .select({
+          boardName: boards.name,
+          title: events.title,
+          category: events.category,
+          status: events.status,
+          kickoffMeetingDate: events.kickoffMeetingDate,
+          workStartDate: events.workStartDate,
+          reviewDate: events.reviewDate,
+          freezeDate: events.freezeDate,
+          kickoffDate: events.kickoffDate,
+          announceDate: events.announceDate,
+          actualDate: events.actualDate,
+          actualPrecision: events.actualPrecision,
+          campaignEndDate: events.campaignEndDate,
+          prepMonths: events.prepMonths,
+          note: events.note,
+          description: events.description,
+          taskCount: sql<number>`count(${tasks.id})::int`,
+          doneTaskCount: sql<number>`cast(count(${tasks.id}) filter (where ${tasks.status} = 'done') as int)`
+        })
+        .from(events)
+        .innerJoin(boards, eq(events.boardId, boards.id))
+        .leftJoin(tasks, eq(tasks.eventId, events.id))
+        .where(
+          and(
+            inArray(events.boardId, boardIds),
+            isNull(events.archivedAt),
+            filter.from ? gte(events.actualDate, filter.from) : undefined,
+            filter.to ? lte(events.actualDate, filter.to) : undefined,
+            filter.categories?.length ? inArray(events.category, filter.categories) : undefined,
+            filter.statuses?.length ? inArray(events.status, filter.statuses) : undefined
+          )
+        )
+        .groupBy(events.id, boards.name)
+        .orderBy(asc(events.actualDate), asc(events.title));
+    },
+
+    /**
+     * Tasks for a spreadsheet, with the event and project that give them
+     * meaning and the assignee resolved to a name — a column of uuids is a
+     * column nobody can read.
+     *
+     * The date window is the *event's*, not the task's: a task carries a due
+     * date only when somebody set one, so filtering on it would quietly drop
+     * most of the work from a file that claims to cover a period.
+     */
+    async exportTasks(
+      boardIds: string[],
+      filter: {
+        from?: string;
+        to?: string;
+        statuses?: (typeof tasks.$inferSelect)['status'][];
+        assigneeIds?: string[];
+      } = {}
+    ) {
+      if (boardIds.length === 0) return [];
+      return db
+        .select({
+          boardName: boards.name,
+          eventTitle: events.title,
+          title: tasks.title,
+          status: tasks.status,
+          priority: tasks.priority,
+          assigneeName: users.name,
+          startDate: tasks.startDate,
+          endDate: tasks.endDate,
+          dueDate: tasks.dueDate,
+          completedAt: tasks.completedAt
+        })
+        .from(tasks)
+        .innerJoin(events, eq(tasks.eventId, events.id))
+        .innerJoin(boards, eq(events.boardId, boards.id))
+        .leftJoin(users, eq(tasks.assigneeId, users.id))
+        .where(
+          and(
+            inArray(events.boardId, boardIds),
+            isNull(events.archivedAt),
+            filter.from ? gte(events.actualDate, filter.from) : undefined,
+            filter.to ? lte(events.actualDate, filter.to) : undefined,
+            filter.statuses?.length ? inArray(tasks.status, filter.statuses) : undefined,
+            filter.assigneeIds?.length ? inArray(tasks.assigneeId, filter.assigneeIds) : undefined
+          )
+        )
+        .orderBy(asc(events.actualDate), asc(events.title), asc(tasks.position));
+    },
+
     checklistItems
   };
 }
 
 export type Repo = ReturnType<typeof createRepo>;
+
+/*
+ * The reports tables, imported here rather than at the top of the file.
+ *
+ * `import` is hoisted, so this is the same import wherever it is written — and
+ * writing it here keeps this whole section additive while `repo.ts` is being
+ * edited elsewhere. A merge conflict in an import list is how two correct
+ * changes turn into one broken file.
+ */
+import { savedReports, dashboards } from './schema.js';
+
+export interface SavedReportInput {
+  name: string;
+  /** A `reportDefinition` from server/reports/model.ts, already validated. */
+  definition: unknown;
+  chart: string;
+}
+
+/**
+ * Saved reports and dashboards.
+ *
+ * Its own factory rather than more methods on `createRepo`, so this file stays
+ * append-only while other work is in flight. Same database handle, same
+ * activity log, same error classes.
+ *
+ * **Who may change what.** Every saved report is readable by the whole
+ * workspace — this product shares boards, not private dashboards, and a report
+ * only one person can find is a report four other people rebuild. Editing and
+ * deleting are the narrow part: owner or admin, enforced in
+ * `server/reports/routes.ts`, which is where the actor and their permissions
+ * are known. The repository will do what it is told; the route decides who may
+ * tell it.
+ */
+export function createReportsRepo(db: Database) {
+  /** Same shape the main repository logs. Never blocks the write it describes. */
+  async function log(
+    actorId: string | null,
+    entityId: string,
+    action: string,
+    before?: unknown,
+    after?: unknown
+  ) {
+    await db.insert(activity).values({
+      actorId,
+      entity: 'saved_report',
+      entityId,
+      action,
+      before: before ?? null,
+      after: after ?? null
+    });
+  }
+
+  /** Appended at the end, so a new report does not push somebody's pinned one down. */
+  async function nextPosition(): Promise<number> {
+    const [row] = await db
+      .select({ next: sql<number>`coalesce(max(${savedReports.position}), -1) + 1` })
+      .from(savedReports);
+    return row?.next ?? 0;
+  }
+
+  return {
+    /** Pinned first, then the workspace's own order. Everyone sees the same list. */
+    async listSavedReports() {
+      return db
+        .select()
+        .from(savedReports)
+        .orderBy(sql`${savedReports.pinned} desc`, asc(savedReports.position), asc(savedReports.createdAt));
+    },
+
+    async getSavedReport(id: string) {
+      const [row] = await db.select().from(savedReports).where(eq(savedReports.id, id));
+      if (!row) throw new NotFoundError('לא מצאנו את הדוח. רענן את הדף ונסה שוב');
+      return row;
+    },
+
+    async createSavedReport(input: SavedReportInput, ownerId: string | null) {
+      const [row] = await db
+        .insert(savedReports)
+        .values({
+          name: input.name,
+          definition: input.definition,
+          chart: input.chart,
+          ownerId,
+          position: await nextPosition()
+        })
+        .returning();
+      await log(ownerId, row.id, 'created', null, { name: row.name });
+      return row;
+    },
+
+    async updateSavedReport(
+      id: string,
+      changes: Partial<SavedReportInput> & { pinned?: boolean; position?: number },
+      actorId: string | null
+    ) {
+      const [before] = await db.select().from(savedReports).where(eq(savedReports.id, id));
+      if (!before) throw new NotFoundError('לא מצאנו את הדוח. רענן את הדף ונסה שוב');
+
+      const [row] = await db
+        .update(savedReports)
+        .set({
+          ...(changes.name !== undefined && { name: changes.name }),
+          ...(changes.definition !== undefined && { definition: changes.definition }),
+          ...(changes.chart !== undefined && { chart: changes.chart }),
+          ...(changes.pinned !== undefined && { pinned: changes.pinned }),
+          ...(changes.position !== undefined && { position: changes.position }),
+          updatedAt: new Date()
+        })
+        .where(eq(savedReports.id, id))
+        .returning();
+
+      await log(actorId, id, 'updated', { name: before.name }, { name: row.name });
+      return row;
+    },
+
+    async deleteSavedReport(id: string, actorId: string | null) {
+      const [row] = await db.delete(savedReports).where(eq(savedReports.id, id)).returning();
+      if (!row) throw new NotFoundError('לא מצאנו את הדוח. רענן את הדף ונסה שוב');
+      await log(actorId, id, 'deleted', { name: row.name }, null);
+      return row;
+    },
+
+    /**
+     * A copy belongs to whoever made it, not to whoever wrote the original.
+     * That is the whole point: somebody else's report is a starting point you
+     * can change without asking, instead of one you have to ask to edit.
+     */
+    async duplicateSavedReport(id: string, ownerId: string | null) {
+      const [source] = await db.select().from(savedReports).where(eq(savedReports.id, id));
+      if (!source) throw new NotFoundError('לא מצאנו את הדוח. רענן את הדף ונסה שוב');
+
+      const [row] = await db
+        .insert(savedReports)
+        .values({
+          name: `${source.name} (עותק)`,
+          definition: source.definition,
+          chart: source.chart,
+          ownerId,
+          position: await nextPosition()
+        })
+        .returning();
+
+      await log(ownerId, row.id, 'duplicated', { from: id }, { name: row.name });
+      return row;
+    },
+
+    /**
+     * Somebody's own arrangement.
+     *
+     * A person who has never opened the screen has no row, and that is not an
+     * error — it is an empty dashboard. Returning one rather than throwing
+     * keeps the caller from having to know the difference.
+     */
+    async getDashboard(ownerId: string) {
+      const [row] = await db.select().from(dashboards).where(eq(dashboards.ownerId, ownerId));
+      return row ?? { id: null, ownerId, layout: [] as unknown, updatedAt: null };
+    },
+
+    async saveDashboard(ownerId: string, layout: unknown) {
+      const [row] = await db
+        .insert(dashboards)
+        .values({ ownerId, layout })
+        .onConflictDoUpdate({
+          target: dashboards.ownerId,
+          set: { layout, updatedAt: new Date() }
+        })
+        .returning();
+      return row;
+    }
+  };
+}
+
+export type ReportsRepo = ReturnType<typeof createReportsRepo>;

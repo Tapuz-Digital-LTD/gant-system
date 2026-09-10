@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ChevronDown,
   Copy,
+  FileSpreadsheet,
   LayoutGrid,
   ListChecks,
   MoreHorizontal,
@@ -34,6 +35,7 @@ interface HomeScreenProps {
   onCreateBoard: () => void;
   onOpenPeople: () => void;
   onOpenSettings: () => void;
+  onOpenImport: () => void;
   onSignOut: () => void;
   /* --- project lifecycle: new → work → finished → archive → next --- */
   archivedBoards: GanttBoard[];
@@ -103,6 +105,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onCreateBoard,
   onOpenPeople,
   onOpenSettings,
+  onOpenImport,
   onSignOut,
   archivedBoards,
   archivedCount,
@@ -397,12 +400,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </section>
         )}
 
-        {can('board.create') && boards.length > 0 && (
-          <Button variant="secondary" className="mt-4" onClick={onCreateBoard}>
-            <Plus className="h-5 w-5" />
-            לוח חדש
-          </Button>
-        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {can('board.create') && boards.length > 0 && (
+            <Button variant="secondary" onClick={onCreateBoard}>
+              <Plus className="h-5 w-5" />
+              לוח חדש
+            </Button>
+          )}
+          {/*
+            Next to "new board", because that is the other way a year of
+            planning gets into the system — and for most people it is the first
+            one they will use.
+          */}
+          {can('import.run') && (
+            <Button variant="secondary" onClick={onOpenImport}>
+              <FileSpreadsheet className="h-5 w-5" />
+              ייבוא מאקסל
+            </Button>
+          )}
+        </div>
       </main>
     </div>
   );

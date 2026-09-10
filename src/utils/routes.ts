@@ -10,6 +10,7 @@ import { Period, PeriodMode, periodOfToday, todayISO } from './period';
  * fallback, so the History API is enough.
  *
  *   /                          choose what to do
+ *   /import                    bring a spreadsheet in
  *   /b/{board}                 what would you like to see?
  *   /b/{board}/calendar        ?d=2026-09-06&m=week
  *   /b/{board}/timeline        ?d=2026-09-01
@@ -30,6 +31,8 @@ export interface Route {
   myTasks: boolean;
   /** The settings area. Like "my tasks", it belongs to a person, not a board. */
   settings: boolean;
+  /** Bringing a spreadsheet in. Crosses boards, so it is a place of its own. */
+  importing: boolean;
   /** null on the home screen. */
   boardId: string | null;
   /** null on the board hub, before a view is chosen. */
@@ -62,6 +65,7 @@ export function parseRoute(url: string): Route {
 
   const myTasks = segments[0] === 'my';
   const settings = segments[0] === 'settings';
+  const importing = segments[0] === 'import';
   const boardId = segments[0] === 'b' && segments[1] ? segments[1] : null;
   const rawView = boardId ? segments[2] : undefined;
   const view = rawView && isView(rawView) ? rawView : null;
@@ -77,6 +81,7 @@ export function parseRoute(url: string): Route {
   return {
     myTasks,
     settings,
+    importing,
     boardId,
     view,
     period,
@@ -90,6 +95,7 @@ export function buildRoute(route: Partial<Route>): string {
   const {
     myTasks = false,
     settings = false,
+    importing = false,
     boardId = null,
     view = null,
     period,
@@ -99,6 +105,7 @@ export function buildRoute(route: Partial<Route>): string {
   } = route;
 
   if (settings) return '/settings';
+  if (importing) return '/import';
 
   if (myTasks) {
     const params = new URLSearchParams();

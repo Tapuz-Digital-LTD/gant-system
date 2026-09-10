@@ -221,22 +221,28 @@ const importFile = {
   fileBase64: z.string().min(1).max(25_000_000)
 };
 
+/** Decisions a person has made so far. The preview is recomputed with them. */
+const importDecisions = {
+  /** `${sourceKey}:${field}` for rule-based suggestions the person ticked. */
+  accepted: z.array(z.string().max(300)).max(2000).default([]),
+  /** The same, for file-supplied repairs they un-ticked. */
+  rejected: z.array(z.string().max(300)).max(2000).default([]),
+  /** Source keys of events they chose to leave out. */
+  excluded: z.array(z.string().max(300)).max(2000).default([])
+};
+
 export const importPreview = z.object({
   ...importFile,
+  ...importDecisions,
   boardId: z.string().uuid().nullish()
 });
 
 export const importCommit = z.object({
   ...importFile,
+  ...importDecisions,
   boardId: z.string().uuid().nullish(),
   /** A new board to put them in, when no boardId is given. */
   boardName: z.string().trim().min(1).max(120).nullish(),
-  /** `${sourceKey}:${field}` for suggestions the person ticked. */
-  accepted: z.array(z.string().max(300)).max(2000).default([]),
-  /** The same, for file-supplied repairs they un-ticked. */
-  rejected: z.array(z.string().max(300)).max(2000).default([]),
-  /** Source keys of events they chose to leave out. */
-  excluded: z.array(z.string().max(300)).max(2000).default([]),
   /**
    * What the screen said would happen. The server re-derives the plan and
    * refuses if the counts moved — a file swapped between the preview and the

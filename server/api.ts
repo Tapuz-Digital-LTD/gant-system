@@ -824,7 +824,12 @@ export function createApiRouter(
       data: {
         fileName: input.fileName,
         sheets: describeSheets(parsed),
-        plan: buildPlan(parsed.rows, { existing })
+        plan: buildPlan(parsed.rows, {
+          existing,
+          accepted: new Set(input.accepted),
+          rejected: new Set(input.rejected),
+          excluded: new Set(input.excluded)
+        })
       }
     });
   }));

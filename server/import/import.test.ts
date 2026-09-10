@@ -218,10 +218,12 @@ function sheet(name: string, grid: (string | number | null)[][]): SheetLike {
     e.issues.some((i) => i.severity === 'warning' && /אחרי/.test(i.message)),
     'a story that runs backwards is flagged'
   );
-  const s = e.suggestions.find((x) => x.field === 'kickoffDate');
-  assert.ok(s, 'and the year that would put it right is offered');
-  assert.equal(s!.to, '2027-01-26');
-  assert.equal(s!.fromFile, false, 'marked as a suggestion, not as something the file said');
+  assert.equal(e.suggestions.length, 1, 'one field carries the typo, so one repair is offered');
+  const s = e.suggestions[0];
+  assert.equal(s.field, 'kickoffDate', 'the go-live, because moving it lands on the event date');
+  assert.equal(s.to, '2027-01-26');
+  assert.equal(s.fromFile, false, 'marked as a suggestion, not as something the file said');
+  assert.equal(s.applied, false);
   assert.equal(e.values.kickoffDate, '2026-01-26', 'and nothing is changed without a person ticking it');
 
   const approved = buildPlan(parseSheets([ws]).rows, {
@@ -346,8 +348,39 @@ if (existsSync(REAL)) {
   );
   assert.equal(backwards.length, 3, 'three activities have a date out of order');
   assert.ok(
-    backwards.every((e) => e.suggestions.some((s) => !s.fromFile)),
-    'each is offered a year, and none of them is applied'
+    backwards.every((e) => e.suggestions.filter((s) => !s.fromFile).length === 1),
+    'each is offered exactly one year to change — not one per field it clashes with'
+  );
+  assert.ok(
+    backwards.every((e) => e.suggestions.every((s) => s.fromFile || !s.applied)),
+    'and none of them is applied without a person ticking it'
+  );
+
+  // The three rows, and the field that actually carries the typo in each.
+  const suspect = (startsWith: string, year: string) => {
+    const found = backwards.find(
+      (e) => e.title.startsWith(startsWith) && e.values.actualDate.startsWith(year)
+    );
+    assert.ok(found, `expected a flagged "${startsWith}" in ${year}`);
+    return found!.suggestions.find((s) => !s.fromFile)!;
+  };
+
+  const purim = suspect('פורים', '2029');
+  assert.equal(purim.field, 'kickoffMeetingDate', 'the meeting is the outlier, not the event');
+  assert.equal(purim.to, '2028-12-02', 'so the meeting moves back a year, not the event forward');
+
+  const pesach = suspect('פסח', '2029');
+  assert.equal(pesach.field, 'kickoffDate');
+  assert.equal(pesach.to, '2028-12-30');
+
+  const conference = suspect('ועידת ישראל', '2027');
+  assert.equal(conference.field, 'kickoffDate');
+  assert.equal(conference.to, '2027-01-26');
+
+  assert.equal(
+    plan.events.flatMap((e) => e.suggestions.filter((s) => !s.fromFile)).length,
+    3,
+    'three broken rows, three repairs — not one per field they clash with'
   );
 
   const withMeeting = plan.events.filter((e) => e.values.kickoffMeetingDate).length;

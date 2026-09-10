@@ -465,50 +465,109 @@ const STORY: { field: string; label: string }[] = [
 /**
  * Dates that run backwards, and the one repair worth offering.
  *
- * Every backwards pair in the real file is a year typed wrong in exactly one
- * field. Shifting that field by a year and finding the whole story in order
- * again is strong evidence — but it is still a suggestion that a person ticks,
- * never something applied on the way in.
+ * Every backwards row in the real file is a single year typed wrong. The hard
+ * part is deciding *which* field carries the typo, and the naive answer —
+ * offering to shift either side of every backwards pair — produced nine
+ * suggestions for three broken rows, six of them nonsense: it cheerfully
+ * proposed moving Purim's launch into 2030 to accommodate a kickoff meeting
+ * that was itself the mistake.
+ *
+ * Two pieces of evidence settle it:
+ *
+ *   1. **How many rules a field breaks.** A field that is out of order with two
+ *      others is the odd one out; the two are not both wrong.
+ *   2. **Distance from the event's own date.** Everything in this file is
+ *      planned backwards from the event, so the shift that lands nearest to it
+ *      is the shift that agrees with how the row was written.
+ *
+ * At most one suggestion per event, and only when shifting that one field puts
+ * the whole story back in order. Anything less certain is reported and left
+ * alone.
  */
-function orderIssues(values: EventValues, where: string): { issues: ImportIssue[]; suggestions: Suggestion[] } {
-  const issues: ImportIssue[] = [];
-  const suggestions: Suggestion[] = [];
+function orderIssues(
+  values: EventValues,
+  where: string
+): { issues: ImportIssue[]; suggestions: Suggestion[] } {
   const at = (f: string) => (values as unknown as Record<string, string | null>)[f];
 
+  const violations: { earlier: string; later: string }[] = [];
   for (let i = 0; i < STORY.length; i++) {
     for (let j = i + 1; j < STORY.length; j++) {
       const a = at(STORY[i].field);
       const b = at(STORY[j].field);
-      if (!a || !b || a <= b) continue;
-
-      issues.push({
-        severity: 'warning',
-        where,
-        field: STORY[i].field,
-        message: `${STORY[i].label} (${a}) אחרי ${STORY[j].label} (${b})`
-      });
-
-      for (const [field, other, shift] of [
-        [STORY[i].field, b, 1],
-        [STORY[j].field, a, -1]
-      ] as [string, string, number][]) {
-        const current = at(field)!;
-        const moved = `${Number(current.slice(0, 4)) - shift * 1}${current.slice(4)}`;
-        const fixed = shift > 0 ? moved <= other : moved >= other;
-        if (fixed && !suggestions.some((s) => s.field === field)) {
-          suggestions.push({
-            field,
-            fieldLabel: FIELD_LABELS[field] ?? field,
-            from: current,
-            to: moved,
-            reason: 'השנה בשדה הזה חורגת בשנה משאר השורה. עם התיקון סדר התאריכים מסתדר',
-            fromFile: false,
-            applied: false
-          });
-        }
-      }
+      if (a && b && a > b) violations.push({ earlier: STORY[i].field, later: STORY[j].field });
     }
   }
+  if (violations.length === 0) return { issues: [], suggestions: [] };
+
+  const label = (field: string) => STORY.find((s) => s.field === field)?.label ?? field;
+
+  /** Each field, and how many rules it is on the wrong side of. */
+  const blame = new Map<string, number>();
+  for (const v of violations) {
+    blame.set(v.earlier, (blame.get(v.earlier) ?? 0) + 1);
+    blame.set(v.later, (blame.get(v.later) ?? 0) + 1);
+  }
+
+  const shiftYear = (date: string, years: number) =>
+    `${Number(date.slice(0, 4)) + years}${date.slice(4)}`;
+
+  const days = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000;
+
+  /** A field is shifted back when it is too late in the story, forward when too early. */
+  const candidates = [...blame.keys()]
+    .map((field) => {
+      const asEarly = violations.some((v) => v.earlier === field);
+      const moved = shiftYear(at(field)!, asEarly ? -1 : 1);
+      const after = { ...(values as unknown as Record<string, string | null>), [field]: moved };
+      const stillBroken = violations.some((v) => {
+        const a = after[v.earlier];
+        const b = after[v.later];
+        return a && b && a > b;
+      });
+      return {
+        field,
+        moved,
+        blame: blame.get(field) ?? 0,
+        fixes: !stillBroken,
+        distance: days(moved, values.actualDate)
+      };
+    })
+    .filter((c) => c.fixes)
+    .sort((a, b) => b.blame - a.blame || a.distance - b.distance);
+
+  const worst = violations[0];
+  const suspect = candidates[0]?.field ?? worst.earlier;
+
+  const issues: ImportIssue[] = [
+    {
+      severity: 'warning',
+      where,
+      field: suspect,
+      message:
+        `${label(worst.earlier)} (${at(worst.earlier)}) אחרי ${label(worst.later)} (${at(worst.later)})` +
+        (violations.length === 2
+          ? ' ועוד סתירה אחת בשורה הזאת'
+          : violations.length > 2
+            ? ` ועוד ${violations.length - 1} סתירות בשורה הזאת`
+            : '')
+    }
+  ];
+
+  const suggestions: Suggestion[] = candidates[0]
+    ? [
+        {
+          field: candidates[0].field,
+          fieldLabel: FIELD_LABELS[candidates[0].field] ?? candidates[0].field,
+          from: at(candidates[0].field)!,
+          to: candidates[0].moved,
+          reason: `נראה שהשנה כאן חורגת בשנה משאר השורה. עם התיקון כל התאריכים חוזרים לסדר`,
+          fromFile: false,
+          applied: false
+        }
+      ]
+    : [];
+
   return { issues, suggestions };
 }
 

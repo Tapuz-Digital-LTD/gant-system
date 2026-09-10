@@ -25,7 +25,7 @@ export type Capability =
   | 'task.create' | 'task.edit' | 'task.delete'
   | 'comment.create'
   | 'board.create' | 'board.edit' | 'board.duplicate' | 'board.delete' | 'board.purge'
-  | 'export.run' | 'activity.view'
+  | 'export.run' | 'import.run' | 'activity.view'
   | 'people.manage' | 'permissions.manage';
 
 /** A person plus the boards they can reach. Staff have an empty list and see everything. */
@@ -363,4 +363,118 @@ export function monthKeyOf(event: Pick<EventItem, 'actualDate'>): string {
 /** "During the month, no exact day" — one source of truth, no boolean to contradict it. */
 export function isFloating(event: Pick<EventItem, 'actualPrecision'>): boolean {
   return event.actualPrecision === 'month';
+}
+
+
+/* ==================================================================
+   ייבוא מאקסל
+
+   Mirrors server/import/plan.ts. Nothing here is computed on the client:
+   the plan is derived on the server from the file, twice — once to show and
+   once to run — so what a person approves is what happens.
+   ================================================================== */
+
+export interface ImportIssue {
+  severity: 'error' | 'warning';
+  /** "גיליון!12" — what to type into Excel's Name Box to go and look. */
+  where: string;
+  field?: string;
+  message: string;
+}
+
+export interface ImportSuggestion {
+  field: string;
+  fieldLabel: string;
+  from: string;
+  to: string;
+  reason: string;
+  /** The answer came from the file itself, so it arrives already ticked. */
+  fromFile: boolean;
+  applied: boolean;
+}
+
+export interface ImportConflict {
+  field: string;
+  fieldLabel: string;
+  values: { value: string; where: string[] }[];
+  chosen: string;
+}
+
+export type ImportAction = 'create' | 'update' | 'unchanged' | 'skip';
+
+export interface ImportEventValues {
+  title: string;
+  category: EventCategory;
+  actualDate: string;
+  actualPrecision: DatePrecision;
+  prepMonths: number;
+  kickoffMeetingDate: string | null;
+  workStartDate: string | null;
+  reviewDate: string | null;
+  freezeDate: string | null;
+  kickoffDate: string | null;
+  announceDate: string | null;
+  campaignEndDate: string | null;
+  note: string | null;
+  description: string | null;
+}
+
+export interface PlannedImportEvent {
+  sourceKey: string;
+  title: string;
+  action: ImportAction;
+  values: ImportEventValues;
+  stated: string[];
+  sources: string[];
+  issues: ImportIssue[];
+  conflicts: ImportConflict[];
+  suggestions: ImportSuggestion[];
+  existingId?: string;
+  changes?: { field: string; fieldLabel: string; from: string; to: string }[];
+}
+
+export interface ImportPlan {
+  events: PlannedImportEvent[];
+  issues: ImportIssue[];
+  summary: {
+    sourceRows: number;
+    events: number;
+    create: number;
+    update: number;
+    unchanged: number;
+    skip: number;
+    tasks: number;
+    errors: number;
+    warnings: number;
+    conflicts: number;
+    suggestions: number;
+  };
+}
+
+export interface ImportPreview {
+  fileName: string;
+  /** Every sheet in the file, including the ones that gave nothing and why. */
+  sheets: { name: string; rows: number; used: boolean; reason: string | null }[];
+  plan: ImportPlan;
+}
+
+export interface ImportResult {
+  board: { id: string; name: string | null };
+  boardCreated: boolean;
+  created: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  tasks: number;
+  warnings: number;
+  errors: number;
+  /** Ten rows to check against the spreadsheet by eye. */
+  sample: {
+    title: string;
+    sources: string[];
+    actualDate: string;
+    kickoffMeetingDate: string | null;
+    kickoffDate: string | null;
+    prepMonths: number;
+  }[];
 }
