@@ -10,66 +10,80 @@
    ============================================================ */
 
 @theme {
-  /* --- surfaces: cool light neutrals --- */
-  --color-canvas: #f3f5f9;
+  /* ------------------------------------------------------------------ XTRA
+     The two brand colours are sampled from the logo itself, not guessed:
+     #EE434C for the mark, #3A3534 for its outline. Everything neutral here is
+     warmed towards that charcoal instead of the cool blue-greys it replaced —
+     which is most of what made the product feel like an old admin console
+     before a single accent was added.
+
+     Colour carries hierarchy, not decoration. Surfaces stay quiet so the few
+     saturated things on a screen mean something. --- */
+
+  /* --- surfaces: warm light neutrals --- */
+  --color-canvas: #faf8f7;
   --color-surface: #ffffff;
-  --color-subtle: #eef0f6;
-  --color-muted: #e4e7f0;
+  --color-subtle: #f4f1ef;
+  --color-muted: #eae5e2;
 
-  --color-line: #e1e5ee;
-  --color-line-strong: #cdd2e0;
+  --color-line: #ebe5e2;
+  --color-line-strong: #d6ccc8;
 
-  --color-ink: #1a1f33;
-  --color-ink-secondary: #576078;
-  --color-ink-tertiary: #848da5;
-  --color-ink-disabled: #aeb5c7;
+  --color-ink: #2a2422;
+  --color-ink-secondary: #5c524e;
+  --color-ink-tertiary: #8b807b;
+  --color-ink-disabled: #b5aba6;
 
-  /* --- action --- */
-  --color-primary: #3358e0;
-  --color-primary-hover: #2846c4;
-  --color-primary-soft: #eaeeff;
-  --color-primary-line: #c3ceff;
+  /* --- action: the brand mark's own red --- */
+  --color-primary: #ee434c;
+  --color-primary-hover: #d32f38;
+  --color-primary-soft: #fdedee;
+  --color-primary-line: #f9c9cb;
 
-  /* --- status fills: saturated, white text sits on them --- */
-  --color-todo: #98a0b5;
-  --color-progress: #f0a32e;
-  --color-ready: #8b5cf6;
-  --color-done: #00a870;
-  --color-late: #e23c4e;
+  /* --- status fills: saturated, white text sits on them ---
+         `late` is deliberately a darker, less saturated red than the brand:
+         side by side with a primary button it has to read as a warning rather
+         than as something to press. The triangle and the bold weight do the
+         rest — colour is never the only signal. --- */
+  --color-todo: #9c9490;
+  --color-progress: #e8930c;
+  --color-ready: #7c5cf0;
+  --color-done: #12996b;
+  --color-late: #b4232e;
 
   /* --- status tints: same meaning, quiet surface --- */
-  --color-todo-soft: #eef0f5;
-  --color-progress-soft: #fef4e4;
-  --color-ready-soft: #f3edff;
-  --color-done-soft: #e3f7ef;
-  --color-late-soft: #fdebed;
+  --color-todo-soft: #f2efed;
+  --color-progress-soft: #fdf2e0;
+  --color-ready-soft: #f0ecfe;
+  --color-done-soft: #e2f6ee;
+  --color-late-soft: #fbeaeb;
 
   /* --- categories: colourful but still distinguishable at 8px --- */
-  --color-cat-holiday: #e8871e;
-  --color-cat-campaign: #e2445c;
-  --color-cat-b2b: #3358e0;
-  --color-cat-social: #a25ddc;
-  --color-cat-operational: #0f9b8e;
-  --color-cat-other: #7a8296;
+  --color-cat-holiday: #e8730c;
+  --color-cat-campaign: #d6336c;
+  --color-cat-b2b: #2563c9;
+  --color-cat-social: #9333ea;
+  --color-cat-operational: #0d9488;
+  --color-cat-other: #857a75;
 
   /* --- milestones: the seven moments in an event's life.
          Colour is never the only signal — an icon and a word always come with
          it — but a distinct hue lets the eye group a timeline at a glance.
-         None of these is the action indigo; that stays reserved for buttons. --- */
+         None of these is the brand red; that stays reserved for actions. --- */
   --color-ms-workstart: #15803d;
   --color-ms-workstart-soft: #e3f5e9;
   --color-ms-review: #b45309;
   --color-ms-review-soft: #fdf0dc;
   --color-ms-freeze: #0e7490;
   --color-ms-freeze-soft: #dff2f6;
-  --color-ms-kickoff: #e2445c;
-  --color-ms-kickoff-soft: #fdebed;
+  --color-ms-kickoff: #d6336c;
+  --color-ms-kickoff-soft: #fdeaf1;
   --color-ms-announce: #7c3aed;
   --color-ms-announce-soft: #f0e9fe;
-  --color-ms-actual: #1a1f33;
-  --color-ms-actual-soft: #e9ebf2;
-  --color-ms-end: #6b7280;
-  --color-ms-end-soft: #eef0f6;
+  --color-ms-actual: #2a2422;
+  --color-ms-actual-soft: #efeae8;
+  --color-ms-end: #857a75;
+  --color-ms-end-soft: #f2efed;
 
   /* --- type: comfortable. 12px is the floor, and it is metadata only. --- */
   --font-sans: 'Assistant', 'Rubik', system-ui, -apple-system, 'Segoe UI', sans-serif;

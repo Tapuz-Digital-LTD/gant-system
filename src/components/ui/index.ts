@@ -12,3 +12,4 @@ export { Popover, PopoverClose } from './Popover';
 export { ToastProvider, useToast } from './Toast';
 export { BusyBar } from './BusyBar';
 export { ErrorBoundary } from './ErrorBoundary';
+export { XtraMark } from './XtraMark';

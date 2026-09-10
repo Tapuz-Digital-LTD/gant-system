@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { ArrowRight, Loader2, LogIn, Mail, Smartphone } from 'lucide-react';
-import { authClient, type AuthConfig } from '../services/auth';
+import { authClient, fetchSignInCode, type AuthConfig } from '../services/auth';
 import { useFormValidation, isEmail, required } from '../hooks/useFormValidation';
-import { Button, Field, Input, cn } from './ui';
+import { Button, Field, Input, XtraMark, cn } from './ui';
 
 /**
  * The only screen a signed-out visitor can reach.
@@ -41,6 +41,8 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
   const [busy, setBusy] = useState<'send' | 'verify' | null>(null);
   const [step, setStep] = useState<'who' | 'code'>('who');
   const [error, setError] = useState('');
+  /** Shown only where nothing was delivered — see showsCodesOnScreen on the server. */
+  const [screenCode, setScreenCode] = useState<string | null>(null);
 
   const whoForm = useFormValidation({
     email: () =>
@@ -80,8 +82,24 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
     setBusy(null);
     // Always advance: whether an address is known to us is not something a
     // stranger should be able to probe by watching which ones fail.
-    if (error) setError(signInError(error));
-    else setStep('code');
+    if (error) {
+      setError(signInError(error));
+      return;
+    }
+    setStep('code');
+
+    /*
+     * On a laptop, the code appears here instead of on a phone.
+     *
+     * The server only answers this where nothing was actually delivered, so
+     * there is no path on which a real recipient also sees their own code on a
+     * screen. It exists so the whole flow can be walked without messaging
+     * anybody — which is what stops somebody testing a button by texting a
+     * colleague.
+     */
+    if (config.codesOnScreen) {
+      setScreenCode(await fetchSignInCode(channel === 'email' ? cleanEmail() : cleanPhone()));
+    }
   };
 
   const verifyCode = async (e: React.FormEvent) => {
@@ -112,28 +130,24 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
         on it that matters. Hidden from assistive tech because it says nothing.
       */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-32 start-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-primary/6 blur-3xl" />
-        <div className="absolute -bottom-40 end-1/4 h-80 w-80 rounded-full bg-ms-kickoff/5 blur-3xl" />
+        <div className="absolute -top-40 start-1/2 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-primary/8 blur-3xl" />
+        <div className="absolute -bottom-48 end-1/5 h-96 w-96 rounded-full bg-cat-campaign/6 blur-3xl" />
       </div>
 
       <div className="relative flex w-full max-w-sm flex-col gap-6">
-        <header className="flex flex-col items-center gap-3 text-center">
-          <img
-            src="/xtra-logo.png"
-            alt="XTRA Giftcard"
-            width={180}
-            height={111}
-            className="h-20 w-auto"
-          />
+        <header className="flex flex-col items-center gap-4 text-center">
+          <XtraMark className="h-14 w-14 drop-shadow-sm" />
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-ink">תכנון אירועים וקמפיינים</h1>
-            <p className="mt-1 text-base text-ink-tertiary">
+            <h1 className="text-3xl font-extrabold tracking-tight text-ink">
+              תכנון אירועים וקמפיינים
+            </h1>
+            <p className="mt-1.5 text-base text-ink-tertiary">
               {step === 'who' ? 'נעים לראות אותך. איך תרצה להיכנס?' : 'עוד רגע ואתה בפנים'}
             </p>
           </div>
         </header>
 
-        <div className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-6 shadow-raised">
+        <div className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-6 shadow-pop">
           {step === 'who' ? (
             <form onSubmit={sendCode} noValidate className="flex flex-col gap-4">
               {/*
@@ -233,8 +247,9 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
                   placeholder="000000"
                   dir="ltr"
                   className={cn(
-                    'h-16 text-center text-3xl font-bold tracking-[0.4em] tnum',
-                    codeForm.error('otp') && 'border-late'
+                    'h-18 border-2 text-center text-4xl font-extrabold tracking-[0.42em] tnum',
+                    'focus:border-primary focus:ring-4 focus:ring-primary-soft',
+                    codeForm.error('otp') ? 'border-late' : 'border-line-strong'
                   )}
                 />
               </Field>
@@ -243,6 +258,17 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
                 {busy === 'verify' ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogIn className="h-5 w-5" />}
                 כניסה
               </Button>
+
+              {screenCode && (
+                <div className="rounded-xl border border-dashed border-primary-line bg-primary-soft px-3 py-2.5 text-center">
+                  <p className="text-sm font-semibold text-ink-secondary">
+                    סביבת פיתוח — לא נשלחה הודעה
+                  </p>
+                  <p dir="ltr" className="mt-1 text-2xl font-bold tracking-[0.3em] text-primary tnum">
+                    {screenCode}
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-center justify-between">
                 <button
@@ -275,9 +301,17 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
 
           {error && <p className="text-center text-sm text-late">{error}</p>}
 
+          {/*
+            Say which of the two situations this is.
+            
+            "Codes are not being sent" is true in both, and useless in the one
+            where the code is about to appear on this very screen.
+          */}
           {!config.mailConfigured && (
             <p className="rounded-lg bg-progress-soft px-3 py-2 text-center text-sm text-ink">
-              שליחת קודים עדיין לא מופעלת. הקוד נכתב ליומן השרת.
+              {config.codesOnScreen
+                ? 'סביבת פיתוח — הקוד יופיע כאן במקום להישלח.'
+                : 'שליחת קודים עדיין לא מופעלת. הקוד נכתב ליומן השרת.'}
             </p>
           )}
         </div>

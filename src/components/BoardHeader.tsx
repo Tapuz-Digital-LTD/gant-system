@@ -29,7 +29,7 @@ import type { Can } from '../hooks/useCan';
 import { ViewName } from '../utils/routes';
 import { SearchBox } from './SearchBox';
 import { NotificationsBell } from './NotificationsBell';
-import { Badge, Button, Field, Menu, MenuItem, MenuSeparator, Popover, Select, Tooltip, cn } from './ui';
+import { Badge, Button, Field, Menu, MenuItem, MenuSeparator, Popover, Select, Tooltip, XtraMark, cn } from './ui';
 
 interface BoardHeaderProps {
   board: GanttBoard;
@@ -128,6 +128,22 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
     <header className="sticky top-0 z-30 border-b border-line bg-surface">
       {/* --- where am I --- */}
       <div className="flex h-14 min-w-0 items-center gap-2 px-3 sm:px-5">
+        {/*
+          The brand, always visible.
+          
+          It doubles as the way home, which is what people reach for anyway —
+          a logo in the corner of a product is a link to the start of it.
+        */}
+        <button
+          onClick={onBackHome}
+          aria-label="XTRA — למסך הראשי"
+          className="shrink-0 rounded-lg p-0.5 transition hover:bg-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          <XtraMark className="h-7 w-7" alt="" />
+        </button>
+
+        <span className="hidden h-5 w-px shrink-0 bg-line sm:block" aria-hidden="true" />
+
         <Button variant="ghost" size="sm" onClick={onBackHome} className="shrink-0">
           <ArrowRight className="h-4.5 w-4.5" />
           <span className="hidden sm:inline">כל הלוחות</span>

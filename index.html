@@ -3,15 +3,52 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>תכנון אירועים · XTRA</title>
-    <meta name="description" content="לוח שנה וגאנט חודשי לניהול אירועים, קמפיינים ומשימות 2026–2028 של XTRA" />
+    <meta name="theme-color" content="#ee434c" />
+
+    <title>תכנון אירועים וקמפיינים · XTRA</title>
+    <meta
+      name="description"
+      content="מערכת הניהול של XTRA לפרויקטים, קמפיינים, אירועים ומשימות — לוח שנה, תכנון לאורך זמן ותזכורות, במקום אחד."
+    />
+
+    <!--
+      The tab icon, at the sizes browsers actually ask for.
+
+      All three are the X from the XTRA logo, cut from the same file rather than
+      redrawn — a mark that is nearly right is worse than one that is obviously
+      the same. A single large PNG scaled down turns to mush at 16px, so each
+      size is rendered separately.
+    -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/icon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/icon-16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+
+    <!-- The card when somebody pastes the link into WhatsApp or Slack. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="XTRA" />
+    <meta property="og:locale" content="he_IL" />
+    <meta property="og:title" content="תכנון אירועים וקמפיינים · XTRA" />
+    <meta
+      property="og:description"
+      content="פרויקטים, קמפיינים, תאריכים ומשימות — במקום אחד."
+    />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="XTRA — תכנון אירועים וקמפיינים" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="תכנון אירועים וקמפיינים · XTRA" />
+    <meta name="twitter:description" content="פרויקטים, קמפיינים, תאריכים ומשימות — במקום אחד." />
+    <meta name="twitter:image" content="/og.png" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&family=Rubik:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
-  <body class="bg-[#FAF8F7] text-[#3A3534] font-sans antialiased selection:bg-[#F7414B] selection:text-white">
+  <body class="bg-[#faf8f7] text-[#2a2422] font-sans antialiased selection:bg-[#ee434c] selection:text-white">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

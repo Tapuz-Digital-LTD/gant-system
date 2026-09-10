@@ -21,7 +21,7 @@ import type { Can } from '../hooks/useCan';
 import { boardRoute, recallPlace } from '../utils/routes';
 import { todayISO, monthName } from '../utils/period';
 import { NotificationsBell } from './NotificationsBell';
-import { Button, Menu, MenuItem, MenuSeparator, cn } from './ui';
+import { Button, Menu, MenuItem, MenuSeparator, XtraMark, cn } from './ui';
 
 interface HomeScreenProps {
   boards: GanttBoard[];
@@ -128,12 +128,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     <div className="min-h-dvh bg-canvas" dir="rtl">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-5 py-4">
-          <span
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-sm font-extrabold text-white"
-            aria-hidden="true"
-          >
-            X
-          </span>
+          {/* The mark from the logo, not a letter X in a coloured box. */}
+          <XtraMark className="h-8 w-8 shrink-0" alt="" />
           <span className="text-md font-bold tracking-tight text-ink">תכנון אירועים</span>
 
           <div className="flex-1" />
