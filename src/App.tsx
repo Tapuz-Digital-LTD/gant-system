@@ -50,6 +50,7 @@ const AnalyticsView = React.lazy(() => import('./components/AnalyticsView').then
 const UserPermissionsModal = React.lazy(() => import('./components/UserPermissionsModal').then((m) => ({ default: m.UserPermissionsModal })));
 const BoardManagementModal = React.lazy(() => import('./components/BoardManagementModal').then((m) => ({ default: m.BoardManagementModal })));
 const ExportModal = React.lazy(() => import('./components/ExportModal').then((m) => ({ default: m.ExportModal })));
+const TaskPanel = React.lazy(() => import('./components/TaskPanel').then((m) => ({ default: m.TaskPanel })));
 const AIAssistantModal = React.lazy(() => import('./components/AIAssistantModal').then((m) => ({ default: m.AIAssistantModal })));
 const ArchiveModal = React.lazy(() => import('./components/ArchiveModal').then((m) => ({ default: m.ArchiveModal })));
 const SettingsScreen = React.lazy(() => import('./components/SettingsScreen').then((m) => ({ default: m.SettingsScreen })));
@@ -103,6 +104,8 @@ export default function App() {
   /* --- the project lifecycle: new → work → finished → archive → next --- */
   const [showArchive, setShowArchive] = useState(false);
   const [purging, setPurging] = useState<GanttBoard | null>(null);
+  /** The task whose full card is open, over whatever else is on screen. */
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
@@ -344,6 +347,22 @@ export default function App() {
   const dialogs = (
     <React.Suspense fallback={null}>
       {/*
+        Above everything, because a task can be opened from a campaign, from the
+        project list, or from "my tasks" — and it is the same card each time.
+      */}
+      {openTaskId && (
+        <TaskPanel
+          taskId={openTaskId}
+          users={users}
+          canEdit={can('task.edit')}
+          onClose={() => setOpenTaskId(null)}
+          onOpenEvent={(eventId) => {
+            setOpenTaskId(null);
+            openEvent(eventId);
+          }}
+        />
+      )}
+      {/*
         The one board action that is not reversible, and the only one that asks
         first. It names what goes with it, because "delete project" does not
         make somebody picture the events and tasks underneath.
@@ -452,6 +471,7 @@ export default function App() {
           onCreateComment={(body) =>
             run(m.createComment.mutateAsync({ eventId: detailEvent.id, body }), 'התגובה נוספה')
           }
+          onOpenTask={setOpenTaskId}
         />
       )}
     </React.Suspense>

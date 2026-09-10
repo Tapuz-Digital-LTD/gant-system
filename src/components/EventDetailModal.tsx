@@ -58,6 +58,8 @@ interface EventDetailModalProps {
   onUpdateTask: (id: string, version: number, changes: Partial<TaskInput>) => void;
   onDeleteTask: (id: string) => void;
   onCreateComment: (body: string) => void;
+  /** Opens the full task card. */
+  onOpenTask: (id: string) => void;
 }
 
 type Tab = 'tasks' | 'details' | 'comments';
@@ -74,7 +76,8 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   onCreateTask,
   onUpdateTask,
   onDeleteTask,
-  onCreateComment
+  onCreateComment,
+  onOpenTask
 }) => {
   const [tab, setTab] = useState<Tab>('tasks');
   const [editing, setEditing] = useState(false);
@@ -314,9 +317,21 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       {done && <Check className="h-4.5 w-4.5" strokeWidth={3} />}
                     </button>
 
-                    <span className={cn('min-w-0 flex-1 text-base', done ? 'text-ink-tertiary line-through' : 'text-ink')}>
+                    {/*
+                      The name is the way in.
+                      
+                      A row can only ever show a line of a task; everything that
+                      makes it a piece of work lives behind it.
+                    */}
+                    <button
+                      onClick={() => onOpenTask(task.id)}
+                      className={cn(
+                        'min-w-0 flex-1 rounded text-start text-base hover:underline',
+                        done ? 'text-ink-tertiary line-through' : 'text-ink'
+                      )}
+                    >
                       {task.title}
-                    </span>
+                    </button>
 
                     {late && (
                       <Tooltip label="המשימה באיחור">
@@ -536,7 +551,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
  * differ only in hue are two people nobody can tell apart. Read-only viewers
  * see the same face without a menu behind it.
  */
-function AssigneePicker({
+export function AssigneePicker({
   users,
   assigneeId,
   canEdit,

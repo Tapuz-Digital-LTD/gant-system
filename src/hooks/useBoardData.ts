@@ -216,6 +216,23 @@ export function useTaskCardMutations(taskId: string | undefined) {
   const id = taskId ?? '';
 
   return {
+    /**
+     * Saving the task from its own panel.
+     *
+     * Separate from the board-scoped mutation because the panel can be open
+     * over any view — and over the project task list, which is not a board
+     * window at all. Everything that could be showing this task is refreshed.
+     */
+    save: useMutation({
+      mutationFn: (v: { version: number; changes: Partial<TaskInput> }) =>
+        api.tasks.update(id, v.version, v.changes),
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: keys.task(id) });
+        qc.invalidateQueries({ queryKey: ['boards'] });
+        qc.invalidateQueries({ queryKey: ['events'] });
+        qc.invalidateQueries({ queryKey: keys.myTasks });
+      }
+    }),
     addStep: useMutation({
       mutationFn: (text: string) => api.task.addStep(id, text),
       onSuccess: refresh(keys.checklist(id))
