@@ -164,6 +164,26 @@ r = await call('GET', `/events/${event.id}/activity`);
 assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
 
 /*
+ * ---------- the Hebrew calendar comes back as dates, not as a promise ----------
+ *
+ * `res.json` accepts anything, so making holidaysBetween async — to keep a 4MB
+ * dependency off the cold-start path — turned this response into `{}` without a
+ * single type error. Nothing asserted the contents, so nothing noticed.
+ */
+{
+  r = await call('GET', '/holidays?from=2026-09-01&to=2026-10-31');
+  assert.equal(r.status, 200);
+  assert.ok(Array.isArray(r.json.data), 'an array, not a serialised promise');
+  assert.ok(r.json.data.length > 0, 'September to October has holidays in it');
+
+  const rosh = r.json.data.find((h: { title: string }) => h.title.includes('ראש השנה'));
+  assert.ok(rosh, 'including ראש השנה');
+  assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(rosh.date), 'with a real date');
+  assert.equal(typeof rosh.isYomTov, 'boolean', 'and it says whether people work that day');
+  assert.ok(rosh.hebrewDate?.length > 0, 'and carries the Hebrew date it was computed from');
+}
+
+/*
  * ---------- the assistant answers, even when it fails ----------
  *
  * This endpoint hung in production for every single call. `req.repo` was never

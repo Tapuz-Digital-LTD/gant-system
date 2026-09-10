@@ -1,4 +1,17 @@
-import { HebrewCalendar, HDate, flags } from '@hebcal/core';
+/*
+ * Loaded on first use, not on every cold start.
+ *
+ * @hebcal/core is the largest dependency in the function by a wide margin, and
+ * exactly one endpoint needs it. Parsing it during startup taxed every request
+ * that never asks about holidays — which is almost all of them.
+ */
+type HebcalModule = typeof import('@hebcal/core');
+let hebcal: HebcalModule | undefined;
+
+async function loadHebcal(): Promise<HebcalModule> {
+  hebcal ??= await import('@hebcal/core');
+  return hebcal;
+}
 
 /**
  * The real Hebrew calendar, computed — never typed.
@@ -19,7 +32,7 @@ export interface Holiday {
   isYomTov: boolean;
 }
 
-function classify(mask: number): HolidayKind {
+function classify(mask: number, flags: HebcalModule['flags']): HolidayKind {
   if (mask & flags.MAJOR_FAST || mask & flags.MINOR_FAST) return 'fast';
   if (mask & flags.MODERN_HOLIDAY) return 'modern';
   if (mask & flags.ROSH_CHODESH) return 'roshchodesh';
@@ -32,13 +45,14 @@ const HEB_MONTHS = [
   'תשרי', 'חשוון', 'כסלו', 'טבת', 'שבט', 'אדר', 'אדר א׳', 'אדר ב׳'
 ];
 
-function hebrewDateOf(hd: HDate): string {
+function hebrewDateOf(hd: InstanceType<HebcalModule['HDate']>): string {
   const month = HEB_MONTHS[hd.getMonth()] ?? '';
   return `${hd.getDate()} ב${month}`;
 }
 
 /** Israeli observance, Hebrew titles, one entry per day. */
-export function holidaysBetween(from: string, to: string): Holiday[] {
+export async function holidaysBetween(from: string, to: string): Promise<Holiday[]> {
+  const { HebrewCalendar, HDate, flags } = await loadHebcal();
   const start = new Date(`${from}T00:00:00Z`);
   const end = new Date(`${to}T00:00:00Z`);
 
@@ -71,7 +85,7 @@ export function holidaysBetween(from: string, to: string): Holiday[] {
       date,
       title,
       hebrewDate: hebrewDateOf(hd),
-      kind: classify(ev.getFlags()),
+      kind: classify(ev.getFlags(), flags),
       isYomTov: Boolean(ev.getFlags() & flags.CHAG)
     });
   }

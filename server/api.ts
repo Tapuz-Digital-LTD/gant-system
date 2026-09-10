@@ -262,7 +262,7 @@ export function createApiRouter(
     requireActor(req.actor);
     const { from, to } = v.timelineQuery.parse(req.query);
     res.set('Cache-Control', 'private, max-age=86400');
-    res.json({ data: holidaysBetween(from, to) });
+    res.json({ data: await holidaysBetween(from, to) });
   }));
 
   // ---------------- events ----------------

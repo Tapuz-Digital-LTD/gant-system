@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import type Anthropic from '@anthropic-ai/sdk';
 import { requireActor } from './access.js';
 
 /**
@@ -173,6 +173,14 @@ async function suggestTasks(req: Request, res: Response) {
   const { eventTitle, category, kickoffDate, actualDate, prepMonths } = parsed.data;
 
   try {
+    /*
+     * Imported here, not at the top of the file.
+     *
+     * Otherwise the SDK is parsed on every cold start to serve one endpoint
+     * that already takes fifteen seconds — a cost invisible here and paid by
+     * every other request in the function.
+     */
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: TIMEOUT_MS });
 
     const response = await client.messages.create({
