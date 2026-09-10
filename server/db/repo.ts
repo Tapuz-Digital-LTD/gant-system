@@ -587,6 +587,10 @@ export function createRepo(db: Database) {
         values: {
           title: e.title,
           category: e.category,
+          // Compared against what a file says, so it has to be here: a field
+          // the planner can write but cannot read back reports every single
+          // row as changed, forever.
+          status: e.status,
           actualDate: e.actualDate,
           actualPrecision: e.actualPrecision,
           prepMonths: e.prepMonths,

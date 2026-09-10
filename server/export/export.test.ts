@@ -255,6 +255,16 @@ await wb.xlsx.load(file);
       assert.equal(back!.values[field], source[field], `${title}: ${field} came back different`);
     }
     assert.equal(back!.values.prepMonths, source.prepMonths, `${title}: preparation months`);
+    /*
+     * The kind of work, in words and back again.
+     *
+     * This is the assertion that was missing when a real board went out and
+     * came back with all eighteen of its holidays turned into campaigns: the
+     * sheet said "חג ומועד", nothing on the way in knew what that meant, and
+     * the schema default quietly won. server/vocabulary.ts owns the pairing now.
+     */
+    assert.equal(back!.values.category, source.category, `${title}: the category came back different`);
+    assert.equal(back!.values.status, source.status, `${title}: the state came back different`);
   }
 
   assert.equal(

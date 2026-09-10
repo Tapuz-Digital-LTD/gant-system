@@ -271,17 +271,20 @@ function Bars({
                 {label}
               </span>
 
-              <button
-                type="button"
-                disabled={!onDrill}
+              {/*
+                A bar is a button only where it does something.
+                
+                Rendering it disabled instead — on a dashboard card, where the
+                whole card opens the report — puts "לחצן, מושבת" into every
+                screen reader for every bar, which is noise about a control that
+                was never offered.
+              */}
+              <Bar
+                clickable={Boolean(onDrill)}
                 onClick={() => onDrill?.(row.groupKey as string | null, String(row.group))}
-                aria-label={`${label}: ${measures
+                label={`${label}: ${measures
                   .map((m) => `${m.label} ${formatValue(row[m.key], m.type)}`)
                   .join(', ')}${onDrill ? '. לחץ כדי לראות את הרשומות' : ''}`}
-                className={cn(
-                  'group flex h-6 min-w-0 flex-1 items-center gap-px rounded-sm',
-                  onDrill && 'cursor-pointer'
-                )}
               >
                 {measures.map((m, mi) => {
                   const value = Number(r2n(row[m.key])) || 0;
@@ -299,7 +302,7 @@ function Bars({
                     />
                   );
                 })}
-              </button>
+              </Bar>
 
               <span className="w-14 shrink-0 text-end text-sm font-semibold text-ink tabular-nums">
                 {stacked ? total.toLocaleString('he-IL') : formatValue(row[measures[0].key], measures[0].type)}
@@ -313,6 +316,33 @@ function Bars({
         <p className="text-sm text-ink-tertiary">ועוד {result.rows.length - rows.length} קבוצות</p>
       )}
     </div>
+  );
+}
+
+/** The bar itself: a button where it opens something, a plain figure where it does not. */
+function Bar({
+  clickable,
+  onClick,
+  label,
+  children
+}: {
+  clickable: boolean;
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  const className = 'group flex h-6 min-w-0 flex-1 items-center gap-px rounded-sm';
+  if (!clickable) {
+    return (
+      <span className={className} role="img" aria-label={label}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} aria-label={label} className={cn(className, 'cursor-pointer')}>
+      {children}
+    </button>
   );
 }
 
@@ -492,14 +522,9 @@ function Donut({
       <ul className="flex min-w-48 flex-1 flex-col gap-1">
         {slices.map((s) => (
           <li key={s.index}>
-            <button
-              type="button"
-              disabled={!onDrill}
+            <Slice
+              clickable={Boolean(onDrill)}
               onClick={() => onDrill?.(s.row.groupKey as string | null, String(s.row.group))}
-              className={cn(
-                'flex w-full items-center gap-2 rounded px-1 py-0.5 text-start text-base',
-                onDrill && 'hover:bg-subtle'
-              )}
             >
               <span
                 className={cn(
@@ -517,11 +542,30 @@ function Donut({
               <span className="w-10 shrink-0 text-end text-sm text-ink-tertiary tabular-nums">
                 {Math.round(s.share * 100)}%
               </span>
-            </button>
+            </Slice>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/** One legend row: a button where clicking opens the records, a line of text where it does not. */
+function Slice({
+  clickable,
+  onClick,
+  children
+}: {
+  clickable: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const className = 'flex w-full items-center gap-2 rounded px-1 py-0.5 text-start text-base';
+  if (!clickable) return <div className={className}>{children}</div>;
+  return (
+    <button type="button" onClick={onClick} className={cn(className, 'hover:bg-subtle')}>
+      {children}
+    </button>
   );
 }
 

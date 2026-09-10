@@ -11,6 +11,7 @@
  * produces, so what a person approves on screen is exactly what runs.
  */
 import type { SourceRow, Column } from './parse.js';
+import { categoryFromText, statusFromText, type CategoryValue } from '../vocabulary.js';
 
 export type Severity = 'error' | 'warning';
 
@@ -53,7 +54,8 @@ export type Action = 'create' | 'update' | 'unchanged' | 'skip';
 
 export interface EventValues {
   title: string;
-  category: 'holiday' | 'campaign' | 'b2b' | 'social' | 'operational' | 'other';
+  category: CategoryValue;
+  status?: 'todo' | 'in_progress' | 'ready_kickoff' | 'done';
   actualDate: string;
   actualPrecision: 'day' | 'month';
   prepMonths: number;
@@ -115,6 +117,7 @@ export interface ImportPlan {
 export const FIELD_LABELS: Record<string, string> = {
   title: 'שם האירוע',
   category: 'סוג האירוע',
+  status: 'מצב',
   actualDate: 'תאריך האירוע',
   actualPrecision: 'דיוק התאריך',
   prepMonths: 'חודשי הכנה',
@@ -221,6 +224,7 @@ interface Candidate {
   note?: string;
   description?: string;
   category?: string;
+  status?: string;
 }
 
 /**
@@ -266,7 +270,8 @@ function toCandidate(row: SourceRow): Candidate {
     hebrew: (v.hebrewAnchor ?? '').trim() === '1',
     note: v.note,
     description: v.description,
-    category: v.category
+    category: v.category,
+    status: v.status
   };
 }
 
@@ -657,19 +662,42 @@ export function buildPlan(rows: SourceRow[], options: PlanOptions = {}): ImportP
       prepMonths = 0;
     }
 
-    const categoryRow = list.find((c) => c.hebrew) ?? list.find((c) => c.category);
+    /*
+     * What kind of work this is.
+     *
+     * A column that names it wins — that is a file this system wrote, or one
+     * somebody filled in by hand, and reading the word back is the whole reason
+     * an export can be re-imported without losing what it said. Failing that,
+     * the Hebrew-calendar flag in the customer's own file means a holiday.
+     * Failing both, the schema default stands and nothing is asserted.
+     */
+    const namedCategory = list.map((c) => categoryFromText(c.category)).find(Boolean) ?? null;
+    const namedStatus = list.map((c) => statusFromText(c.status)).find(Boolean) ?? null;
+    const categoryRow = namedCategory ? list.find((c) => c.category) : list.find((c) => c.hebrew);
+
+    for (const c of list) {
+      if (c.category && !categoryFromText(c.category)) {
+        issues.push({
+          severity: 'warning',
+          where: c.where,
+          field: 'category',
+          message: `סוג האירוע "${c.category}" לא מוכר — נשמר כברירת המחדל`
+        });
+      }
+    }
+
     const stated = ['title', 'actualDate', 'actualPrecision'];
     if (prepRow) stated.push('prepMonths');
     if (categoryRow) stated.push('category');
+    if (namedStatus) stated.push('status');
     for (const f of DATE_FIELDS) if (resolved[f]?.iso) stated.push(f);
     if (list.some((c) => c.note)) stated.push('note');
     if (list.some((c) => c.description)) stated.push('description');
 
     const values: EventValues = {
       title,
-      // The only classification the file states is the Hebrew-calendar flag.
-      // Everything else keeps the system default and can be changed after.
-      category: list.some((c) => c.hebrew) ? 'holiday' : 'campaign',
+      category: namedCategory ?? (list.some((c) => c.hebrew) ? 'holiday' : 'campaign'),
+      ...(namedStatus ? { status: namedStatus } : {}),
       actualDate: actual.iso,
       actualPrecision: actual.monthOnly ? 'month' : 'day',
       prepMonths,

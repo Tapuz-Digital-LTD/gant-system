@@ -31,6 +31,7 @@ import type { Row, Workbook, Worksheet } from 'exceljs';
 import type { EventCategory, TaskStatus, TaskPriority, DatePrecision } from '../../src/types.js';
 import { csvCell } from '../../src/utils/csv.js';
 import { israelNow } from '../notifications/prefs.js';
+import { CATEGORY_LABELS, STATUS_LABELS } from '../vocabulary.js';
 
 export type ExportScope = 'board' | 'boards' | 'events' | 'tasks' | 'all';
 
@@ -112,21 +113,7 @@ export const SHEET = {
  * client list imports lucide-react, which has no business inside a serverless
  * function, and the client cannot import server code either.
  */
-const CATEGORY_LABELS: Record<EventCategory, string> = {
-  holiday: 'חג ומועד',
-  campaign: 'קמפיין',
-  b2b: 'ועדים וארגונים',
-  social: 'סושיאל',
-  operational: 'תפעול',
-  other: 'אחר'
-};
 
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  todo: 'עוד לא התחיל',
-  in_progress: 'בתהליך',
-  ready_kickoff: 'מוכן לעלייה לאוויר',
-  done: 'הושלם'
-};
 
 const PRIORITY_LABELS: Record<TaskPriority, string> = {
   low: 'נמוכה',

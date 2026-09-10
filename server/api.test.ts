@@ -609,6 +609,45 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
     assert.equal(r.status, 409, 'numbers that no longer match are not an import anybody approved');
     assert.equal(r.json.error.code, 'IMPORT_CHANGED');
 
+    /*
+     * --- out and straight back in ---
+     *
+     * The promise made to the customer: a file this system produces can be
+     * re-imported without losing anything. The only way to know that is to do
+     * it — and the first time it was tried, eighteen holidays came back as
+     * campaigns because the sheet said "חג ומועד" and nothing on the way in
+     * knew what that meant.
+     */
+    {
+      const exported = await fetch(`${base}/export/xlsx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'board', boardIds: [importedBoard], includeTasks: true })
+      });
+      assert.equal(exported.status, 200);
+      assert.match(
+        exported.headers.get('content-type') ?? '',
+        /spreadsheetml/,
+        'a real workbook, not JSON'
+      );
+
+      const workbook = Buffer.from(await exported.arrayBuffer());
+      assert.equal(workbook.subarray(0, 2).toString(), 'PK', 'and a real zip, which is what xlsx is');
+
+      r = await call('POST', '/import/preview', {
+        fileName: 'round-trip.xlsx',
+        fileBase64: workbook.toString('base64'),
+        boardId: importedBoard
+      });
+      assert.equal(r.json.data.plan.summary.events, 51, 'every event is found again');
+      assert.equal(r.json.data.plan.summary.create, 0, 'and none of them is a new one');
+      assert.equal(
+        r.json.data.plan.summary.unchanged,
+        51,
+        'and not one of them differs — the file said exactly what the board holds'
+      );
+    }
+
     // --- a date somebody typed into the product survives the next import ---
     const target = events[0];
     await call('PATCH', `/events/${target.id}`, { note: 'לתאם עם הספק', version: target.version });

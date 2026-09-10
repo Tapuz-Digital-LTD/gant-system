@@ -1,4 +1,14 @@
 import { z } from 'zod';
+import {
+  CATEGORY_LABELS,
+  CATEGORY_VALUES,
+  PRIORITY_LABELS,
+  PRIORITY_VALUES,
+  STATUS_LABELS,
+  STATUS_VALUES
+} from '../vocabulary.js';
+
+export { CATEGORY_LABELS, CATEGORY_VALUES, PRIORITY_LABELS, PRIORITY_VALUES, STATUS_LABELS, STATUS_VALUES };
 
 /**
  * The report vocabulary, closed on purpose.
@@ -21,32 +31,9 @@ import { z } from 'zod';
    authority on what a person is shown when one comes back.
    ------------------------------------------------------------------ */
 
-export const CATEGORY_VALUES = ['holiday', 'campaign', 'b2b', 'social', 'operational', 'other'] as const;
-export const STATUS_VALUES = ['todo', 'in_progress', 'ready_kickoff', 'done'] as const;
-export const PRIORITY_VALUES = ['low', 'medium', 'high', 'urgent'] as const;
 
-export const CATEGORY_LABELS: Record<(typeof CATEGORY_VALUES)[number], string> = {
-  holiday: 'חג ומועד',
-  campaign: 'קמפיין',
-  b2b: 'ועדים וארגונים',
-  social: 'סושיאל',
-  operational: 'תפעול',
-  other: 'אחר'
-};
 
-export const STATUS_LABELS: Record<(typeof STATUS_VALUES)[number], string> = {
-  todo: 'עוד לא התחיל',
-  in_progress: 'בתהליך',
-  ready_kickoff: 'מוכן לעלייה לאוויר',
-  done: 'הושלם'
-};
 
-export const PRIORITY_LABELS: Record<(typeof PRIORITY_VALUES)[number], string> = {
-  low: 'נמוכה',
-  medium: 'בינונית',
-  high: 'גבוהה',
-  urgent: 'דחופה'
-};
 
 /** How a number is written on screen. The UI formats from this, not from guesswork. */
 export type ColumnType = 'text' | 'number' | 'percent' | 'days';
