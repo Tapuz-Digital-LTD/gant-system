@@ -6,6 +6,7 @@ import {
   useBoards,
   useUsers,
   useEvents,
+  usePrefetchNeighbouringPeriods,
   useEventMutations,
   useArchivedBoards,
   useBoardMutations,
@@ -14,7 +15,7 @@ import {
   describeError
 } from './hooks/useBoardData';
 import { useRoute, navigate } from './hooks/useRoute';
-import { Period, addDays, monthKey, periodRange, timelineRange, todayISO } from './utils/period';
+import { Period, addDays, monthKey, periodRange, shiftPeriod, timelineRange, todayISO } from './utils/period';
 import { ViewName, boardRoute, buildRoute, forgetPlace, rememberPlace } from './utils/routes';
 import { HomeScreen } from './components/HomeScreen';
 import { MyTasksView } from './components/MyTasksView';
@@ -125,6 +126,24 @@ export default function App() {
 
   const eventsQuery = useEvents(board?.id, range.from, range.to);
   const events = eventsQuery.data ?? [];
+
+  /*
+   * The months either side, fetched while the person reads this one.
+   *
+   * Paging a calendar is the most repeated action here and the next window is
+   * entirely predictable. Two quiet requests now cost nothing anybody can feel;
+   * the same two on the click cost a wait, every time.
+   *
+   * Only for the two views that page. The list and status views ask for
+   * everything at once, so there is no neighbour to guess.
+   */
+  const neighbours = useMemo(() => {
+    if (route.view !== 'calendar' && route.view !== 'timeline') return [];
+    const shape = route.view === 'calendar' ? periodRange : timelineRange;
+    return [shiftPeriod(route.period, -1), shiftPeriod(route.period, 1)].map(shape);
+  }, [route.view, route.period]);
+
+  usePrefetchNeighbouringPeriods(board?.id, neighbours, !eventsQuery.isLoading);
   const users: UserAccess[] = usersQuery.data ?? [];
 
   const m = useEventMutations(board?.id, range.from, range.to);

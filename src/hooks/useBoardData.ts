@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { api, ApiError, type EventInput, type TaskInput } from '../services/api';
 import { EventItem, MyTask, TaskItem, TaskStatus } from '../types';
@@ -38,6 +39,39 @@ export function useEvents(boardId: string | undefined, from: string, to: string)
     // Keep the previous window on screen while the next one loads — no flash.
     placeholderData: (prev) => prev
   });
+}
+
+/**
+ * Fetch the months either side, quietly, once this one has arrived.
+ *
+ * Paging through a calendar is the most repeated action in the product and the
+ * next window is entirely predictable, so waiting for the server to describe it
+ * is a wait nobody had to have. Two requests while the person is reading cost
+ * nothing they can feel; the same two on the click cost a third of a second
+ * each time.
+ *
+ * `prefetchQuery` is a no-op for anything already cached, so paging back and
+ * forth does not re-fetch.
+ */
+export function usePrefetchNeighbouringPeriods(
+  boardId: string | undefined,
+  ranges: { from: string; to: string }[],
+  ready: boolean
+) {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!boardId || !ready) return;
+    for (const { from, to } of ranges) {
+      void qc.prefetchQuery({
+        queryKey: keys.events(boardId, from, to),
+        queryFn: () => api.events.list(boardId, from, to),
+        staleTime: 30_000
+      });
+    }
+    // The ranges are derived from the period, so their string values are the
+    // dependency — the array identity changes on every render.
+  }, [boardId, ready, qc, ranges.map((r) => `${r.from}:${r.to}`).join('|')]);
 }
 
 /**
