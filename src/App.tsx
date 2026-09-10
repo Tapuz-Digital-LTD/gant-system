@@ -84,7 +84,7 @@ export default function App() {
   const me = meQuery.data ?? null;
 
   const boardsQuery = useBoards(Boolean(me));
-  const usersQuery = useUsers();
+  const usersQuery = useUsers(Boolean(me));
   // Loaded on the home screen too: its first card is the count of open work.
   const myTasksQuery = useMyTasks(Boolean(me) && (route.myTasks || !route.boardId));
   const myTaskMutations = useMyTaskMutations();

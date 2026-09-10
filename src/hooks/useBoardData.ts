@@ -20,8 +20,14 @@ export function useBoards(enabled = true) {
   return useQuery({ queryKey: keys.boards, queryFn: api.boards.list, staleTime: 30_000, enabled });
 }
 
-export function useUsers() {
-  return useQuery({ queryKey: keys.users, queryFn: api.users.list, staleTime: 5 * 60_000 });
+/**
+ * Who exists, for assignee pickers.
+ *
+ * Gated on a session: it used to fire on the sign-in screen, where it can only
+ * ever be refused, and the refusal was then retried.
+ */
+export function useUsers(enabled = true) {
+  return useQuery({ queryKey: keys.users, queryFn: api.users.list, enabled, staleTime: 5 * 60_000 });
 }
 
 export function useEvents(boardId: string | undefined, from: string, to: string) {
