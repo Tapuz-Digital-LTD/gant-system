@@ -36,7 +36,16 @@ import {
   cn
 } from './ui';
 import { EventDatesEditor, EventDatesSummary } from './EventDates';
-import { AIAssistantModal } from './AIAssistantModal';
+/*
+ * Loaded when somebody asks for suggestions.
+ *
+ * Importing it here eagerly pulled it back into the main bundle and quietly
+ * undid the split in App.tsx — a lazy import is only lazy if nothing else
+ * reaches for the module directly.
+ */
+const AIAssistantModal = React.lazy(() =>
+  import('./AIAssistantModal').then((m) => ({ default: m.AIAssistantModal }))
+);
 
 interface EventDetailModalProps {
   event: EventItem;
@@ -458,12 +467,14 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
       </Modal>
 
       {aiOpen && (
-        <AIAssistantModal
-          isOpen={aiOpen}
-          onClose={() => setAiOpen(false)}
-          event={event}
-          onAddGeneratedTasks={(generated) => generated.forEach(onCreateTask)}
-        />
+        <React.Suspense fallback={null}>
+          <AIAssistantModal
+            isOpen={aiOpen}
+            onClose={() => setAiOpen(false)}
+            event={event}
+            onAddGeneratedTasks={(generated) => generated.forEach(onCreateTask)}
+          />
+        </React.Suspense>
       )}
     </>
   );

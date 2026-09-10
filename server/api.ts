@@ -119,15 +119,23 @@ export function createApiRouter(
   api.get('/health', asyncRoute(async (req, res) => {
     const startedAt = Date.now();
     let dbMs: number | null = null;
-    let dbError: string | null = null;
+    /** Whether the ping failed. Why it failed is in the log. */
+    let dbError = false;
     try {
       const t0 = Date.now();
       await req.repo?.ping();
       dbMs = req.repo ? Date.now() - t0 : null;
     } catch (err) {
-      // Named, not swallowed: a diagnostic that hides its own failure is how
-      // this reported "null" for a round trip and told nobody why.
-      dbError = err instanceof Error ? err.message : String(err);
+      /*
+       * The detail goes to the log, never to the caller.
+       *
+       * /health is public and unauthenticated. A database error message can
+       * carry a host, a role name or a query, and this file's whole contract is
+       * that a code goes out and the detail goes to the log. Naming the failure
+       * was right; publishing it was not.
+       */
+      console.error(JSON.stringify({ level: 'error', msg: 'health_db_ping_failed', error: String(err) }));
+      dbError = true;
     }
 
     res.json({

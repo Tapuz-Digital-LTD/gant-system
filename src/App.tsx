@@ -18,22 +18,12 @@ import { Period, addDays, monthKey, periodRange, timelineRange, todayISO } from 
 import { ViewName, boardRoute, buildRoute, forgetPlace, rememberPlace } from './utils/routes';
 import { HomeScreen } from './components/HomeScreen';
 import { MyTasksView } from './components/MyTasksView';
-import { SettingsScreen } from './components/SettingsScreen';
 import { BoardHub } from './components/BoardHub';
 import { BoardHeader, SecondaryViewNote } from './components/BoardHeader';
 import { PeriodBar } from './components/PeriodBar';
 import { CalendarView } from './components/CalendarView';
-import { GanttTimelineView } from './components/GanttTimelineView';
-import { KanbanBoardView } from './components/KanbanBoardView';
-import { ListView } from './components/ListView';
-import { AnalyticsView } from './components/AnalyticsView';
 import { EventDetailModal } from './components/EventDetailModal';
 import { AddEventModal } from './components/AddEventModal';
-import { UserPermissionsModal } from './components/UserPermissionsModal';
-import { BoardManagementModal } from './components/BoardManagementModal';
-import { ExportModal } from './components/ExportModal';
-import { AIAssistantModal } from './components/AIAssistantModal';
-import { ArchiveModal } from './components/ArchiveModal';
 import { SignIn } from './components/SignIn';
 import { fetchAuthConfig, fetchMe, authClient } from './services/auth';
 import { ApiError } from './services/api';
@@ -41,6 +31,28 @@ import { focusFirstBadField } from './utils/fieldErrors';
 import { Button, ConfirmDialog, useToast } from './components/ui';
 import { makeCan } from './hooks/useCan';
 import { NoPermission } from './components/NoPermission';
+
+/*
+ * Everything that is not the first thing you see.
+ *
+ * The whole application shipped as one 605kB file, so somebody opening the
+ * calendar on a phone downloaded the permissions matrix, the export dialog and
+ * the AI assistant before anything appeared. These arrive when they are opened.
+ *
+ * The calendar itself is deliberately NOT here: it is the view people land on,
+ * and splitting it would only move its cost to a second round trip.
+ */
+const GanttTimelineView = React.lazy(() => import('./components/GanttTimelineView').then((m) => ({ default: m.GanttTimelineView })));
+const KanbanBoardView = React.lazy(() => import('./components/KanbanBoardView').then((m) => ({ default: m.KanbanBoardView })));
+const ListView = React.lazy(() => import('./components/ListView').then((m) => ({ default: m.ListView })));
+const AnalyticsView = React.lazy(() => import('./components/AnalyticsView').then((m) => ({ default: m.AnalyticsView })));
+const UserPermissionsModal = React.lazy(() => import('./components/UserPermissionsModal').then((m) => ({ default: m.UserPermissionsModal })));
+const BoardManagementModal = React.lazy(() => import('./components/BoardManagementModal').then((m) => ({ default: m.BoardManagementModal })));
+const ExportModal = React.lazy(() => import('./components/ExportModal').then((m) => ({ default: m.ExportModal })));
+const AIAssistantModal = React.lazy(() => import('./components/AIAssistantModal').then((m) => ({ default: m.AIAssistantModal })));
+const ArchiveModal = React.lazy(() => import('./components/ArchiveModal').then((m) => ({ default: m.ArchiveModal })));
+const SettingsScreen = React.lazy(() => import('./components/SettingsScreen').then((m) => ({ default: m.SettingsScreen })));
+
 import { api } from './services/api';
 
 /**
@@ -293,8 +305,17 @@ export default function App() {
     }
   };
 
+  /*
+   * Modals arrive when they are opened.
+   *
+   * The boundary is here rather than at the root on purpose: a fallback higher
+   * up would blank the whole screen behind the dialog while its code loads.
+   * `null` is the right fallback for a modal — the busy bar at the top is
+   * already saying the system is working, and a flash of empty dialog frame
+   * says less than nothing.
+   */
   const dialogs = (
-    <>
+    <React.Suspense fallback={null}>
       {/*
         The one board action that is not reversible, and the only one that asks
         first. It names what goes with it, because "delete project" does not
@@ -406,7 +427,7 @@ export default function App() {
           }
         />
       )}
-    </>
+    </React.Suspense>
   );
 
   // ----------------------------------------------------------- settings
@@ -589,28 +610,32 @@ export default function App() {
             )}
 
             {route.view === 'timeline' && (
-              <GanttTimelineView
+              <React.Suspense fallback={<ViewLoading />}>
+                <GanttTimelineView
                 period={route.period}
                 events={events}
                 filterState={filterState}
                 onOpenEventDetail={(e) => openEvent(e.id)}
                 onAdd={() => openAddEvent()}
-                can={can}
-              />
+                  can={can}
+                />
+              </React.Suspense>
             )}
 
             {route.view === 'status' && (
-              <KanbanBoardView
+              <React.Suspense fallback={<ViewLoading />}>
+                <KanbanBoardView
                 events={events}
                 filterState={filterState}
                 hasFilters={!emptyFilters}
                 onOpenEventDetail={(e) => openEvent(e.id)}
                 onOpenAddEvent={() => openAddEvent()}
-                onMoveEvent={(ev, status) =>
-                  run(m.update.mutateAsync({ id: ev.id, version: ev.version, changes: { status } }))
-                }
-                can={can}
-              />
+                  onMoveEvent={(ev, status) =>
+                    run(m.update.mutateAsync({ id: ev.id, version: ev.version, changes: { status } }))
+                  }
+                  can={can}
+                />
+              </React.Suspense>
             )}
 
             {route.view === 'list' && (
@@ -648,6 +673,22 @@ export default function App() {
       </main>
 
       {dialogs}
+    </div>
+  );
+}
+
+/**
+ * While a view's code arrives.
+ *
+ * Sized to the area it replaces rather than the whole page, so switching to the
+ * timeline does not throw away the header and the period bar that are already
+ * on screen and still correct.
+ */
+function ViewLoading() {
+  return (
+    <div className="grid place-items-center py-24 text-ink-tertiary" role="status">
+      <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
+      <span className="sr-only">טוען…</span>
     </div>
   );
 }
