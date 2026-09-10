@@ -236,6 +236,7 @@ function Editor({
   const [name, setName] = useState(existing?.name ?? '');
   const [naming, setNaming] = useState(false);
   const [drill, setDrill] = useState<{ groupKey: string | null; label: string } | null>(null);
+  const drillPanel = React.useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
 
   // Opening a different saved report replaces what is being edited.
@@ -264,6 +265,14 @@ function Editor({
   });
 
   const summary = useMemo(() => describeDefinition(model, definition), [model, definition]);
+
+  /*
+   * A chart can be taller than the screen, and the records open underneath it.
+   * Without this, clicking a bar looks like it did nothing at all.
+   */
+  useEffect(() => {
+    if (drill) drillPanel.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [drill?.groupKey]);
 
   const save = async () => {
     const trimmed = name.trim();
@@ -376,7 +385,7 @@ function Editor({
         </div>
 
         {drill && (
-          <div className="rounded-xl border border-line bg-surface shadow-card">
+          <div ref={drillPanel} className="rounded-xl border border-line bg-surface shadow-card">
             <div className="flex items-center gap-2 border-b border-line px-4 py-3">
               <h2 className="min-w-0 flex-1 truncate text-md font-bold text-ink">
                 {formatGroup(drill.label)}

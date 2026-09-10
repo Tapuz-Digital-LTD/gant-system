@@ -1,4 +1,5 @@
 import React, { useId, useMemo, useState } from 'react';
+import { MousePointerClick } from 'lucide-react';
 import { ChartKind, ReportColumnType, ReportResult } from '../../types';
 import { CATEGORY_META, STATUS_META } from '../../utils/eventMeta';
 import { monthName } from '../../utils/period';
@@ -104,6 +105,21 @@ export interface ChartProps {
   compact?: boolean;
 }
 
+/**
+ * What clicking does, said out loud.
+ *
+ * The records behind a number were reachable from the first version of this and
+ * nobody would ever have found them: a bar looked exactly like a bar. A cursor
+ * that changes on hover is not discoverable — it requires already hovering the
+ * right thing — so the chart says it in a sentence, once, underneath.
+ */
+const DRILL_HINT: Partial<Record<ChartKind, string>> = {
+  bar: 'לחיצה על עמודה פותחת את הרשומות שמאחוריה',
+  pie: 'לחיצה על חלק בעוגה פותחת את הרשומות שמאחוריו',
+  table: 'לחיצה על שם בשורה פותחת את הרשומות שמאחוריו',
+  number: 'לחיצה על שורה פותחת את הרשומות שמאחוריה'
+};
+
 export function ReportChart({ result, kind, onDrill, compact }: ChartProps) {
   const measures = result.columns.filter((c) => c.key !== 'group');
 
@@ -115,11 +131,31 @@ export function ReportChart({ result, kind, onDrill, compact }: ChartProps) {
     );
   }
 
-  if (kind === 'number') return <BigNumbers result={result} onDrill={onDrill} />;
-  if (kind === 'table') return <Table result={result} onDrill={onDrill} />;
-  if (kind === 'pie') return <Donut result={result} onDrill={onDrill} compact={compact} />;
-  if (kind === 'line') return <Line result={result} compact={compact} />;
-  return <Bars result={result} onDrill={onDrill} compact={compact} stacked={measures.length > 1} />;
+  const body =
+    kind === 'number' ? (
+      <BigNumbers result={result} onDrill={onDrill} />
+    ) : kind === 'table' ? (
+      <Table result={result} onDrill={onDrill} />
+    ) : kind === 'pie' ? (
+      <Donut result={result} onDrill={onDrill} compact={compact} />
+    ) : kind === 'line' ? (
+      <Line result={result} compact={compact} />
+    ) : (
+      <Bars result={result} onDrill={onDrill} compact={compact} stacked={measures.length > 1} />
+    );
+
+  const hint = onDrill && !compact ? DRILL_HINT[kind] : undefined;
+  if (!hint) return body;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {body}
+      <p className="flex items-center gap-1.5 border-t border-line pt-2 text-sm text-ink-tertiary">
+        <MousePointerClick className="h-4 w-4 shrink-0" aria-hidden="true" />
+        {hint}
+      </p>
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------- big number */
@@ -203,7 +239,7 @@ function Table({
                   {c.type === 'text' && onDrill ? (
                     <button
                       onClick={() => onDrill(row.groupKey as string | null, String(row.group))}
-                      className="rounded text-start hover:underline"
+                      className="rounded text-start text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-primary"
                     >
                       {formatGroup(String(row[c.key] ?? ''))}
                     </button>
@@ -340,7 +376,15 @@ function Bar({
     );
   }
   return (
-    <button type="button" onClick={onClick} aria-label={label} className={cn(className, 'cursor-pointer')}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className={cn(
+        className,
+        'cursor-pointer ring-primary ring-offset-2 hover:ring-2 focus-visible:ring-2'
+      )}
+    >
       {children}
     </button>
   );
@@ -563,7 +607,11 @@ function Slice({
   const className = 'flex w-full items-center gap-2 rounded px-1 py-0.5 text-start text-base';
   if (!clickable) return <div className={className}>{children}</div>;
   return (
-    <button type="button" onClick={onClick} className={cn(className, 'hover:bg-subtle')}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(className, 'cursor-pointer hover:bg-subtle hover:underline')}
+    >
       {children}
     </button>
   );
