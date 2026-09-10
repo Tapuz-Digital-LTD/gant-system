@@ -418,7 +418,16 @@ export function createApiRouter(
          * settings page that describes a state nobody has checked since it was
          * written is worse than no warning at all.
          */
-        delivery: deliveryMode('notification')
+        delivery: deliveryMode('notification'),
+        /*
+         * The two now differ, so the screen has to be told both.
+         *
+         * Assignment mail goes out the moment somebody is handed work; the
+         * digest is a broadcast on a timer and is switched on separately. One
+         * number here would describe whichever of them happened to be asked
+         * about, and be wrong about the other.
+         */
+        assignmentDelivery: deliveryMode('assignment')
       }
     });
   }));

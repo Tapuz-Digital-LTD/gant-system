@@ -300,7 +300,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
                 written is worse than no notice at all — it teaches people that
                 the screen does not know.
               */}
-              <DeliveryNotice delivery={preview.data?.delivery} />
+              <DeliveryNotice delivery={preview.data?.delivery} assignment={preview.data?.assignmentDelivery} />
             </Card>
 
             {mayManage && (
@@ -377,18 +377,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
  * Silent when everything is on: a green banner saying "working" is a thing to
  * read every time you open the screen, and it says nothing you needed.
  */
-const DeliveryNotice: React.FC<{ delivery: DigestPreview['delivery'] | undefined }> = ({ delivery }) => {
-  if (!delivery || delivery === 'send') return null;
+const DeliveryNotice: React.FC<{
+  delivery: DigestPreview['delivery'] | undefined;
+  assignment: DigestPreview['assignmentDelivery'] | undefined;
+}> = ({ delivery, assignment }) => {
+  if (!delivery) return null;
 
-  const connected = delivery === 'log';
+  // Both on: nothing to say, and nothing to read every morning.
+  if (delivery === 'send' && assignment === 'send') return null;
+
+  /*
+   * The common state today, and the one a fixed sentence gets wrong.
+   *
+   * Being handed a task does send a mail; the daily summary does not yet. A
+   * single "sending is off" would be a lie to somebody who just received one,
+   * and "sending is on" a lie to somebody waiting for the eight o'clock mail.
+   */
+  const text =
+    assignment === 'send'
+      ? 'שיוך למשימה שולח מייל מיד. הסיכום היומי עדיין לא מופעל — הוא מופיע בינתיים בפעמון שלמעלה.'
+      : delivery === 'unconfigured'
+        ? 'שליחת מייל ו-SMS עדיין לא מחוברת. ההתראות מופיעות בינתיים בפעמון שלמעלה, וההגדרות כאן נשמרות.'
+        : 'החיבור לספק מוכן, אבל שליחת מייל ו-SMS עדיין לא הופעלה. ההתראות מופיעות בינתיים בפעמון שלמעלה, וההגדרות כאן נשמרות.';
+
   return (
     <p className="flex items-start gap-2 rounded-lg bg-progress-soft px-3 py-2.5 text-base text-ink">
       <AlertTriangle className="mt-0.5 h-4.5 w-4.5 shrink-0 text-progress" aria-hidden="true" />
-      <span>
-        {connected
-          ? 'החיבור לספק מוכן, אבל שליחת מייל ו-SMS עדיין לא הופעלה. ההתראות מופיעות בינתיים בפעמון שלמעלה, וההגדרות כאן נשמרות.'
-          : 'שליחת מייל ו-SMS עדיין לא מחוברת. ההתראות מופיעות בינתיים בפעמון שלמעלה, וההגדרות כאן נשמרות.'}
-      </span>
+      <span>{text}</span>
     </p>
   );
 };

@@ -183,11 +183,13 @@ export interface DigestPreview {
   team: DigestSection[];
   text: string;
   /**
-   * What would happen to an email right now.
+   * What would happen to the daily digest right now.
    * 'send' — it goes out · 'log' — connected, but sending is off ·
    * 'unconfigured' — no provider.
    */
   delivery: 'send' | 'log' | 'unconfigured';
+  /** The same, for the mail sent when somebody is handed a task. */
+  assignmentDelivery: 'send' | 'log' | 'unconfigured';
 }
 
 export interface ChecklistItem {
