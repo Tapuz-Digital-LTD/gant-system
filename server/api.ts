@@ -74,14 +74,24 @@ export function createApiRouter(
      * spent — and because the exemption skipped this middleware entirely,
      * `req.repo` was never attached and the route threw on every call.
      */
-    if (req.path === '/health') return next();
-    if (!getRepo && !isDatabaseReady()) {
+    /*
+     * Attach what we can, and only refuse where it matters.
+     *
+     * `/health` used to skip this middleware entirely, which meant it had no
+     * repository — so the database timing it was added to report could never
+     * work, and said "null" instead of saying why. Skipping a middleware is a
+     * blunt way to express "this route tolerates a missing database"; the route
+     * itself can say that, and still use the repository when there is one.
+     */
+    const ready = Boolean(getRepo) || isDatabaseReady();
+    if (ready) req.repo = getRepo ? getRepo() : createRepo(getDb());
+    req.actor = null;
+
+    if (!ready && req.path !== '/health') {
       return res.status(503).json({
         error: { code: 'DATABASE_NOT_CONFIGURED', message: 'משהו לא עובד כרגע. נסה שוב בעוד רגע' }
       });
     }
-    req.repo = getRepo ? getRepo() : createRepo(getDb());
-    req.actor = null;
     next();
   });
 
@@ -109,12 +119,15 @@ export function createApiRouter(
   api.get('/health', asyncRoute(async (req, res) => {
     const startedAt = Date.now();
     let dbMs: number | null = null;
+    let dbError: string | null = null;
     try {
       const t0 = Date.now();
-      await req.repo.ping();
-      dbMs = Date.now() - t0;
-    } catch {
-      dbMs = null;
+      await req.repo?.ping();
+      dbMs = req.repo ? Date.now() - t0 : null;
+    } catch (err) {
+      // Named, not swallowed: a diagnostic that hides its own failure is how
+      // this reported "null" for a round trip and told nobody why.
+      dbError = err instanceof Error ? err.message : String(err);
     }
 
     res.json({
@@ -122,6 +135,7 @@ export function createApiRouter(
       database: isDatabaseReady(),
       region: process.env.VERCEL_REGION ?? 'local',
       dbRoundTripMs: dbMs,
+      dbError,
       coldStart: firstRequest,
       handlerMs: Date.now() - startedAt,
       timestamp: new Date().toISOString()

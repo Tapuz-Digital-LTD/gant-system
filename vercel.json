@@ -1,6 +1,9 @@
 {
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "regions": [
+    "fra1"
+  ],
   "functions": {
     "api/index.ts": {
       "includeFiles": "data/**"
