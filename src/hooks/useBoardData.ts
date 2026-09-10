@@ -7,6 +7,11 @@ import { EventItem, MyTask, TaskItem, TaskStatus } from '../types';
 export const keys = {
   boards: ['boards'] as const,
   archivedBoards: ['boards', 'archived'] as const,
+  task: (id: string) => ['task', id] as const,
+  checklist: (id: string) => ['task', id, 'checklist'] as const,
+  attachments: (id: string) => ['task', id, 'attachments'] as const,
+  taskComments: (id: string) => ['task', id, 'comments'] as const,
+  boardTasks: (id: string) => ['boards', id, 'tasks'] as const,
   myTasks: ['my-tasks'] as const,
   notifications: ['notifications'] as const,
   notificationPrefs: ['notification-prefs'] as const,
@@ -153,6 +158,90 @@ export function useSavePhone() {
     mutationFn: api.notifications.savePhone,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] })
   });
+}
+
+/* ------------------------------------------------------------ one task ---- */
+
+/**
+ * Everything a task is, fetched when it is opened and not before.
+ *
+ * Four separate queries rather than one fat endpoint: the panel shows them in
+ * four places, they invalidate independently, and ticking a checklist item
+ * should not refetch a conversation.
+ */
+export function useTaskDetail(taskId: string | undefined) {
+  return useQuery({
+    queryKey: keys.task(taskId ?? ''),
+    queryFn: () => api.task.detail(taskId!),
+    enabled: Boolean(taskId)
+  });
+}
+
+export function useChecklist(taskId: string | undefined) {
+  return useQuery({
+    queryKey: keys.checklist(taskId ?? ''),
+    queryFn: () => api.task.checklist(taskId!),
+    enabled: Boolean(taskId)
+  });
+}
+
+export function useAttachments(taskId: string | undefined) {
+  return useQuery({
+    queryKey: keys.attachments(taskId ?? ''),
+    queryFn: () => api.task.attachments(taskId!),
+    enabled: Boolean(taskId)
+  });
+}
+
+export function useTaskComments(taskId: string | undefined) {
+  return useQuery({
+    queryKey: keys.taskComments(taskId ?? ''),
+    queryFn: () => api.task.comments(taskId!),
+    enabled: Boolean(taskId)
+  });
+}
+
+/** Every task in a project — what the team owes, rather than what one person does. */
+export function useBoardTasks(boardId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: keys.boardTasks(boardId ?? ''),
+    queryFn: () => api.task.forBoard(boardId!),
+    enabled: Boolean(boardId) && enabled
+  });
+}
+
+export function useTaskCardMutations(taskId: string | undefined) {
+  const qc = useQueryClient();
+  const refresh = (key: readonly unknown[]) => () => qc.invalidateQueries({ queryKey: key });
+  const id = taskId ?? '';
+
+  return {
+    addStep: useMutation({
+      mutationFn: (text: string) => api.task.addStep(id, text),
+      onSuccess: refresh(keys.checklist(id))
+    }),
+    setStep: useMutation({
+      mutationFn: (v: { id: string; done?: boolean; text?: string }) =>
+        api.task.setStep(id, v.id, { done: v.done, text: v.text }),
+      onSuccess: refresh(keys.checklist(id))
+    }),
+    removeStep: useMutation({
+      mutationFn: (stepId: string) => api.task.removeStep(id, stepId),
+      onSuccess: refresh(keys.checklist(id))
+    }),
+    addLink: useMutation({
+      mutationFn: (v: { url: string; title?: string }) => api.task.addLink(id, v),
+      onSuccess: refresh(keys.attachments(id))
+    }),
+    removeLink: useMutation({
+      mutationFn: (linkId: string) => api.task.removeLink(id, linkId),
+      onSuccess: refresh(keys.attachments(id))
+    }),
+    addComment: useMutation({
+      mutationFn: (text: string) => api.task.addComment(id, text),
+      onSuccess: refresh(keys.taskComments(id))
+    })
+  };
 }
 
 export function useComments(eventId: string | undefined) {

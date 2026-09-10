@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowRight, Check, Loader2, LogIn, Mail, Smartphone } from 'lucide-react';
 import { authClient, fetchSignInCode, type AuthConfig } from '../services/auth';
 import { useFormValidation, isEmail, required } from '../hooks/useFormValidation';
-import { Button, Field, Input, XtraMark, cn } from './ui';
+import { Button, Field, Input, OtpInput, XtraMark, cn } from './ui';
 
 /**
  * The only screen a signed-out visitor can reach.
@@ -104,19 +104,37 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
 
   const verifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!codeForm.check('si')) return;
+    await submitCode(otp);
+  };
+
+  /**
+   * The sign-in itself, triggered by the sixth digit rather than a button.
+   *
+   * Takes the code as an argument: the last keystroke and the state update
+   * that records it happen in the same tick, so reading `otp` here would be
+   * reading the code without its final digit.
+   */
+  const submitCode = React.useCallback(async (code: string) => {
+    if (code.trim().length !== 6) return;
     setBusy('verify');
     setError('');
 
     const { error } =
       channel === 'email'
-        ? await authClient.signIn.emailOtp({ email: cleanEmail(), otp: otp.trim() })
-        : await authClient.phoneNumber.verify({ phoneNumber: cleanPhone(), code: otp.trim() });
+        ? await authClient.signIn.emailOtp({ email: cleanEmail(), otp: code.trim() })
+        : await authClient.phoneNumber.verify({ phoneNumber: cleanPhone(), code: code.trim() });
 
     setBusy(null);
-    if (error) setError(signInError(error, 'הקוד לא נכון או שכבר פג תוקפו. בקש קוד חדש'));
-    else onSignedIn();
-  };
+    if (error) {
+      setError(signInError(error, 'הקוד לא נכון או שכבר פג תוקפו. בקשו קוד חדש'));
+      // Clear it, so the next attempt starts from an empty first box rather
+      // than from six digits that are already known to be wrong.
+      setOtp('');
+    } else {
+      onSignedIn();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel, email, phone, onSignedIn]);
 
   const destination = channel === 'email' ? cleanEmail() : cleanPhone();
 
@@ -126,18 +144,26 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
           Hidden on a phone, where it would push the form below the fold and
           make somebody scroll to sign in. It is context, not the task. */}
       <aside className="relative hidden overflow-hidden bg-ink lg:flex lg:flex-col lg:justify-between lg:p-12">
+        {/*
+          Deep blue, not the brand red.
+          
+          A full panel of the mark's own colour turns the logo into camouflage —
+          it has red in it — and shouts before anybody has read a word. Blue
+          gives the logo something to sit against and keeps the coral meaningful
+          where it matters: on the button you are meant to press.
+        */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 bg-gradient-to-br from-primary via-[#b4232e] to-ink"
+          className="absolute inset-0 bg-gradient-to-br from-[#2b3a9e] via-[#1e2a78] to-[#141c4d]"
         />
         <div
           aria-hidden="true"
-          className="absolute -bottom-32 -start-24 h-96 w-96 rounded-full bg-white/8 blur-2xl"
+          className="absolute -bottom-32 -start-24 h-96 w-96 rounded-full bg-white/10 blur-2xl"
         />
 
         <div className="relative flex items-center gap-3">
-          <span className="rounded-lg bg-white px-3 py-2">
-            <XtraMark wordmark className="h-8 w-auto" />
+          <span className="rounded-xl bg-white px-5 py-3.5 shadow-lg">
+            <XtraMark wordmark className="h-14 w-auto" />
           </span>
         </div>
 
@@ -167,7 +193,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
         <div className="flex w-full max-w-sm flex-col gap-5">
           {/* On a phone the brand panel is gone, so the logo comes here. */}
           <div className="flex justify-center lg:hidden">
-            <XtraMark wordmark className="h-14 w-auto" />
+            <XtraMark wordmark className="h-16 w-auto" />
           </div>
 
           <div className="flex flex-col gap-5 rounded-2xl border border-line bg-surface p-6 shadow-card sm:p-7">
@@ -264,30 +290,29 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
                   </b>
                 </p>
 
-                <Field label="" error={codeForm.error('otp')} htmlFor="si-otp">
-                  <Input
-                    id="si-otp"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    autoFocus
-                    maxLength={6}
-                    aria-label="קוד בן 6 ספרות"
-                    aria-invalid={Boolean(codeForm.error('otp'))}
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                    placeholder="000000"
-                    dir="ltr"
-                    className={cn(
-                      'h-16 border-2 text-center text-3xl font-extrabold tracking-[0.4em] tnum',
-                      codeForm.error('otp') ? 'border-late' : 'border-line-strong'
-                    )}
-                  />
-                </Field>
+                <OtpInput
+                  value={otp}
+                  onChange={setOtp}
+                  onComplete={submitCode}
+                  invalid={Boolean(error)}
+                  disabled={busy === 'verify'}
+                />
 
-                <Button type="submit" variant="primary" disabled={busy !== null} className="h-12 w-full text-md">
-                  {busy === 'verify' ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogIn className="h-5 w-5" />}
-                  כניסה
-                </Button>
+                {/*
+                  No button. The sixth digit is the intent — asking for a click
+                  as well asks a question that has already been answered. The
+                  spinner is what says the system heard it.
+                */}
+                <p className="flex h-6 items-center justify-center gap-2 text-base text-ink-tertiary">
+                  {busy === 'verify' ? (
+                    <>
+                      <Loader2 className="h-4.5 w-4.5 animate-spin" aria-hidden="true" />
+                      בודקים…
+                    </>
+                  ) : (
+                    'הכניסה תתבצע מאליה ברגע שתזינו את הספרה השישית'
+                  )}
+                </p>
 
                 {screenCode && (
                   <div className="rounded-xl border border-dashed border-primary-line bg-primary-soft px-3 py-2.5 text-center">

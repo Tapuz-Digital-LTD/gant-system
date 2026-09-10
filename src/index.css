@@ -17,6 +17,12 @@
      which is most of what made the product feel like an old admin console
      before a single accent was added.
 
+     The logo's red is NOT the action colour. It is a red, and a red on a button
+     is a red somebody reads as "something went wrong" — the same hue then has
+     to mean "press me" and "this is late" on one screen. The mark keeps its
+     colour; the product acts in blue, and red is left to mean what it already
+     means everywhere else.
+
      Colour carries hierarchy, not decoration. Surfaces stay quiet so the few
      saturated things on a screen mean something. --- */
 
@@ -34,29 +40,28 @@
   --color-ink-tertiary: #8b807b;
   --color-ink-disabled: #b5aba6;
 
-  /* --- action: the brand mark's own red --- */
-  --color-primary: #ee434c;
-  --color-primary-hover: #d32f38;
-  --color-primary-soft: #fdedee;
-  --color-primary-line: #f9c9cb;
+  /* --- action: blue, so red can go on meaning "wrong" --- */
+  --color-primary: #2f4bd0;
+  --color-primary-hover: #2439b0;
+  --color-primary-soft: #ecefff;
+  --color-primary-line: #c5cffb;
 
   /* --- status fills: saturated, white text sits on them ---
-         `late` is deliberately a darker, less saturated red than the brand:
-         side by side with a primary button it has to read as a warning rather
-         than as something to press. The triangle and the bold weight do the
-         rest — colour is never the only signal. --- */
+         `late` is a plain red and nothing else on a screen competes with it,
+         which is the point of keeping the action colour blue. The triangle and
+         the bold weight still come with it — colour is never the only signal. --- */
   --color-todo: #9c9490;
   --color-progress: #e8930c;
   --color-ready: #7c5cf0;
   --color-done: #12996b;
-  --color-late: #b4232e;
+  --color-late: #d92d3f;
 
   /* --- status tints: same meaning, quiet surface --- */
   --color-todo-soft: #f2efed;
   --color-progress-soft: #fdf2e0;
   --color-ready-soft: #f0ecfe;
   --color-done-soft: #e2f6ee;
-  --color-late-soft: #fbeaeb;
+  --color-late-soft: #fdeaec;
 
   /* --- categories: colourful but still distinguishable at 8px --- */
   --color-cat-holiday: #e8730c;

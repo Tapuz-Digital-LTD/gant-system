@@ -190,6 +190,72 @@ export interface DigestPreview {
   delivery: 'send' | 'log' | 'unconfigured';
 }
 
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+  position: number;
+}
+
+export interface TaskAttachment {
+  id: string;
+  kind: string;
+  title: string;
+  url: string;
+  createdAt: string;
+  addedByName: string | null;
+}
+
+export interface TaskComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  authorName: string | null;
+}
+
+/** One entry in a task's history, already turned into words by the server. */
+export interface TaskHistoryEntry {
+  id: string;
+  action: string;
+  at: string;
+  by: string | null;
+  changed: string[];
+}
+
+/** Everything a task is, for the panel that opens it. */
+export interface TaskDetail {
+  id: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  creatorName: string | null;
+  dueDate: string | null;
+  version: number;
+  event: { id: string; title: string; date: string };
+  board: { id: string; name: string };
+  history: TaskHistoryEntry[];
+}
+
+/** A task as the project-wide list returns it. */
+export interface BoardTask {
+  id: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate: string | null;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  version: number;
+  eventId: string;
+  eventTitle: string;
+  eventDate: string;
+  eventCategory: EventCategory;
+}
+
 export interface GanttBoard {
   /** Set when the project is finished and living on the archive shelf. */
   archivedAt?: string | null;

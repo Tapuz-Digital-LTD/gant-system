@@ -2,6 +2,11 @@ import {
   GanttBoard,
   EventItem,
   TaskItem,
+  TaskDetail,
+  BoardTask,
+  ChecklistItem,
+  TaskAttachment,
+  TaskComment,
   MyTask,
   AppNotification,
   NotificationPrefs,
@@ -168,6 +173,30 @@ export const api = {
     /** Your own mobile. Normalised on the server, or refused there. */
     savePhone: (phone: string | null) =>
       request<{ phone: string | null }>('/my/phone', { method: 'PUT', ...body({ phone }) })
+  },
+
+  /** One task, and everything hanging off it. */
+  task: {
+    detail: (id: string) => request<TaskDetail>(`/tasks/${id}`),
+    forBoard: (boardId: string) => request<BoardTask[]>(`/boards/${boardId}/tasks`),
+
+    checklist: (id: string) => request<ChecklistItem[]>(`/tasks/${id}/checklist`),
+    addStep: (id: string, text: string) =>
+      request<ChecklistItem>(`/tasks/${id}/checklist`, { method: 'POST', ...body({ text }) }),
+    setStep: (taskId: string, id: string, changes: { text?: string; done?: boolean }) =>
+      request<ChecklistItem>(`/tasks/${taskId}/checklist/${id}`, { method: 'PATCH', ...body(changes) }),
+    removeStep: (taskId: string, id: string) =>
+      request<void>(`/tasks/${taskId}/checklist/${id}`, { method: 'DELETE' }),
+
+    attachments: (id: string) => request<TaskAttachment[]>(`/tasks/${id}/attachments`),
+    addLink: (id: string, input: { url: string; title?: string }) =>
+      request<TaskAttachment>(`/tasks/${id}/attachments`, { method: 'POST', ...body(input) }),
+    removeLink: (taskId: string, id: string) =>
+      request<void>(`/tasks/${taskId}/attachments/${id}`, { method: 'DELETE' }),
+
+    comments: (id: string) => request<TaskComment[]>(`/tasks/${id}/comments`),
+    addComment: (id: string, text: string) =>
+      request<TaskComment>(`/tasks/${id}/comments`, { method: 'POST', ...body({ body: text }) })
   },
 
   users: {
