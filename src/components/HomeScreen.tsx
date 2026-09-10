@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   Archive,
   ArrowLeft,
-  BellRing,
   CalendarDays,
   ChevronDown,
   Copy,
@@ -14,6 +13,7 @@ import {
   Plus,
   RotateCcw,
   Trash2,
+  Settings,
   Users
 } from 'lucide-react';
 import { GanttBoard, UserAccess } from '../types';
@@ -136,17 +136,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
           <NotificationsBell onOpenLink={onOpen} />
 
+          {/*
+            One way in, not three.
+            
+            The bell, "התראות" and "אנשים וגישה" sat side by side, so three
+            things that mean different things read as one cluster — and two of
+            them were settings. The bell is the inbox; everything you configure
+            is behind one door.
+          */}
           <Button variant="ghost" size="sm" onClick={onOpenSettings}>
-            <BellRing className="h-4.5 w-4.5" />
-            <span className="hidden sm:inline">התראות</span>
+            <Settings className="h-4.5 w-4.5" />
+            <span className="hidden sm:inline">הגדרות</span>
           </Button>
 
-          {can('people.manage') && (
-            <Button variant="ghost" size="sm" onClick={onOpenPeople}>
-              <Users className="h-4.5 w-4.5" />
-              <span className="hidden sm:inline">אנשים וגישה</span>
-            </Button>
-          )}
           <Button variant="ghost" size="sm" onClick={onSignOut}>
             יציאה
           </Button>

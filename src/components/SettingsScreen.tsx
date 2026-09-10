@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -12,7 +12,8 @@ import {
   Smartphone,
   Users
 } from 'lucide-react';
-import { DigestPreview, NotificationPrefs, UserAccess } from '../types';
+import { DigestPreview, GanttBoard, NotificationPrefs, UserAccess } from '../types';
+import { UserPermissionsModal } from './UserPermissionsModal';
 import type { Can } from '../hooks/useCan';
 import {
   useDigestPreview,
@@ -26,6 +27,8 @@ interface SettingsScreenProps {
   currentUser: UserAccess;
   can: Can;
   onBackHome: () => void;
+  /** Managing people lives here too, so the header does not need its own entry. */
+  boards: GanttBoard[];
 }
 
 /**
@@ -68,7 +71,7 @@ const MILESTONE_BEFORE: Choice<number>[] = [
 
 const WEEKDAYS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
 
-export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can, onBackHome }) => {
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can, onBackHome, boards }) => {
   const prefsQuery = useNotificationPrefs();
   const preview = useDigestPreview();
   const save = useNotificationPrefMutations();
@@ -77,6 +80,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
   const set = (patch: Partial<NotificationPrefs>) => save.mutate({ ...prefs, ...patch });
 
   const mayManage = can('activity.view') || Boolean(currentUser.isOwner);
+  const mayManagePeople = can('people.manage');
+
+  /*
+   * One settings screen with sections, rather than settings scattered across
+   * the header.
+   *
+   * "התראות" and "אנשים וגישה" both sat next to the notification bell, so three
+   * things that mean different things looked like one cluster — and managing
+   * people is a task somebody navigates to, not an interruption that deserves
+   * a dialog over whatever they were doing.
+   */
+  const [section, setSection] = useState<'notifications' | 'people'>('notifications');
 
   return (
     <div className="min-h-dvh bg-canvas" dir="rtl">
@@ -92,9 +107,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
       <main className="mx-auto flex max-w-3xl flex-col gap-5 px-4 pb-16 pt-6 sm:px-6">
         <div className="flex items-start gap-3">
           <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight text-ink">התראות</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-ink">הגדרות</h1>
             <p className="mt-1 text-base text-ink-secondary">
-              מה שהמערכת תזכיר לך, ואיך. נשמר מיד, בלי כפתור שמירה.
+              {section === 'notifications'
+                ? 'מה שהמערכת תזכיר לך, ואיך. נשמר מיד, בלי כפתור שמירה.'
+                : 'מי נמצא במערכת, ומה כל אחד יכול לעשות.'}
             </p>
           </div>
 
@@ -120,7 +137,42 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ currentUser, can
           </span>
         </div>
 
-        {!prefs ? (
+        {mayManagePeople && (
+          <nav className="flex gap-1 border-b border-line" role="tablist" aria-label="אזורי הגדרות">
+            {(
+              [
+                { id: 'notifications' as const, label: 'התראות', icon: Bell },
+                { id: 'people' as const, label: 'אנשים וגישה', icon: Users }
+              ]
+            ).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={section === id}
+                onClick={() => setSection(id)}
+                className={cn(
+                  'flex items-center gap-2 border-b-2 px-3 py-2.5 text-base font-semibold transition-colors',
+                  section === id
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-ink-tertiary hover:text-ink'
+                )}
+              >
+                <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+                {label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {section === 'people' && mayManagePeople ? (
+          <UserPermissionsModal
+            inline
+            isOpen
+            onClose={() => undefined}
+            boards={boards}
+            currentUser={currentUser}
+          />
+        ) : !prefs ? (
           <div className="flex items-center justify-center gap-2 py-16 text-ink-tertiary">
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
             טוען…
@@ -362,7 +414,10 @@ const PhoneRow: React.FC<{ currentPhone: string | null }> = ({ currentPhone }) =
   };
 
   return (
-    <Row label="מספר לקבלת SMS" hint="בלי מספר אין לאן לשלוח. אפשר למחוק אותו בכל רגע.">
+    <Row
+      label="המספר שלך לקבלת SMS"
+      hint="לכאן יישלחו ההודעות אליך. בלי מספר אין לאן לשלוח, ואפשר למחוק אותו בכל רגע."
+    >
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
           <Smartphone

@@ -37,6 +37,14 @@ export interface Route {
   period: Period;
   /** The event whose details are open, if any. */
   eventId: string | null;
+  /**
+   * The task whose card is open.
+   *
+   * In the URL so a task can be linked to — the assignment email points here,
+   * and "the thing I was asked to do" opens directly instead of landing on the
+   * campaign it happens to belong to.
+   */
+  taskId: string | null;
   /** Whether the new-event steps are open. */
   creating: boolean;
 }
@@ -73,18 +81,30 @@ export function parseRoute(url: string): Route {
     view,
     period,
     eventId: params.get('e'),
+    taskId: params.get('t'),
     creating: params.get('new') === '1'
   };
 }
 
 export function buildRoute(route: Partial<Route>): string {
-  const { myTasks = false, settings = false, boardId = null, view = null, period, eventId = null, creating = false } = route;
+  const {
+    myTasks = false,
+    settings = false,
+    boardId = null,
+    view = null,
+    period,
+    eventId = null,
+    taskId = null,
+    creating = false
+  } = route;
 
   if (settings) return '/settings';
 
   if (myTasks) {
     const params = new URLSearchParams();
     if (eventId) params.set('e', eventId);
+  if (taskId) params.set('t', taskId);
+    if (taskId) params.set('t', taskId);
     const query = params.toString();
     return query ? `/my?${query}` : '/my';
   }
@@ -100,6 +120,7 @@ export function buildRoute(route: Partial<Route>): string {
     if (period.mode !== 'month') params.set('m', period.mode);
   }
   if (eventId) params.set('e', eventId);
+  if (taskId) params.set('t', taskId);
   if (creating) params.set('new', '1');
 
   const query = params.toString();

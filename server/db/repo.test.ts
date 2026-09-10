@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { createRepo, ConflictError, ConflictExistsError, NotFoundError } from './repo.ts';
+import { createRepo, assignmentEmail, ConflictError, ConflictExistsError, NotFoundError } from './repo.ts';
 import type { Database } from './client.ts';
 import * as schema from './schema.ts';
 
@@ -616,6 +616,32 @@ assert.ok(update?.before && update?.after, 'the trail keeps both sides of a chan
   ).rows;
   assert.equal(Number(usage.input_tokens), 1500, 'token counts accumulate across calls');
   assert.equal(Number(usage.output_tokens), 1000);
+}
+
+// ---------- the assignment email cannot be made to carry markup ----------
+{
+  // Task titles, campaign names and people's names are all free text typed by
+  // a colleague, and every one of them lands in an HTML email. Reading the
+  // whole template rather than the escaper alone: a `${...}` added later
+  // without escaping fails here too.
+  const attack = '<img src=x onerror="alert(1)">';
+  const html = assignmentEmail({
+    name: attack,
+    task: attack,
+    event: attack,
+    due: attack,
+    // A link that tries to close its own href and add an attribute.
+    link: 'https://xtra-gantt.vercel.app/b/1/calendar?d=2026-01-01&e=2&t=3" onmouseover="alert(1)'
+  });
+
+  assert.ok(!html.includes('<img'), 'a task title cannot open a tag');
+  assert.equal(
+    html.match(/&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/g)?.length,
+    4,
+    'all four free-text fields escaped, none forgotten'
+  );
+  assert.ok(!html.includes('" onmouseover='), 'a link cannot close its href and add an attribute');
+  assert.ok(html.includes('e=2&amp;t=3'), 'and the link we build ourselves still works');
 }
 
 await pg.close();

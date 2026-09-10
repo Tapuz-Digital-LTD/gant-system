@@ -36,8 +36,26 @@ interface TaskContext {
   dueDate: string | null;
 }
 
-/** The assignment email. Plain, and about one thing. */
-function assignmentEmail(o: { name: string; task: string; event: string; due: string | null; link: string }) {
+/**
+ * Anything a person typed, made safe to put in HTML.
+ *
+ * Task titles, campaign names and people's names all reach this template, and
+ * all three are free text. A task called `<img src=x onerror=…>` would
+ * otherwise arrive as markup in somebody's inbox — mail clients strip most of
+ * it, but "most" is not a security boundary, and a crafted title can still
+ * forge a link that looks like ours.
+ */
+function esc(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** The assignment email. Plain, and about one thing. Exported so a test can read it. */
+export function assignmentEmail(o: { name: string; task: string; event: string; due: string | null; link: string }) {
   return `<!doctype html>
 <html lang="he" dir="rtl"><body style="margin:0;background:#faf8f7;font-family:Arial,Helvetica,sans-serif">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:24px 16px">
@@ -45,14 +63,14 @@ function assignmentEmail(o: { name: string; task: string; event: string; due: st
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
              style="max-width:480px;background:#fff;border-radius:12px;padding:28px;text-align:right">
         <tr><td>
-          <p style="margin:0 0 4px;font-size:15px;color:#5c524e">שלום ${o.name},</p>
+          <p style="margin:0 0 4px;font-size:15px;color:#5c524e">שלום ${esc(o.name)},</p>
           <p style="margin:0 0 18px;font-size:15px;color:#5c524e">משימה חדשה נרשמה על שמך.</p>
 
-          <p style="margin:0 0 6px;font-size:20px;font-weight:700;color:#2a2422">${o.task}</p>
-          <p style="margin:0 0 4px;font-size:15px;color:#5c524e">${o.event}</p>
-          ${o.due ? `<p style="margin:0 0 20px;font-size:15px;color:#5c524e">עד ${o.due}</p>` : '<div style="height:20px"></div>'}
+          <p style="margin:0 0 6px;font-size:20px;font-weight:700;color:#2a2422">${esc(o.task)}</p>
+          <p style="margin:0 0 4px;font-size:15px;color:#5c524e">${esc(o.event)}</p>
+          ${o.due ? `<p style="margin:0 0 20px;font-size:15px;color:#5c524e">עד ${esc(o.due)}</p>` : '<div style="height:20px"></div>'}
 
-          <a href="${o.link}"
+          <a href="${esc(o.link)}"
              style="display:inline-block;background:#2f4bd0;color:#fff;text-decoration:none;
                     padding:11px 22px;border-radius:8px;font-size:15px;font-weight:700">
             פתיחת המשימה
@@ -1008,7 +1026,7 @@ export function createRepo(db: Database) {
        * the AI token counter silently recorded zero for a week. Assigning a
        * task waits the extra moment.
        */
-      if (fresh) await this.mailAssignment(assigneeId, ctx);
+      if (fresh) await this.mailAssignment(taskId, assigneeId, ctx);
       return fresh;
     },
 
@@ -1019,7 +1037,7 @@ export function createRepo(db: Database) {
      * failed is still assigned, and rolling that back would be worse than a
      * missing email. The failure goes to the log.
      */
-    async mailAssignment(assigneeId: string, ctx: TaskContext) {
+    async mailAssignment(taskId: string, assigneeId: string, ctx: TaskContext) {
       const prefs = await this.notificationPrefsFor(assigneeId);
       // Somebody who turned email off meant it, for this too.
       if (prefs.email === 'off') return;
@@ -1031,7 +1049,8 @@ export function createRepo(db: Database) {
       if (!person?.email) return;
 
       const due = ctx.dueDate ? ctx.dueDate.split('-').reverse().join('.') : null;
-      const link = `${appUrl()}/b/${ctx.boardId}/calendar?d=${ctx.eventDate}&e=${ctx.eventId}`;
+      // Straight to the task, not to the campaign it sits inside.
+      const link = `${appUrl()}/b/${ctx.boardId}/calendar?d=${ctx.eventDate}&e=${ctx.eventId}&t=${taskId}`;
       const subject = `משימה חדשה עבורך: ${ctx.taskTitle}`;
 
       const result = await sendEmail({

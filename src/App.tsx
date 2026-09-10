@@ -104,8 +104,7 @@ export default function App() {
   /* --- the project lifecycle: new → work → finished → archive → next --- */
   const [showArchive, setShowArchive] = useState(false);
   const [purging, setPurging] = useState<GanttBoard | null>(null);
-  /** The task whose full card is open, over whatever else is on screen. */
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
@@ -279,6 +278,15 @@ export default function App() {
   const setPeriod = (period: Period) => go({ period }, { replace: true });
   const openEvent = (eventId: string) => go({ eventId });
   const closeEvent = () => go({ eventId: null });
+  /*
+   * A task lives in the URL, so it can be linked to.
+   *
+   * The assignment email points straight here: somebody clicks "the thing I was
+   * asked to do" and lands on it, rather than on the campaign it belongs to
+   * with the task somewhere in a list.
+   */
+  const openTask = (taskId: string) => go({ taskId });
+  const closeTask = () => go({ taskId: null });
   const openAddEvent = (date?: string, month?: string) => {
     // Opened from the toolbar, the form should start in the month on screen —
     // not in today's, which is somewhere else entirely once you have navigated.
@@ -350,14 +358,14 @@ export default function App() {
         Above everything, because a task can be opened from a campaign, from the
         project list, or from "my tasks" — and it is the same card each time.
       */}
-      {openTaskId && (
+      {route.taskId && (
         <TaskPanel
-          taskId={openTaskId}
+          taskId={route.taskId}
           users={users}
           canEdit={can('task.edit')}
-          onClose={() => setOpenTaskId(null)}
+          onClose={closeTask}
           onOpenEvent={(eventId) => {
-            setOpenTaskId(null);
+            closeTask();
             openEvent(eventId);
           }}
         />
@@ -471,7 +479,7 @@ export default function App() {
           onCreateComment={(body) =>
             run(m.createComment.mutateAsync({ eventId: detailEvent.id, body }), 'התגובה נוספה')
           }
-          onOpenTask={setOpenTaskId}
+          onOpenTask={openTask}
         />
       )}
     </React.Suspense>
@@ -482,7 +490,7 @@ export default function App() {
   if (route.settings) {
     return (
       <>
-        <SettingsScreen currentUser={currentUser} can={can} onBackHome={() => navigate('/')} />
+        <SettingsScreen currentUser={currentUser} can={can} boards={boards} onBackHome={() => navigate('/')} />
         {dialogs}
       </>
     );
