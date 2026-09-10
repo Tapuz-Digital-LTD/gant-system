@@ -203,6 +203,8 @@ export const tasks = pgTable(
 
     position: integer('position').notNull().default(0),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    /** Who handed this out. Null for everything created before it was recorded. */
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     version: integer('version').notNull().default(1)

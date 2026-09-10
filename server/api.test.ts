@@ -164,6 +164,62 @@ r = await call('GET', `/events/${event.id}/activity`);
 assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
 
 /*
+ * ---------- a task is a unit of work, not a line to tick ----------
+ *
+ * After a kickoff meeting somebody hands out ten pieces of work. Each one has
+ * to carry who asked for it, who owes it, when, and what actually changed since
+ * — otherwise the person doing it has to go and ask.
+ */
+{
+  const withOwner = await call('POST', `/events/${event.id}/tasks`, {
+    title: 'להכין בריף ללקוח',
+    description: 'לרכז את המסרים ולשלוח לאישור',
+    assigneeId: staff.id,
+    dueDate: '2027-08-20'
+  });
+  assert.equal(withOwner.status, 201);
+  const taskId = withOwner.json.data.id;
+
+  r = await call('GET', `/tasks/${taskId}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.data.title, 'להכין בריף ללקוח');
+  assert.equal(r.json.data.description, 'לרכז את המסרים ולשלוח לאישור', 'the explanation survives');
+  assert.equal(r.json.data.creatorName, 'בודק', 'and it says who asked for it');
+  assert.equal(r.json.data.assigneeName, 'בודק', 'and who owes it');
+  assert.equal(r.json.data.event.title, 'ראש השנה 5788', 'and which campaign it belongs to');
+  assert.ok(r.json.data.board.name, 'and which project');
+
+  // The history has to say what changed, not dump two rows of columns.
+  await call('PATCH', `/tasks/${taskId}`, { status: 'in_progress', version: withOwner.json.data.version });
+  r = await call('GET', `/tasks/${taskId}`);
+  const entries = r.json.data.history;
+  assert.ok(entries.length >= 2, 'creating and changing are both recorded');
+  assert.equal(entries[0].action, 'created');
+  assert.ok(entries[0].by, 'with a name, not an id');
+
+  const updated = entries.find((e: { action: string }) => e.action === 'updated');
+  assert.deepEqual(updated.changed, ['המצב'], 'and it names the field that moved, in Hebrew');
+
+  // The project view: what the team owes, not what one person owes.
+  r = await call('GET', `/boards/${boardId}/tasks`);
+  assert.equal(r.status, 200);
+  const mine = r.json.data.find((t: { id: string }) => t.id === taskId);
+  assert.ok(mine, 'the task appears in its project');
+  assert.equal(mine.assigneeName, 'בודק', 'with the owner resolved, not an id to look up');
+  assert.equal(mine.eventTitle, 'ראש השנה 5788', 'and the campaign it sits under');
+
+  // Work nobody owns sorts first — it is the one thing that cannot chase itself.
+  await call('POST', `/events/${event.id}/tasks`, { title: 'אין אחראי' });
+  r = await call('GET', `/boards/${boardId}/tasks`);
+  const owned = r.json.data.map((t: { assigneeId: string | null }) => t.assigneeId !== null);
+  assert.deepEqual(
+    [...owned].sort((a, b) => Number(a) - Number(b)),
+    owned,
+    'every unowned task comes before every owned one'
+  );
+}
+
+/*
  * ---------- the Hebrew calendar comes back as dates, not as a promise ----------
  *
  * `res.json` accepts anything, so making holidaysBetween async — to keep a 4MB

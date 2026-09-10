@@ -473,6 +473,22 @@ export function createApiRouter(
 
   // ---------------- tasks ----------------
 
+  /** Every task in a project — the "what does the team owe" view. */
+  api.get('/boards/:id/tasks', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const boardId = id(req.params.id);
+    await assertBoardRead(req.repo, actor, boardId);
+    res.json({ data: await req.repo.tasksForBoard(boardId) });
+  }));
+
+  /** One task, with its history. */
+  api.get('/tasks/:id', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const taskId = id(req.params.id);
+    await assertBoardRead(req.repo, actor, await req.repo.boardIdForTask(taskId));
+    res.json({ data: await req.repo.taskDetail(taskId) });
+  }));
+
   api.post('/events/:id/tasks', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'task.create', 'הוספת משימות');
     const eventId = id(req.params.id);

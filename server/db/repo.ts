@@ -15,6 +15,34 @@ import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permiss
  */
 const israelDay = () => israelNow().date;
 
+/**
+ * What actually changed, in the words a person uses.
+ *
+ * The activity log stores whole rows either side of a change, which answers
+ * every question and reads as none of them. Somebody opening a task wants
+ * "שינה אחראי" and "העביר לבתהליך", not a diff of nineteen columns — so only
+ * the fields worth narrating are compared, and anything else is silence rather
+ * than noise.
+ */
+const TASK_FIELD_LABELS: Record<string, string> = {
+  title: 'שם המשימה',
+  description: 'התיאור',
+  status: 'המצב',
+  priority: 'העדיפות',
+  assigneeId: 'האחראי',
+  dueDate: 'תאריך היעד'
+};
+
+function describeTaskChange(before: unknown, after: unknown): string[] {
+  if (!before || !after || typeof before !== 'object' || typeof after !== 'object') return [];
+  const a = before as Record<string, unknown>;
+  const b = after as Record<string, unknown>;
+
+  return Object.entries(TASK_FIELD_LABELS)
+    .filter(([field]) => String(a[field] ?? '') !== String(b[field] ?? ''))
+    .map(([, label]) => label);
+}
+
 export class ConflictError extends Error {
   constructor(public readonly current: number) {
     super('מישהו אחר שינה את זה בינתיים. רענן את הדף');
@@ -915,6 +943,7 @@ export function createRepo(db: Database) {
           ...input,
           eventId,
           position: next,
+          createdBy: actorId,
           assignedAt: input.assigneeId ? new Date() : null
         })
         .returning();
@@ -922,6 +951,109 @@ export function createRepo(db: Database) {
 
       if (row.assigneeId) await this.notifyAssignment(row.id, row.assigneeId, actorId);
       return row;
+    },
+
+    /**
+     * Every task in a project, across all of its campaigns and events.
+     *
+     * "My tasks" answers what one person owes. This answers what the project
+     * owes — which is the question a project manager has all day and had no
+     * screen for. Same rows, different axis.
+     *
+     * Unassigned work comes back too, and deliberately first: a task nobody
+     * owns is the one thing on this screen that cannot chase itself.
+     */
+    async tasksForBoard(boardId: string) {
+      return db
+        .select({
+          id: tasks.id,
+          title: tasks.title,
+          description: tasks.description,
+          status: tasks.status,
+          priority: tasks.priority,
+          dueDate: tasks.dueDate,
+          assigneeId: tasks.assigneeId,
+          assigneeName: users.name,
+          assignedAt: tasks.assignedAt,
+          version: tasks.version,
+          eventId: events.id,
+          eventTitle: events.title,
+          eventDate: events.actualDate,
+          eventCategory: events.category
+        })
+        .from(tasks)
+        .innerJoin(events, eq(tasks.eventId, events.id))
+        .leftJoin(users, eq(tasks.assigneeId, users.id))
+        .where(and(eq(events.boardId, boardId), isNull(events.archivedAt)))
+        .orderBy(
+          // Unowned first, then by when it is due, with undated work last —
+          // a task with a date is the one that can be late.
+          sql`${tasks.assigneeId} is not null`,
+          sql`${tasks.dueDate} asc nulls last`,
+          asc(tasks.position)
+        );
+    },
+
+    /**
+     * One task, with everything a person needs when they open it.
+     *
+     * The names come back resolved rather than as ids: a panel showing
+     * "שינה אחראי" next to a uuid is a panel nobody can read, and joining here
+     * costs one query instead of one per row on the client.
+     */
+    async taskDetail(id: string) {
+      const [row] = await db
+        .select({
+          task: tasks,
+          eventId: events.id,
+          eventTitle: events.title,
+          eventDate: events.actualDate,
+          boardId: boards.id,
+          boardName: boards.name,
+          assigneeName: users.name,
+          creatorName: sql<string | null>`creator.name`
+        })
+        .from(tasks)
+        .innerJoin(events, eq(tasks.eventId, events.id))
+        .innerJoin(boards, eq(events.boardId, boards.id))
+        .leftJoin(users, eq(tasks.assigneeId, users.id))
+        .leftJoin(sql`users as creator`, sql`creator.id = ${tasks.createdBy}`)
+        .where(eq(tasks.id, id));
+
+      if (!row) throw new NotFoundError('לא מצאנו את המשימה. רענן את הדף ונסה שוב');
+
+      /*
+       * The trail, in the words of what changed.
+       *
+       * The activity log keeps whole rows before and after; a person wants
+       * "מי שינה אחראי, ומתי". Turning one into the other belongs here, where
+       * both sides of the change are already loaded.
+       */
+      const trail = await db
+        .select({
+          id: activity.id,
+          action: activity.action,
+          at: activity.createdAt,
+          before: activity.before,
+          after: activity.after,
+          byName: users.name
+        })
+        .from(activity)
+        .leftJoin(users, eq(activity.actorId, users.id))
+        .where(and(eq(activity.entity, 'task'), eq(activity.entityId, id)))
+        .orderBy(asc(activity.createdAt));
+
+      return { ...row.task, event: { id: row.eventId, title: row.eventTitle, date: row.eventDate },
+        board: { id: row.boardId, name: row.boardName },
+        assigneeName: row.assigneeName, creatorName: row.creatorName,
+        history: trail.map((entry) => ({
+          id: entry.id,
+          action: entry.action,
+          at: entry.at,
+          by: entry.byName,
+          changed: describeTaskChange(entry.before, entry.after)
+        }))
+      };
     },
 
     async updateTask(
