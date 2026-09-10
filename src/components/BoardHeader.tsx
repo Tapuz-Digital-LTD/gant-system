@@ -139,7 +139,7 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
           aria-label="XTRA — למסך הראשי"
           className="shrink-0 rounded-lg p-0.5 transition hover:bg-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
-          <XtraMark className="h-7 w-7" alt="" />
+          <XtraMark wordmark className="h-8 w-auto" alt="" />
         </button>
 
         <span className="hidden h-5 w-px shrink-0 bg-line sm:block" aria-hidden="true" />

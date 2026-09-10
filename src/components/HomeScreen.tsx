@@ -128,8 +128,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     <div className="min-h-dvh bg-canvas" dir="rtl">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-5 py-4">
-          {/* The mark from the logo, not a letter X in a coloured box. */}
-          <XtraMark className="h-8 w-8 shrink-0" alt="" />
+          {/* The whole logo, not the X alone — that crop is for the tab icon. */}
+          <XtraMark wordmark className="h-9 w-auto shrink-0" alt="XTRA" />
           <span className="text-md font-bold tracking-tight text-ink">תכנון אירועים</span>
 
           <div className="flex-1" />

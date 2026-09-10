@@ -7,9 +7,9 @@ import React from 'react';
  * header, the sign-in screen, the tab icon — rather than three slightly
  * different crops that drift apart over time.
  *
- * `wordmark` is the full lockup, for places with room to breathe. The default
- * is the X alone, which is what survives at the size a navigation bar allows;
- * the wordmark's "GIFTCARD" line becomes an illegible smudge below about 80px.
+ * `wordmark` is the whole logo and is what the product shows — a person should
+ * see the company they are working for, not an initial. The X alone exists for
+ * the one place a wide lockup cannot go: a browser tab.
  */
 export function XtraMark({
   wordmark = false,

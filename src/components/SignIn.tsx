@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, Loader2, LogIn, Mail, Smartphone } from 'lucide-react';
+import { ArrowRight, Check, Loader2, LogIn, Mail, Smartphone } from 'lucide-react';
 import { authClient, fetchSignInCode, type AuthConfig } from '../services/auth';
 import { useFormValidation, isEmail, required } from '../hooks/useFormValidation';
 import { Button, Field, Input, XtraMark, cn } from './ui';
@@ -121,203 +121,234 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
   const destination = channel === 'email' ? cleanEmail() : cleanPhone();
 
   return (
-    <div className="relative grid min-h-dvh place-items-center overflow-hidden bg-canvas px-4 py-10" dir="rtl">
-      {/*
-        A little warmth behind the card, and nothing more.
-        
-        Two very soft washes, well under the text, so the screen stops looking
-        like a form floating on grey without ever competing with the one thing
-        on it that matters. Hidden from assistive tech because it says nothing.
-      */}
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-40 start-1/2 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-primary/8 blur-3xl" />
-        <div className="absolute -bottom-48 end-1/5 h-96 w-96 rounded-full bg-cat-campaign/6 blur-3xl" />
-      </div>
+    <div className="grid min-h-dvh lg:grid-cols-[1.15fr_minmax(0,1fr)]" dir="rtl">
+      {/* ------------------------------------------------------ the brand side
+          Hidden on a phone, where it would push the form below the fold and
+          make somebody scroll to sign in. It is context, not the task. */}
+      <aside className="relative hidden overflow-hidden bg-ink lg:flex lg:flex-col lg:justify-between lg:p-12">
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-gradient-to-br from-primary via-[#b4232e] to-ink"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute -bottom-32 -start-24 h-96 w-96 rounded-full bg-white/8 blur-2xl"
+        />
 
-      <div className="relative flex w-full max-w-sm flex-col gap-6">
-        <header className="flex flex-col items-center gap-4 text-center">
-          <XtraMark className="h-14 w-14 drop-shadow-sm" />
-          <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-ink">
-              תכנון אירועים וקמפיינים
-            </h1>
-            <p className="mt-1.5 text-base text-ink-tertiary">
-              {step === 'who' ? 'נעים לראות אותך. איך תרצה להיכנס?' : 'עוד רגע ואתה בפנים'}
-            </p>
-          </div>
-        </header>
-
-        <div className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-6 shadow-pop">
-          {step === 'who' ? (
-            <form onSubmit={sendCode} noValidate className="flex flex-col gap-4">
-              {/*
-                A choice made before typing, not after. Switching afterwards
-                would throw away whatever is already in the field.
-              */}
-              <div
-                role="group"
-                aria-label="לאן לשלוח את הקוד"
-                className="grid grid-cols-2 gap-1.5 rounded-xl bg-subtle p-1.5"
-              >
-                {(
-                  [
-                    { value: 'email' as const, label: 'למייל', icon: Mail },
-                    { value: 'phone' as const, label: 'לנייד', icon: Smartphone }
-                  ]
-                ).map(({ value, label, icon: Icon }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => {
-                      setChannel(value);
-                      setError('');
-                    }}
-                    aria-pressed={channel === value}
-                    className={cn(
-                      'flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-base font-semibold transition-all',
-                      channel === value
-                        ? 'bg-surface text-ink shadow-card'
-                        : 'text-ink-tertiary hover:text-ink-secondary'
-                    )}
-                  >
-                    <Icon className="h-4.5 w-4.5" aria-hidden="true" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {channel === 'email' ? (
-                <Field label="כתובת המייל שלך" error={whoForm.error('email')} htmlFor="si-email">
-                  <Input
-                    id="si-email"
-                    type="email"
-                    autoComplete="email"
-                    autoFocus
-                    aria-invalid={Boolean(whoForm.error('email'))}
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@xtra.co.il"
-                    className={whoForm.error('email') ? 'border-late' : undefined}
-                  />
-                </Field>
-              ) : (
-                <Field label="מספר הנייד שלך" error={whoForm.error('phone')} htmlFor="si-phone">
-                  <Input
-                    id="si-phone"
-                    type="tel"
-                    inputMode="tel"
-                    dir="ltr"
-                    autoComplete="tel"
-                    autoFocus
-                    aria-invalid={Boolean(whoForm.error('phone'))}
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="050-1234567"
-                    className={cn('text-start', whoForm.error('phone') && 'border-late')}
-                  />
-                </Field>
-              )}
-
-              <Button type="submit" variant="primary" size="md" disabled={busy !== null}>
-                {busy === 'send' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
-                שלחו לי קוד
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={verifyCode} noValidate className="flex flex-col gap-4">
-              <p className="text-center text-base text-ink-secondary">
-                שלחנו קוד בן 6 ספרות אל
-                <br />
-                <b dir="ltr" className="inline-block text-ink">
-                  {destination}
-                </b>
-              </p>
-
-              <Field label="" error={codeForm.error('otp')} htmlFor="si-otp">
-                <Input
-                  id="si-otp"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  autoFocus
-                  maxLength={6}
-                  aria-label="קוד בן 6 ספרות"
-                  aria-invalid={Boolean(codeForm.error('otp'))}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  placeholder="000000"
-                  dir="ltr"
-                  className={cn(
-                    'h-18 border-2 text-center text-4xl font-extrabold tracking-[0.42em] tnum',
-                    'focus:border-primary focus:ring-4 focus:ring-primary-soft',
-                    codeForm.error('otp') ? 'border-late' : 'border-line-strong'
-                  )}
-                />
-              </Field>
-
-              <Button type="submit" variant="primary" size="md" disabled={busy !== null}>
-                {busy === 'verify' ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogIn className="h-5 w-5" />}
-                כניסה
-              </Button>
-
-              {screenCode && (
-                <div className="rounded-xl border border-dashed border-primary-line bg-primary-soft px-3 py-2.5 text-center">
-                  <p className="text-sm font-semibold text-ink-secondary">
-                    סביבת פיתוח — לא נשלחה הודעה
-                  </p>
-                  <p dir="ltr" className="mt-1 text-2xl font-bold tracking-[0.3em] text-primary tnum">
-                    {screenCode}
-                  </p>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep('who');
-                    setOtp('');
-                    setError('');
-                  }}
-                  className="flex items-center gap-1 text-sm text-ink-tertiary hover:text-ink hover:underline"
-                >
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  {channel === 'email' ? 'תיקון כתובת' : 'תיקון מספר'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    setOtp('');
-                    setError('');
-                    void sendCode(e);
-                  }}
-                  className="text-sm text-ink-tertiary hover:text-ink hover:underline"
-                >
-                  לא הגיע? שלחו שוב
-                </button>
-              </div>
-            </form>
-          )}
-
-          {error && <p className="text-center text-sm text-late">{error}</p>}
-
-          {/*
-            Say which of the two situations this is.
-            
-            "Codes are not being sent" is true in both, and useless in the one
-            where the code is about to appear on this very screen.
-          */}
-          {!config.mailConfigured && (
-            <p className="rounded-lg bg-progress-soft px-3 py-2 text-center text-sm text-ink">
-              {config.codesOnScreen
-                ? 'סביבת פיתוח — הקוד יופיע כאן במקום להישלח.'
-                : 'שליחת קודים עדיין לא מופעלת. הקוד נכתב ליומן השרת.'}
-            </p>
-          )}
+        <div className="relative flex items-center gap-3">
+          <span className="rounded-lg bg-white px-3 py-2">
+            <XtraMark wordmark className="h-8 w-auto" />
+          </span>
         </div>
 
-        <p className="text-center text-xs text-ink-tertiary">רק מי שהוזמן למערכת יכול להיכנס.</p>
+        <div className="relative max-w-lg">
+          <h2 className="text-4xl font-extrabold leading-tight tracking-tight text-white">
+            כל הקמפיינים, התאריכים והמשימות — במסך אחד.
+          </h2>
+
+          <ul className="mt-8 flex flex-col gap-4">
+            {[
+              'לוח שנה ותכנון לאורך זמן, עם כל אבני הדרך של הקמפיין.',
+              'משימות עם אחראי ותאריך יעד, ותזכורת לפני שמשהו נופל.',
+              'סיכום יומי אחד בבוקר — רק מה שדורש טיפול.'
+            ].map((line) => (
+              <li key={line} className="flex items-start gap-3 text-md text-white/90">
+                <Check className="mt-0.5 h-5 w-5 shrink-0 text-white/70" aria-hidden="true" />
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-sm text-white/60">XTRA · תכנון אירועים, קמפיינים ומשימות</p>
+      </aside>
+      {/* ---------------------------------------------------------- the form */}
+      <div className="flex items-center justify-center bg-canvas px-4 py-10">
+        <div className="flex w-full max-w-sm flex-col gap-5">
+          {/* On a phone the brand panel is gone, so the logo comes here. */}
+          <div className="flex justify-center lg:hidden">
+            <XtraMark wordmark className="h-14 w-auto" />
+          </div>
+
+          <div className="flex flex-col gap-5 rounded-2xl border border-line bg-surface p-6 shadow-card sm:p-7">
+            <header>
+              <h1 className="text-2xl font-bold tracking-tight text-ink">
+                {step === 'who' ? 'כניסה למערכת' : 'הזינו את הקוד'}
+              </h1>
+              <p className="mt-1.5 text-base text-ink-tertiary">
+                {step === 'who'
+                  ? 'בוחרים לאן ישלח הקוד, מקבלים אותו, ונכנסים.'
+                  : 'שלחנו קוד בן 6 ספרות. הוא תקף לעשר דקות.'}
+              </p>
+            </header>
+
+            {step === 'who' ? (
+              <form onSubmit={sendCode} noValidate className="flex flex-col gap-4">
+                <div
+                  role="group"
+                  aria-label="לאן לשלוח את הקוד"
+                  className="grid grid-cols-2 gap-1.5 rounded-xl bg-subtle p-1.5"
+                >
+                  {(
+                    [
+                      { value: 'phone' as const, label: 'לנייד', icon: Smartphone },
+                      { value: 'email' as const, label: 'למייל', icon: Mail }
+                    ]
+                  ).map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        setChannel(value);
+                        setError('');
+                      }}
+                      aria-pressed={channel === value}
+                      className={cn(
+                        'flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-base font-semibold transition-all',
+                        channel === value
+                          ? 'bg-surface text-ink shadow-card'
+                          : 'text-ink-tertiary hover:text-ink-secondary'
+                      )}
+                    >
+                      <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {channel === 'phone' ? (
+                  <Field label="מספר טלפון נייד" error={whoForm.error('phone')} htmlFor="si-phone">
+                    <Input
+                      id="si-phone"
+                      type="tel"
+                      inputMode="tel"
+                      dir="ltr"
+                      autoComplete="tel"
+                      autoFocus
+                      aria-invalid={Boolean(whoForm.error('phone'))}
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="050-000-0000"
+                      className={cn('h-12 text-start text-md', whoForm.error('phone') && 'border-late')}
+                    />
+                    <p className="mt-1.5 text-sm text-ink-tertiary">המספר שאיתו נרשמתם למערכת.</p>
+                  </Field>
+                ) : (
+                  <Field label="כתובת מייל" error={whoForm.error('email')} htmlFor="si-email">
+                    <Input
+                      id="si-email"
+                      type="email"
+                      autoComplete="email"
+                      autoFocus
+                      aria-invalid={Boolean(whoForm.error('email'))}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@xtra.co.il"
+                      className={cn('h-12 text-md', whoForm.error('email') && 'border-late')}
+                    />
+                    <p className="mt-1.5 text-sm text-ink-tertiary">הכתובת שאיתה נרשמתם למערכת.</p>
+                  </Field>
+                )}
+
+                <Button type="submit" variant="primary" disabled={busy !== null} className="h-12 w-full text-md">
+                  {busy === 'send' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
+                  שליחת קוד
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={verifyCode} noValidate className="flex flex-col gap-4">
+                <p className="text-base text-ink-secondary">
+                  נשלח אל{' '}
+                  <b dir="ltr" className="inline-block text-ink">
+                    {destination}
+                  </b>
+                </p>
+
+                <Field label="" error={codeForm.error('otp')} htmlFor="si-otp">
+                  <Input
+                    id="si-otp"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    autoFocus
+                    maxLength={6}
+                    aria-label="קוד בן 6 ספרות"
+                    aria-invalid={Boolean(codeForm.error('otp'))}
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    dir="ltr"
+                    className={cn(
+                      'h-16 border-2 text-center text-3xl font-extrabold tracking-[0.4em] tnum',
+                      codeForm.error('otp') ? 'border-late' : 'border-line-strong'
+                    )}
+                  />
+                </Field>
+
+                <Button type="submit" variant="primary" disabled={busy !== null} className="h-12 w-full text-md">
+                  {busy === 'verify' ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogIn className="h-5 w-5" />}
+                  כניסה
+                </Button>
+
+                {screenCode && (
+                  <div className="rounded-xl border border-dashed border-primary-line bg-primary-soft px-3 py-2.5 text-center">
+                    <p className="text-sm font-semibold text-ink-secondary">סביבת פיתוח — לא נשלחה הודעה</p>
+                    <p dir="ltr" className="mt-1 text-2xl font-bold tracking-[0.3em] text-primary tnum">
+                      {screenCode}
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep('who');
+                      setOtp('');
+                      setError('');
+                      setScreenCode(null);
+                    }}
+                    className="flex items-center gap-1 text-sm text-ink-tertiary hover:text-ink hover:underline"
+                  >
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    {channel === 'email' ? 'תיקון כתובת' : 'תיקון מספר'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      setOtp('');
+                      setError('');
+                      void sendCode(e);
+                    }}
+                    className="text-sm text-ink-tertiary hover:text-ink hover:underline"
+                  >
+                    לא הגיע? שלחו שוב
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {error && (
+              <p role="alert" className="rounded-lg bg-late-soft px-3 py-2 text-center text-base text-late">
+                {error}
+              </p>
+            )}
+
+            {!config.mailConfigured && (
+              <p className="rounded-lg bg-progress-soft px-3 py-2 text-center text-sm text-ink">
+                {config.codesOnScreen
+                  ? 'סביבת פיתוח — הקוד יופיע כאן במקום להישלח.'
+                  : 'שליחת קודים עדיין לא מופעלת. הקוד נכתב ליומן השרת.'}
+              </p>
+            )}
+          </div>
+
+          <p className="text-center text-sm text-ink-tertiary">
+            הכניסה מאובטחת בקוד חד-פעמי. אין סיסמאות לזכור.
+          </p>
+        </div>
       </div>
+
     </div>
   );
 }

@@ -230,6 +230,29 @@ export const checklistItems = pgTable(
   (t) => [index('checklist_task_idx').on(t.taskId, t.position)]
 );
 
+/**
+ * Things hanging off a task — a brief, a folder, a spec.
+ *
+ * `kind` is here so an uploaded file can join later without a second table and
+ * a second set of routes. Every row is a link today, which needs no storage
+ * service and works the moment somebody pastes one.
+ */
+export const taskAttachments = pgTable(
+  'task_attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull().default('link'),
+    title: text('title').notNull(),
+    url: text('url').notNull(),
+    addedBy: uuid('added_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [index('task_attachments_task_idx').on(t.taskId, t.createdAt)]
+);
+
 /** Comments belong to an event; task_id is optional. No more smuggling them into tasks[0]. */
 export const comments = pgTable(
   'comments',
