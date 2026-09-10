@@ -271,9 +271,12 @@ const eventsDefinition = z.strictObject({
     .array(z.enum(Object.keys(DATASETS.events.measures) as [EventMeasure, ...EventMeasure[]]))
     .min(1, 'בחר לפחות מדד אחד')
     .max(6),
-  filters: eventFilters.default({}).refine(needsDateField, { message: DATE_FIELD_MESSAGE, path: ['dateField'] }),
+  filters: eventFilters.default({}),
   /** The archive is a finished shelf, not a hidden one — it is opt-in, never default. */
   includeArchived: z.boolean().default(false)
+}).refine((d) => needsDateField(d.filters), {
+  message: DATE_FIELD_MESSAGE,
+  path: ['filters', 'dateField']
 });
 
 const tasksDefinition = z.strictObject({
@@ -283,8 +286,11 @@ const tasksDefinition = z.strictObject({
     .array(z.enum(Object.keys(DATASETS.tasks.measures) as [TaskMeasure, ...TaskMeasure[]]))
     .min(1, 'בחר לפחות מדד אחד')
     .max(7),
-  filters: taskFilters.default({}).refine(needsDateField, { message: DATE_FIELD_MESSAGE, path: ['dateField'] }),
+  filters: taskFilters.default({}),
   includeArchived: z.boolean().default(false)
+}).refine((d) => needsDateField(d.filters), {
+  message: DATE_FIELD_MESSAGE,
+  path: ['filters', 'dateField']
 });
 
 export const reportDefinition = z.discriminatedUnion('dataset', [eventsDefinition, tasksDefinition]);

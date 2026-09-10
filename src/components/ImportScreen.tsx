@@ -12,8 +12,7 @@ import {
   Plus,
   RefreshCw,
   Sheet,
-  Upload,
-  X
+  Upload
 } from 'lucide-react';
 import { GanttBoard, ImportPreview, ImportResult, PlannedImportEvent } from '../types';
 import { api } from '../services/api';

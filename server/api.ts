@@ -4,6 +4,8 @@ import { getDb, isDatabaseReady } from './db/client.js';
 import { createRepo, ConflictError, ConflictExistsError, NotFoundError, type Repo } from './db/repo.js';
 import * as v from './validation.js';
 import { createAiRouter } from './ai.js';
+import { createExportRouter } from './export/routes.js';
+import { createReportsRouter } from './reports/routes.js';
 import { PERMISSIONS, ROLE_LABELS, type Role } from './permissions.js';
 import { holidaysBetween } from './holidays.js';
 import { codeForScreen } from './email.js';
@@ -145,6 +147,13 @@ export function createApiRouter(
   });
 
   api.use('/ai', createAiRouter());
+  /*
+   * Two routers of their own, mounted here so they inherit the middleware above
+   * — the repository, the session, and the error contract at the bottom of this
+   * file. Neither formats an error response itself.
+   */
+  api.use('/export', createExportRouter());
+  api.use('/reports', createReportsRouter());
 
   /*
    * Health, and enough to answer "why is it slow" without guessing.

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { getDb } from '../db/client.js';
-import { createReportsRepo, type ReportsRepo } from '../db/repo.js';
+import { getDb, type Database } from '../db/client.js';
+import { createReportsRepo } from '../db/repo.js';
 import { ForbiddenError, requireActor, requirePermission, type Actor } from '../access.js';
 import * as v from '../validation.js';
 import { chartKind, reportCell, reportDefinition, reportModel } from './model.js';
@@ -83,10 +83,14 @@ async function assertMayChange(
   throw new ForbiddenError('אפשר לשנות או למחוק רק דוח שיצרת. בקש ממנהל');
 }
 
-export function createReportsRouter(
-  getReportsRepo: () => ReportsRepo = () => createReportsRepo(getDb())
-): Router {
+/**
+ * `getDatabase` is injectable for the same reason `createApiRouter`'s repository
+ * is: the whole surface can then be driven over real HTTP against an in-process
+ * Postgres, with no external database and no stubs pretending to be one.
+ */
+export function createReportsRouter(getDatabase: () => Database = getDb): Router {
   const reports = Router();
+  const savedRepo = () => createReportsRepo(getDatabase());
 
   /**
    * The whole picker vocabulary. Cached privately: it changes on deploy, not on
@@ -101,31 +105,40 @@ export function createReportsRouter(
   reports.post('/run', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'activity.view', 'צפייה בדוחות');
     const definition = reportDefinition.parse(req.body);
-    res.json({ data: await runReport(getDb(), definition, await scopeOf(req, actor)) });
+    res.json({ data: await runReport(getDatabase(), definition, await scopeOf(req, actor)) });
   }));
 
   reports.post('/drill', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'activity.view', 'צפייה בדוחות');
     const { definition, cell } = drillInput.parse(req.body);
-    res.json({ data: await drillRows(getDb(), definition, cell, await scopeOf(req, actor)) });
+    res.json({ data: await drillRows(getDatabase(), definition, cell, await scopeOf(req, actor)) });
   }));
 
   // ---------------- saved reports ----------------
 
   reports.get('/saved', asyncRoute(async (req, res) => {
     await requirePermission(req.repo, req.actor, 'activity.view', 'צפייה בדוחות');
-    res.json({ data: await getReportsRepo().listSavedReports() });
+    res.json({ data: await savedRepo().listSavedReports() });
   }));
 
   reports.post('/saved', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'activity.view', 'שמירת דוחות');
     const input = savedReportCreate.parse(req.body);
-    res.status(201).json({ data: await getReportsRepo().createSavedReport(input, actor.id) });
+    /*
+     * Spelled out rather than spread. Zod marks a refined field optional in the
+     * inferred type, and spreading that into a row would let a missing
+     * definition through the compiler into a NOT NULL column.
+     */
+    const saved = await savedRepo().createSavedReport(
+      { name: input.name, definition: input.definition, chart: input.chart },
+      actor.id
+    );
+    res.status(201).json({ data: saved });
   }));
 
   reports.patch('/saved/:id', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'activity.view', 'שמירת דוחות');
-    const repo = getReportsRepo();
+    const repo = savedRepo();
     const id = v.uuidParam.parse(req.params.id);
     await assertMayChange(req, actor, await repo.getSavedReport(id));
     const changes = savedReportUpdate.parse(req.body);
@@ -134,7 +147,7 @@ export function createReportsRouter(
 
   reports.delete('/saved/:id', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'activity.view', 'שמירת דוחות');
-    const repo = getReportsRepo();
+    const repo = savedRepo();
     const id = v.uuidParam.parse(req.params.id);
     await assertMayChange(req, actor, await repo.getSavedReport(id));
     await repo.deleteSavedReport(id, actor.id);
@@ -145,7 +158,7 @@ export function createReportsRouter(
   reports.post('/saved/:id/duplicate', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'activity.view', 'שמירת דוחות');
     const id = v.uuidParam.parse(req.params.id);
-    res.status(201).json({ data: await getReportsRepo().duplicateSavedReport(id, actor.id) });
+    res.status(201).json({ data: await savedRepo().duplicateSavedReport(id, actor.id) });
   }));
 
   // ---------------- dashboard ----------------
@@ -153,14 +166,14 @@ export function createReportsRouter(
   /** Your own, and only your own — there is no user id in the path. */
   reports.get('/dashboard', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'activity.view', 'צפייה בדוחות');
-    res.json({ data: await getReportsRepo().getDashboard(actor.id) });
+    res.json({ data: await savedRepo().getDashboard(actor.id) });
   }));
 
   reports.put('/dashboard', asyncRoute(async (req, res) => {
     const actor = requireActor(req.actor);
     await requirePermission(req.repo, actor, 'activity.view', 'שמירת דוחות');
     const { layout } = dashboardInput.parse(req.body);
-    res.json({ data: await getReportsRepo().saveDashboard(actor.id, layout) });
+    res.json({ data: await savedRepo().saveDashboard(actor.id, layout) });
   }));
 
   return reports;

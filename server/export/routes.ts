@@ -1,8 +1,9 @@
 /**
  * The download endpoint.
  *
- * Mount it the way the assistant is mounted, inside the API router so the
- * repository, the session and the error contract are already attached:
+ * Mounted inside the main API router, like the assistant and the reports, so
+ * the repository, the session and the error contract are already attached and
+ * nothing here formats an error response of its own:
  *
  *   api.use('/export', createExportRouter());   // → POST /api/export/xlsx
  *
@@ -19,27 +20,31 @@ import { israelNow } from '../notifications/prefs.js';
 import { timelineQuery } from '../validation.js';
 import { buildWorkbook, type ExportData, type ExportScope } from './xlsx.js';
 
+const uuid = z.string().uuid('משהו בפרטים לא הסתדר. רענן את הדף ונסה שוב');
+
 /**
- * `from` and `to` are borrowed from the calendar's own schema rather than
- * re-written: that one refuses 31.09 as well as 2026-13-01, and an unreal date
- * reaching a `where` clause is an error the database raises, not one a person
- * can read.
+ * The calendar's own date rule, borrowed rather than re-written: it refuses
+ * 31.09.2027 as well as 2026-13-01. An unreal date that reaches a `where`
+ * clause is an error the database raises, and a database error is not something
+ * a person can read or act on.
  */
-const exportRequest = z
-  .object({
-    scope: z.enum(['board', 'boards', 'events', 'tasks', 'all']),
-    /** A narrowing, not a grant: every id here is still checked against the session. */
-    boardIds: z.array(z.string().uuid('משהו בפרטים לא הסתדר. רענן את הדף ונסה שוב')).min(1).max(50).optional(),
-    categories: z
-      .array(z.enum(['holiday', 'campaign', 'b2b', 'social', 'operational', 'other']))
-      .max(6)
-      .optional(),
-    statuses: z.array(z.enum(['todo', 'in_progress', 'ready_kickoff', 'done'])).max(4).optional(),
-    assigneeIds: z.array(z.string().uuid()).max(100).optional(),
-    includeTasks: z.boolean().optional(),
-    fileName: z.string().trim().max(80).optional()
-  })
-  .extend(timelineQuery.partial().shape);
+const isoDate = timelineQuery.shape.from;
+
+const exportRequest = z.strictObject({
+  scope: z.enum(['board', 'boards', 'events', 'tasks', 'all']),
+  /** A narrowing, not a grant: every id here is still checked against the session. */
+  boardIds: z.array(uuid).min(1).max(50).optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  categories: z
+    .array(z.enum(['holiday', 'campaign', 'b2b', 'social', 'operational', 'other']))
+    .max(6)
+    .optional(),
+  statuses: z.array(z.enum(['todo', 'in_progress', 'ready_kickoff', 'done'])).max(4).optional(),
+  assigneeIds: z.array(uuid).max(100).optional(),
+  includeTasks: z.boolean().optional(),
+  fileName: z.string().trim().max(80).optional()
+});
 
 type ExportRequest = z.infer<typeof exportRequest>;
 

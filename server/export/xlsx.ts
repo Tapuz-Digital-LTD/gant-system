@@ -5,12 +5,16 @@
  *
  * **What we write, we must be able to read.** The header words are the
  * importer's own vocabulary (`HEADERS` in server/import/parse.ts), and the
- * importable columns sit in one unbroken run. The importer starts a new table
- * at the first column it does not recognise, so the deliberate blank column
- * after "פירוט" is what keeps the reporting columns *outside* the block instead
- * of tearing the block in half — and a torn block loses every column after the
- * tear, silently. export.test.ts feeds a workbook built here straight back
- * through the importer and compares every date.
+ * importable columns sit in one unbroken run. The importer ends a table at the
+ * first column it does not recognise, and that cuts both ways. A column it does
+ * *not* know, sitting between two header columns, splits the table in two — and
+ * the half with no title column is dropped without a word, which is why there
+ * is no "דיוק" column next to the date. A column it *does* know, sitting flush
+ * against the last header, is swallowed into the table instead. Hence the
+ * deliberate blank column after "פירוט": it is what holds the reporting columns
+ * outside the block whichever of the two they would otherwise be. None of that
+ * is assumed — export.test.ts feeds a workbook built here straight back through
+ * the importer and compares every date.
  *
  * **A date is a date.** Excel sorts, filters and subtracts real dates and does
  * none of that with text that happens to look like one. A month-precision event
@@ -23,7 +27,7 @@
  * docs/deploy/performance.md gives: it is the heaviest dependency in the
  * project, and a request that draws a calendar must not pay to start it.
  */
-import type { Workbook, Worksheet } from 'exceljs';
+import type { Row, Workbook, Worksheet } from 'exceljs';
 import type { EventCategory, TaskStatus, TaskPriority, DatePrecision } from '../../src/types.js';
 import { csvCell } from '../../src/utils/csv.js';
 import { israelNow } from '../notifications/prefs.js';
@@ -186,10 +190,10 @@ const day = (iso: string | null): DateCell | null => (iso ? { date: utcDay(iso),
  * split the importer's block in two, taking "ת. סיום קמפיין" and everything
  * after it out of the import entirely. Losing a flag beats losing four columns.
  */
-const eventDate = (event: ExportEvent): DateCell =>
-  event.actualPrecision === 'month'
-    ? { date: utcDay(event.actualDate), numFmt: MONTH_FORMAT }
-    : { date: utcDay(event.actualDate), numFmt: DAY_FORMAT };
+const eventDate = (event: ExportEvent): DateCell => ({
+  date: utcDay(event.actualDate),
+  numFmt: event.actualPrecision === 'month' ? MONTH_FORMAT : DAY_FORMAT
+});
 
 /** A timestamp, as the calendar day it was in Israel — 01:00 here is still today. */
 const stamp = (at: Date | null): DateCell | null => (at ? day(israelNow(at).date) : null);
@@ -235,19 +239,22 @@ function sheetFor(wb: Workbook, name: string, columns: ColumnSpec[]): Worksheet 
   return ws;
 }
 
-function addRow(ws: Worksheet, values: Cell[]): void {
+function addRow(ws: Worksheet, values: Cell[]): Row {
   const row = ws.addRow(values.map((v) => (isDateCell(v) ? v.date : v)));
   values.forEach((v, i) => {
     if (isDateCell(v)) row.getCell(i + 1).numFmt = v.numFmt;
   });
+  return row;
 }
 
 /**
  * The event columns, in the one order that survives a round trip.
  *
  * Everything up to "פירוט" is a word the importer knows, and they are adjacent
- * on purpose. The `null` after them is the spacer; the columns after it are
- * reporting, and the importer is meant to ignore them.
+ * on purpose. The `null` after them is the spacer: without it a reporting
+ * column whose name the importer happens to know — today "עברי" is the only
+ * unclaimed one, tomorrow it is whatever gets added to `HEADERS` — would be
+ * read as part of the event table.
  */
 const EVENT_COLUMNS: ColumnSpec[] = [
   { header: 'שם האירוע', width: 32 },
@@ -345,7 +352,7 @@ export async function buildWorkbook(data: ExportData): Promise<Buffer> {
     const ws = sheetFor(wb, SHEET.events, EVENT_COLUMNS);
     for (const e of data.events) {
       const done = e.taskCount > 0 ? e.doneTaskCount / e.taskCount : null;
-      addRow(ws, [
+      const row = addRow(ws, [
         text(e.title),
         CATEGORY_LABELS[e.category],
         STATUS_LABELS[e.status],
@@ -366,7 +373,8 @@ export async function buildWorkbook(data: ExportData): Promise<Buffer> {
         e.doneTaskCount,
         done
       ]);
-      if (done !== null) ws.getCell(ws.rowCount, EVENT_COLUMNS.length).numFmt = '0%';
+      // A share, shown as one. Without the format the column reads "0.75".
+      if (done !== null) row.getCell(EVENT_COLUMNS.length).numFmt = '0%';
     }
   }
 

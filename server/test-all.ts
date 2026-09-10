@@ -20,6 +20,7 @@ const SUITES = [
   'src/utils/notificationGroups.test.ts',
   'server/db/migrate.test.ts',
   'server/import/import.test.ts',
+  'server/export/export.test.ts',
   'server/db/schema.test.ts',
   'server/notifications/reminders.test.ts',
   'server/notifications/milestone-labels.test.ts',
@@ -28,7 +29,8 @@ const SUITES = [
   'server/validation.test.ts',
   'server/db/repo.test.ts',
   'server/api.test.ts',
-  'server/access.test.ts'
+  'server/access.test.ts',
+  'server/reports/reports.test.ts'
 ];
 
 const env = {

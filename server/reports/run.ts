@@ -239,28 +239,29 @@ const boundList = (values: readonly string[]): SQL =>
  * rather than narrowing it.
  */
 function buildWhere(definition: ReportDefinition, scope: ReportScope, today: string): SQL {
-  const f = definition.filters;
   const conditions: SQL[] = [];
 
   if (!definition.includeArchived) {
     conditions.push(sql`b.archived_at is null`, sql`e.archived_at is null`);
   }
 
+  // The session's scope first, so it is never the thing somebody forgets.
   if (scope.boardIds) conditions.push(sql`b.id::text in (${boundList(scope.boardIds)})`);
-  if (f.boardIds?.length) conditions.push(sql`b.id::text in (${boundList(f.boardIds)})`);
-  if (f.categories?.length) conditions.push(sql`e.category::text in (${boundList(f.categories)})`);
 
-  if (f.dateField && (f.from || f.to)) {
-    const column =
-      definition.dataset === 'events'
-        ? EVENT_DATE_SQL[f.dateField as EventDateField]
-        : TASK_DATE_SQL[f.dateField as TaskDateField];
-    if (!column) throw new UnknownReportTermError(f.dateField);
-    if (f.from) conditions.push(sql`${column} >= ${f.from}::date`);
-    if (f.to) conditions.push(sql`${column} <= ${f.to}::date`);
+  const shared = definition.filters;
+  if (shared.boardIds?.length) conditions.push(sql`b.id::text in (${boundList(shared.boardIds)})`);
+  if (shared.categories?.length) {
+    conditions.push(sql`e.category::text in (${boundList(shared.categories)})`);
   }
 
   if (definition.dataset === 'events') {
+    const f = definition.filters;
+    if (f.dateField && (f.from || f.to)) {
+      const column = EVENT_DATE_SQL[f.dateField];
+      if (!column) throw new UnknownReportTermError(f.dateField);
+      if (f.from) conditions.push(sql`${column} >= ${f.from}::date`);
+      if (f.to) conditions.push(sql`${column} <= ${f.to}::date`);
+    }
     if (f.statuses?.length) conditions.push(sql`e.status::text in (${boundList(f.statuses)})`);
     if (f.onlyOpen) conditions.push(sql`e.status <> 'done'`);
     /*
@@ -274,6 +275,13 @@ function buildWhere(definition: ReportDefinition, scope: ReportScope, today: str
          where lt.event_id = e.id and lt.status <> 'done' and lt.due_date < ${today}::date)`);
     }
   } else {
+    const f = definition.filters;
+    if (f.dateField && (f.from || f.to)) {
+      const column = TASK_DATE_SQL[f.dateField];
+      if (!column) throw new UnknownReportTermError(f.dateField);
+      if (f.from) conditions.push(sql`${column} >= ${f.from}::date`);
+      if (f.to) conditions.push(sql`${column} <= ${f.to}::date`);
+    }
     if (f.statuses?.length) conditions.push(sql`t.status::text in (${boundList(f.statuses)})`);
     if (f.priorities?.length) conditions.push(sql`t.priority::text in (${boundList(f.priorities)})`);
     if (f.assigneeIds?.length) {
@@ -438,6 +446,9 @@ const TASK_DRILL_COLUMNS: ReportColumn[] = [
 ];
 
 interface DrillRecord {
+  // `db.execute` wants a plain row shape; the named fields below are what the
+  // two selects below actually return.
+  [column: string]: unknown;
   id: string;
   title: string | null;
   board: string | null;

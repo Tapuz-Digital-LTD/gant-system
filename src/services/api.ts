@@ -25,7 +25,13 @@ import {
   Holiday,
   SearchHit,
   ImportPreview,
-  ImportResult
+  ImportResult,
+  Dashboard,
+  ReportDefinition,
+  ReportModel,
+  ReportResult,
+  SavedReport,
+  ChartKind
 } from '../types';
 
 const BASE = '/api';
@@ -256,6 +262,45 @@ export const api = {
       excluded: string[];
       expect: { create: number; update: number };
     }) => request<ImportResult>('/import/commit', { method: 'POST', ...body(input) })
+  },
+
+  /**
+   * Reports.
+   *
+   * The definition goes up, aggregated rows come back. The browser never
+   * receives the records a number is made of unless somebody clicks the number,
+   * which is what keeps a report on three years of campaigns the same size as a
+   * report on one.
+   */
+  reports: {
+    model: () => request<ReportModel>('/reports/model'),
+    run: (definition: ReportDefinition) =>
+      request<ReportResult>('/reports/run', { method: 'POST', ...body(definition) }),
+    /** The records behind one bar. Capped on the server; this is a look, not a download. */
+    drill: (definition: ReportDefinition, groupKey: string | null) =>
+      request<ReportResult>('/reports/drill', {
+        method: 'POST',
+        ...body({ definition, cell: { groupKey } })
+      }),
+
+    saved: {
+      list: () => request<SavedReport[]>('/reports/saved'),
+      create: (input: { name: string; definition: ReportDefinition; chart: ChartKind }) =>
+        request<SavedReport>('/reports/saved', { method: 'POST', ...body(input) }),
+      update: (
+        id: string,
+        changes: { name?: string; definition?: ReportDefinition; chart?: ChartKind; pinned?: boolean; position?: number }
+      ) => request<SavedReport>(`/reports/saved/${id}`, { method: 'PATCH', ...body(changes) }),
+      remove: (id: string) => request<void>(`/reports/saved/${id}`, { method: 'DELETE' }),
+      duplicate: (id: string) =>
+        request<SavedReport>(`/reports/saved/${id}/duplicate`, { method: 'POST' })
+    },
+
+    dashboard: {
+      get: () => request<Dashboard>('/reports/dashboard'),
+      save: (layout: Dashboard['layout']) =>
+        request<Dashboard>('/reports/dashboard', { method: 'PUT', ...body({ layout }) })
+    }
   },
 
   permissions: {

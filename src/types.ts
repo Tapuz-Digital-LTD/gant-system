@@ -478,3 +478,100 @@ export interface ImportResult {
     prepMonths: number;
   }[];
 }
+
+
+/* ==================================================================
+   דוחות
+
+   Mirrors server/reports/. The vocabulary — which groupings and which
+   measures exist, and what each is called in Hebrew — is fetched from
+   `/api/reports/model` and never written down here: a label that lives
+   in two places is a label that will eventually disagree with itself.
+   ================================================================== */
+
+export type ReportDataset = 'events' | 'tasks';
+export type ChartKind = 'bar' | 'line' | 'pie' | 'table' | 'number';
+export type ReportColumnType = 'text' | 'number' | 'percent' | 'days';
+
+export interface ReportTerm {
+  key: string;
+  label: string;
+  hint: string;
+}
+
+export interface ReportMeasureTerm extends ReportTerm {
+  type: Exclude<ReportColumnType, 'text'>;
+}
+
+export interface ReportDatasetModel {
+  key: ReportDataset;
+  label: string;
+  hint: string;
+  dimensions: ReportTerm[];
+  measures: ReportMeasureTerm[];
+  dateFields: ReportTerm[];
+  filters: ReportTerm[];
+}
+
+export interface ReportModel {
+  datasets: ReportDatasetModel[];
+  values: {
+    categories: { key: string; label: string }[];
+    statuses: { key: string; label: string }[];
+    priorities: { key: string; label: string }[];
+  };
+  charts: { key: ChartKind; label: string }[];
+}
+
+/** Only keys the server's own model lists ever reach here. */
+export interface ReportFilters {
+  dateField?: string;
+  from?: string;
+  to?: string;
+  boardIds?: string[];
+  categories?: string[];
+  statuses?: string[];
+  priorities?: string[];
+  assigneeIds?: string[];
+  onlyOpen?: boolean;
+  onlyLate?: boolean;
+}
+
+export interface ReportDefinition {
+  dataset: ReportDataset;
+  dimension: string;
+  measures: string[];
+  filters: ReportFilters;
+  includeArchived: boolean;
+}
+
+export interface ReportColumn {
+  key: string;
+  label: string;
+  type: ReportColumnType;
+}
+
+export interface ReportResult {
+  columns: ReportColumn[];
+  rows: Record<string, string | number | null>[];
+  total: number;
+  truncated: boolean;
+}
+
+export interface SavedReport {
+  id: string;
+  name: string;
+  definition: ReportDefinition;
+  chart: ChartKind;
+  ownerId: string | null;
+  pinned: boolean;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DashboardSize = 'small' | 'medium' | 'large';
+
+export interface Dashboard {
+  layout: { savedReportId: string; size: DashboardSize }[];
+}
