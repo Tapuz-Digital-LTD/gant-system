@@ -68,6 +68,18 @@ export function aiConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
+/**
+ * A test never calls Anthropic.
+ *
+ * The suite sets a deliberately invalid key to prove the endpoint answers
+ * rather than hangs — which still opened a real connection to api.anthropic.com
+ * on every run. Slow, dependent on somebody else's uptime, and one careless
+ * copy of a real key away from spending money to assert a 502.
+ */
+function isTest(): boolean {
+  return process.env.NODE_ENV === 'test' || process.env.GANTT_TEST === 'true';
+}
+
 /*
  * What the assistant may cost in a day.
  *
@@ -173,6 +185,10 @@ async function suggestTasks(req: Request, res: Response) {
   const { eventTitle, category, kickoffDate, actualDate, prepMonths } = parsed.data;
 
   try {
+    // Never in a test. The endpoint still answers; it just answers without
+    // anybody's API being involved.
+    if (isTest()) throw new Error('ai disabled in tests');
+
     /*
      * Imported here, not at the top of the file.
      *

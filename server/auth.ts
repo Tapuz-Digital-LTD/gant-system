@@ -4,7 +4,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { emailOTP, phoneNumber } from 'better-auth/plugins';
 import { getDb, schema } from './db/client.js';
 import { sendSignInCode, sendSignInSms, isMailConfigured } from './email.js';
-import { israeliMobile } from './notifications/inforu.js';
+import { israeliMobile, showsCodesOnScreen } from './notifications/inforu.js';
 
 /**
  * Identity only.
@@ -153,14 +153,17 @@ export function getAuth(): ReturnType<typeof build> {
 }
 
 export interface AuthDescription {
-  /** False means codes are only written to the server log, not emailed. */
+  /** False means codes are only written to the server log, not delivered. */
   mailConfigured: boolean;
+  /** True where the sign-in screen may show the code instead of sending it. */
+  codesOnScreen: boolean;
   staffDomain: string | null;
 }
 
 export function describeAuth(): AuthDescription {
   return {
     mailConfigured: isMailConfigured(),
+    codesOnScreen: showsCodesOnScreen(),
     staffDomain: staffDomain() ?? null
   };
 }

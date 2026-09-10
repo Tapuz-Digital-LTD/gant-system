@@ -7,9 +7,18 @@ export const authClient = createAuthClient({
 });
 
 export interface AuthConfig {
-  /** False means codes are only written to the server log, not emailed. */
+  /** False means codes are only written to the server log, not delivered. */
   mailConfigured: boolean;
+  /** True where the screen may show the code instead of sending it. */
+  codesOnScreen: boolean;
   staffDomain: string | null;
+}
+
+/** The code just generated, where the environment allows showing it. */
+export async function fetchSignInCode(destination: string): Promise<string | null> {
+  const res = await fetch(`/api/dev/sign-in-code?to=${encodeURIComponent(destination)}`);
+  if (!res.ok) return null;
+  return (await res.json()).data.code as string;
 }
 
 /** What sign-in methods this deployment actually has wired. */

@@ -49,6 +49,41 @@ const SWITCH: Record<SendPurpose, string> = {
   notification: 'GANTT_NOTIFICATIONS_SEND'
 };
 
+/**
+ * Which of the three worlds this process is in.
+ *
+ * It matters because real credentials leak between them by accident: a
+ * developer pulls production environment variables to debug something, and from
+ * then on every local run of the test suite can text real employees. The
+ * environment decides, and the safe answer is the default.
+ */
+function environment(): 'production' | 'development' | 'test' {
+  if (process.env.NODE_ENV === 'test' || process.env.GANTT_TEST === 'true') return 'test';
+
+  /*
+   * An explicit answer wins, and the local server gives one.
+   *
+   * This is not belt and braces, it is the fix for a real trap: `vercel env
+   * pull` writes VERCEL_ENV="production" into .env.local, so a laptop that has
+   * ever pulled production variables then identifies itself as production. The
+   * dev script says what it is, and nothing in a downloaded file can contradict
+   * it.
+   */
+  if (process.env.GANTT_ENV === 'development') return 'development';
+  if (process.env.GANTT_ENV === 'production') return 'production';
+
+  /*
+   * Otherwise: really on Vercel, in the production environment.
+   *
+   * VERCEL=1 is set by the runtime and not by the env file, so the pair is only
+   * true where the code is genuinely deployed.
+   */
+  if (process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production') return 'production';
+  if (process.env.NODE_ENV === 'production' && !process.env.VERCEL_ENV) return 'production';
+
+  return 'development';
+}
+
 function credentials() {
   return {
     baseUrl: process.env.GANTT_INFORU_API_URL?.replace(/\/+$/, '') ?? '',
@@ -65,7 +100,38 @@ function credentials() {
 export function deliveryMode(purpose: SendPurpose): DeliveryMode {
   const { baseUrl, auth } = credentials();
   if (!baseUrl || !auth) return 'unconfigured';
+
+  /*
+   * A test never sends. Not configurable, not overridable.
+   *
+   * There is no legitimate reason for a suite run to text somebody, and the
+   * point of a rule like this is that it holds on the day a real key happens to
+   * be in the environment for some other reason.
+   *
+   * Checked after the credentials so the three states stay honest: the settings
+   * screen distinguishes "no provider" from "provider, sending off", and a test
+   * that flattened them would be testing a different function.
+   */
+  if (environment() === 'test') return 'log';
+
+  /*
+   * Outside production, sending takes a second, deliberate key.
+   *
+   * `GANTT_AUTH_SEND` is set in production and travels in a pulled .env file,
+   * so on its own it would quietly re-enable real messages on a laptop. Sending
+   * for real from a development machine is a rare, considered act — it should
+   * cost one more variable, named so nobody sets it by accident.
+   */
+  if (environment() !== 'production' && process.env.GANTT_ALLOW_REAL_SEND !== 'yes-really') {
+    return 'log';
+  }
+
   return process.env[SWITCH[purpose]] === 'true' ? 'send' : 'log';
+}
+
+/** True where a code may be shown on screen instead of being delivered. */
+export function showsCodesOnScreen(): boolean {
+  return environment() !== 'production' && deliveryMode('auth') !== 'send';
 }
 
 /**

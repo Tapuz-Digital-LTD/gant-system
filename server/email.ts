@@ -1,4 +1,4 @@
-import { deliveryMode, sendEmail, sendSms } from './notifications/inforu.js';
+import { deliveryMode, sendEmail, sendSms, showsCodesOnScreen } from './notifications/inforu.js';
 
 /**
  * Sending a sign-in code.
@@ -20,6 +20,37 @@ import { deliveryMode, sendEmail, sendSms } from './notifications/inforu.js';
 /** True when a real sign-in code — by either route — would leave the building. */
 export function isMailConfigured(): boolean {
   return deliveryMode('auth') === 'send';
+}
+
+/*
+ * The last code, for a screen that is allowed to show it.
+ *
+ * Only ever populated where nothing is being delivered and the environment is
+ * not production — otherwise the sign-in flow is untestable without a real
+ * phone, which is how somebody ends up texting a colleague to check a button.
+ *
+ * One entry per destination, in memory, and it dies with the process. It is a
+ * development convenience, not a store.
+ */
+const codesOnScreen = new Map<string, { code: string; at: number }>();
+
+function rememberForScreen(destination: string, code: string) {
+  if (!showsCodesOnScreen()) return;
+  codesOnScreen.set(destination.trim().toLowerCase(), { code, at: Date.now() });
+}
+
+/**
+ * The code most recently generated for this destination, if it may be shown.
+ *
+ * Returns null in production no matter what, and null once a code is older
+ * than its own validity — a stale code on screen is worse than none.
+ */
+export function codeForScreen(destination: string): string | null {
+  if (!showsCodesOnScreen()) return null;
+  const entry = codesOnScreen.get(destination.trim().toLowerCase());
+  if (!entry) return null;
+  if (Date.now() - entry.at > 10 * 60_000) return null;
+  return entry.code;
 }
 
 function codeEmail(code: string): string {
@@ -58,6 +89,7 @@ export async function sendSignInCode(email: string, code: string): Promise<void>
         code
       })
     );
+    rememberForScreen(email, code);
     return;
   }
 
@@ -95,6 +127,7 @@ export async function sendSignInSms(phone: string, code: string): Promise<void> 
         code
       })
     );
+    rememberForScreen(phone, code);
     return;
   }
 

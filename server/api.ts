@@ -6,6 +6,7 @@ import * as v from './validation.js';
 import { createAiRouter } from './ai.js';
 import { PERMISSIONS, ROLE_LABELS, type Role } from './permissions.js';
 import { holidaysBetween } from './holidays.js';
+import { codeForScreen } from './email.js';
 import { digestFor, digestText, hasAnything } from './notifications/digest.js';
 import { cronAuthorised, cronConfigured, runDigestJob } from './notifications/cron.js';
 import { deliveryMode } from './notifications/inforu.js';
@@ -152,6 +153,27 @@ export function createApiRouter(
   }));
 
   // ---------------- boards ----------------
+
+  /**
+   * The code that was just generated, where it may be shown.
+   *
+   * Refuses in production regardless of anything else, and refuses whenever a
+   * message actually went out — a code on screen for a code that was also
+   * texted is a second copy of a secret, for nothing.
+   *
+   * It exists so the whole sign-in flow can be walked on a laptop without a
+   * real phone, which is what stops somebody testing a button by messaging a
+   * colleague.
+   */
+  api.get('/dev/sign-in-code', asyncRoute(async (req, res) => {
+    const to = String(req.query.to ?? '');
+    const code = to ? codeForScreen(to) : null;
+    if (!code) {
+      res.status(404).json({ error: { code: 'NOT_AVAILABLE', message: 'לא זמין' } });
+      return;
+    }
+    res.json({ data: { code } });
+  }));
 
   api.get('/me', asyncRoute(async (req, res) => {
     if (!req.actor) return res.json({ data: null });

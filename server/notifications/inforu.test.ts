@@ -31,6 +31,40 @@ const reset = () => {
   delete process.env.GANTT_INFORU_AUTH;
   delete process.env.GANTT_NOTIFICATIONS_SEND;
   delete process.env.GANTT_AUTH_SEND;
+  delete process.env.GANTT_ALLOW_REAL_SEND;
+};
+
+/*
+ * The switch rules are about production, so they have to be asked in
+ * production's terms. This file runs as a test, where sending is refused
+ * outright — asserting 'send' from inside a test would be asserting something
+ * that can never happen here.
+ */
+/** The async twin, for anything that actually goes near `post`. */
+const asProductionAsync = async <T,>(run: () => Promise<T>): Promise<T> => {
+  const test = process.env.GANTT_TEST;
+  const node = process.env.NODE_ENV;
+  process.env.GANTT_TEST = '';
+  process.env.NODE_ENV = 'production';
+  try {
+    return await run();
+  } finally {
+    process.env.GANTT_TEST = test ?? '';
+    process.env.NODE_ENV = node ?? '';
+  }
+};
+
+const asProduction = <T>(run: () => T): T => {
+  const test = process.env.GANTT_TEST;
+  const node = process.env.NODE_ENV;
+  process.env.GANTT_TEST = '';
+  process.env.NODE_ENV = 'production';
+  try {
+    return run();
+  } finally {
+    process.env.GANTT_TEST = test ?? '';
+    process.env.NODE_ENV = node ?? '';
+  }
 };
 
 reset();
@@ -43,10 +77,69 @@ assert.equal(deliveryMode('notification'), 'log', 'credentials alone do not swit
 assert.equal(deliveryMode('auth'), 'log');
 
 process.env.GANTT_NOTIFICATIONS_SEND = 'true';
-assert.equal(deliveryMode('notification'), 'send', 'sending is a deliberate act');
+assert.equal(asProduction(() => deliveryMode('notification')), 'send', 'sending is a deliberate act');
 
 process.env.GANTT_NOTIFICATIONS_SEND = 'yes';
-assert.equal(deliveryMode('notification'), 'log', 'and only that exact word means it');
+assert.equal(asProduction(() => deliveryMode('notification')), 'log', 'and only that exact word means it');
+
+/*
+ * ---------- a test cannot message anybody, whatever is in the environment ----------
+ *
+ * The rule that matters most here, because the failure it prevents is somebody
+ * running the suite on a laptop that happens to hold production credentials and
+ * texting real employees.
+ */
+{
+  process.env.GANTT_INFORU_API_URL = 'https://example.invalid';
+  process.env.GANTT_INFORU_AUTH = 'a-real-looking-key';
+  process.env.GANTT_NOTIFICATIONS_SEND = 'true';
+  process.env.GANTT_AUTH_SEND = 'true';
+  process.env.GANTT_ALLOW_REAL_SEND = 'yes-really';
+
+  assert.equal(deliveryMode('notification'), 'log', 'every switch on, and a test still does not send');
+  assert.equal(deliveryMode('auth'), 'log', 'sign-in codes included');
+
+  // And the same settings outside a test do send — so the guard is the
+  // environment, not a mistake somewhere else in the configuration.
+  assert.equal(asProduction(() => deliveryMode('notification')), 'send', 'the settings themselves are valid');
+  reset();
+}
+
+/*
+ * ---------- a laptop does not send just because it has production's keys ----------
+ *
+ * GANTT_AUTH_SEND lives in production and travels in a pulled .env file. On its
+ * own that would quietly re-enable real messages on a developer machine.
+ */
+{
+  process.env.GANTT_INFORU_API_URL = 'https://example.invalid';
+  process.env.GANTT_INFORU_AUTH = 'a-real-looking-key';
+  process.env.GANTT_AUTH_SEND = 'true';
+
+  // Both markers, or the runner's NODE_ENV keeps it a test.
+  const asDevelopment = <T,>(run: () => T): T => {
+    const test = process.env.GANTT_TEST;
+    const node = process.env.NODE_ENV;
+    process.env.GANTT_TEST = '';
+    process.env.NODE_ENV = 'development';
+    try {
+      return run();
+    } finally {
+      process.env.GANTT_TEST = test ?? '';
+      process.env.NODE_ENV = node ?? '';
+    }
+  };
+
+  assert.equal(asDevelopment(() => deliveryMode('auth')), 'log', 'production keys alone are not permission');
+
+  process.env.GANTT_ALLOW_REAL_SEND = 'yes-really';
+  assert.equal(
+    asDevelopment(() => deliveryMode('auth')),
+    'send',
+    'a second, deliberately awkward variable is what allows it'
+  );
+  reset();
+}
 
 /*
  * The two switches are independent, and this is the bug that proved it matters.
@@ -61,18 +154,18 @@ assert.equal(deliveryMode('notification'), 'log', 'and only that exact word mean
   process.env.GANTT_INFORU_AUTH = 'not-a-real-key';
 
   process.env.GANTT_AUTH_SEND = 'true';
-  assert.equal(deliveryMode('auth'), 'send', 'letting people sign in is its own decision');
+  assert.equal(asProduction(() => deliveryMode('auth')), 'send', 'letting people sign in is its own decision');
   assert.equal(
-    deliveryMode('notification'),
+    asProduction(() => deliveryMode('notification')),
     'log',
     'and it must not quietly switch the morning reminders on with it'
   );
 
   delete process.env.GANTT_AUTH_SEND;
   process.env.GANTT_NOTIFICATIONS_SEND = 'true';
-  assert.equal(deliveryMode('notification'), 'send');
+  assert.equal(asProduction(() => deliveryMode('notification')), 'send');
   assert.equal(
-    deliveryMode('auth'),
+    asProduction(() => deliveryMode('auth')),
     'log',
     'and turning reminders on must not answer for the login codes either'
   );
@@ -117,7 +210,7 @@ assert.equal(deliveryMode('notification'), 'log', 'and only that exact word mean
     calls++;
     return new Response('nope', { status: 401, statusText: 'Unauthorized' });
   }) as typeof fetch;
-  let r = await sendSms('0525770223', 'בדיקה', 'notification');
+  let r = await asProductionAsync(() => sendSms('0525770223', 'בדיקה', 'notification'));
   assert.equal(calls, 1, 'a bad key is still a bad key on the second try — spending quota to prove it is waste');
   assert.equal(r.ok, false);
   assert.ok(r.error?.includes('401'));
@@ -133,7 +226,7 @@ assert.equal(deliveryMode('notification'), 'log', 'and only that exact word mean
           headers: { 'Content-Type': 'application/json' }
         });
   }) as typeof fetch;
-  r = await sendSms('0525770223', 'בדיקה', 'notification');
+  r = await asProductionAsync(() => sendSms('0525770223', 'בדיקה', 'notification'));
   assert.equal(calls, 3, 'and a fault on the far side gets retried');
   assert.equal(r.ok, true);
   assert.equal(r.providerMessageId, 'req-7', 'the provider handle comes back, for chasing a delivery later');
@@ -144,7 +237,7 @@ assert.equal(deliveryMode('notification'), 'log', 'and only that exact word mean
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     })) as typeof fetch;
-  r = await sendSms('0525770223', 'בדיקה', 'notification');
+  r = await asProductionAsync(() => sendSms('0525770223', 'בדיקה', 'notification'));
   assert.equal(r.ok, false, 'HTTP 200 is not the same as "sent"');
   assert.ok(r.error?.includes('Invalid sender'));
 
