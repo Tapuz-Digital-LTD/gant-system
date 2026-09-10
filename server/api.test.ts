@@ -6,6 +6,7 @@ import express from 'express';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { createApiRouter } from './api.ts';
+import { mountBodyParsers } from './http.ts';
 import { israelNow } from './notifications/prefs.ts';
 import { createRepo } from './db/repo.ts';
 import { loadActor } from './access.ts';
@@ -32,7 +33,9 @@ const [staff] = await db
 const actor = { id: staff.id, email: staff.email, name: staff.name, isGuest: false, isOwner: true, role: 'editor' as const };
 
 const app = express();
-app.use(express.json());
+// The same two rules production uses, from the same file — a suite with its own
+// idea of a body limit is a suite that passes while the deploy answers 413.
+mountBodyParsers(app);
 /*
  * Resolved from the database on every request, exactly as production does.
  *
@@ -53,6 +56,11 @@ async function call(method: string, path: string, body?: unknown, headers: Recor
     body: body ? JSON.stringify(body) : undefined
   });
   const text = await res.text();
+  // A handler that fell through to Express's own error page answers in HTML.
+  // Saying so beats a JSON.parse stack trace that names neither route nor code.
+  if (text.trimStart().startsWith('<')) {
+    throw new Error(`${method} ${path} answered ${res.status} in HTML, not JSON:\n${text.slice(0, 300)}`);
+  }
   return { status: res.status, json: text ? JSON.parse(text) : null };
 }
 
@@ -485,6 +493,175 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
 
   await pg.query(`update users set role = 'editor' where id = $1`, [staff.id]);
   delete process.env.CRON_SECRET;
+}
+
+/*
+ * ---------- a spreadsheet in, twice ----------
+ *
+ * The whole feature exists because the customer's planning file says the same
+ * thing three times. These assertions are about the route, not the parser —
+ * that the preview writes nothing, that the commit is one transaction, and that
+ * running the same file again produces nothing at all.
+ */
+{
+  const { readFileSync, existsSync } = await import('node:fs');
+  const REAL = new URL('../docs/real-data.xlsx', import.meta.url);
+
+  // Only the owner may import by default; the suite's actor is an editor.
+  r = await call('POST', '/import/preview', { fileName: 'x.xlsx', fileBase64: 'AAAA' });
+  assert.equal(r.status, 403, 'importing is its own capability, and an editor does not have it');
+
+  await pg.query(`update users set is_owner = true where id = $1`, [staff.id]);
+
+  // Anything that is not a workbook is a refusal a person can act on.
+  r = await call('POST', '/import/preview', {
+    fileName: 'notes.xlsx',
+    fileBase64: Buffer.from('this is not a spreadsheet').toString('base64')
+  });
+  assert.equal(r.status, 400);
+  assert.equal(r.json.error.code, 'UNREADABLE_FILE');
+  assert.match(r.json.error.message, /xlsx/, 'and it says what kind of file is needed');
+
+  r = await call('POST', '/import/preview', { fileName: 'empty.xlsx', fileBase64: '' });
+  assert.equal(r.status, 400, 'an empty upload is caught before the parser sees it');
+
+  if (existsSync(REAL)) {
+    const fileBase64 = readFileSync(REAL).toString('base64');
+    const fileName = 'real-data.xlsx';
+
+    const boardsBefore = (await call('GET', '/boards')).json.data.length;
+
+    // --- the preview writes nothing ---
+    r = await call('POST', '/import/preview', { fileName, fileBase64 });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.data.plan.summary.events, 51);
+    assert.equal(r.json.data.plan.summary.create, 51);
+    assert.equal(r.json.data.sheets.length, 4, 'every sheet is accounted for');
+    assert.ok(
+      r.json.data.sheets.some((s: { used: boolean; reason: string | null }) => !s.used && s.reason),
+      'including the one that gave nothing, with the reason'
+    );
+    assert.equal(
+      (await call('GET', '/boards')).json.data.length,
+      boardsBefore,
+      'and after all that, nothing has been created'
+    );
+
+    // --- the commit ---
+    r = await call('POST', '/import/commit', {
+      fileName,
+      fileBase64,
+      boardName: 'תכנון שנתי',
+      expect: { create: 51, update: 0 }
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.data.created, 51);
+    assert.equal(r.json.data.boardCreated, true);
+    assert.equal(r.json.data.tasks, 0, 'the file holds no tasks, and none are invented');
+    assert.equal(r.json.data.sample.length, 10, 'ten rows to check against the spreadsheet');
+    assert.ok(r.json.data.sample[0].sources.length > 0, 'each naming the sheet and row it came from');
+
+    const importedBoard: string = r.json.data.board.id;
+    const events = (await call('GET', `/boards/${importedBoard}/events?from=2020-01-01&to=2040-01-01`))
+      .json.data;
+    assert.equal(events.length, 51, 'and they are all readable through the ordinary API');
+
+    const hanukkah = events.find(
+      (e: { title: string; actualDate: string }) => e.title === 'חנוכה' && e.actualDate === '2026-12-04'
+    );
+    assert.ok(hanukkah, 'Hanukkah 2026 is there');
+    assert.equal(hanukkah.kickoffMeetingDate, '2026-09-04', 'with its kickoff meeting');
+    assert.equal(hanukkah.kickoffDate, '2026-10-04', 'its go-live');
+    assert.equal(hanukkah.prepMonths, 2);
+    assert.equal(hanukkah.category, 'holiday', 'and the Hebrew-calendar flag the file states');
+    assert.notEqual(
+      hanukkah.kickoffMeetingDate,
+      hanukkah.kickoffDate,
+      'the two dates the whole product is about are still two dates'
+    );
+
+    // --- the same file again ---
+    r = await call('POST', '/import/preview', { fileName, fileBase64, boardId: importedBoard });
+    assert.equal(r.json.data.plan.summary.create, 0, 'the same file twice creates nothing');
+    assert.equal(r.json.data.plan.summary.unchanged, 51, 'it recognises every row it wrote');
+
+    r = await call('POST', '/import/commit', {
+      fileName,
+      fileBase64,
+      boardId: importedBoard,
+      expect: { create: 0, update: 0 }
+    });
+    assert.equal(r.json.data.created, 0);
+    assert.equal(r.json.data.unchanged, 51);
+    assert.equal(
+      (await call('GET', `/boards/${importedBoard}/events?from=2020-01-01&to=2040-01-01`)).json.data.length,
+      51,
+      'and the board still holds 51 events, not 102'
+    );
+
+    // --- a plan that moved under the person's feet is refused ---
+    r = await call('POST', '/import/commit', {
+      fileName,
+      fileBase64,
+      boardId: importedBoard,
+      expect: { create: 51, update: 0 }
+    });
+    assert.equal(r.status, 409, 'numbers that no longer match are not an import anybody approved');
+    assert.equal(r.json.error.code, 'IMPORT_CHANGED');
+
+    /*
+     * --- out and straight back in ---
+     *
+     * The promise made to the customer: a file this system produces can be
+     * re-imported without losing anything. The only way to know that is to do
+     * it — and the first time it was tried, eighteen holidays came back as
+     * campaigns because the sheet said "חג ומועד" and nothing on the way in
+     * knew what that meant.
+     */
+    {
+      const exported = await fetch(`${base}/export/xlsx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'board', boardIds: [importedBoard], includeTasks: true })
+      });
+      assert.equal(exported.status, 200);
+      assert.match(
+        exported.headers.get('content-type') ?? '',
+        /spreadsheetml/,
+        'a real workbook, not JSON'
+      );
+
+      const workbook = Buffer.from(await exported.arrayBuffer());
+      assert.equal(workbook.subarray(0, 2).toString(), 'PK', 'and a real zip, which is what xlsx is');
+
+      r = await call('POST', '/import/preview', {
+        fileName: 'round-trip.xlsx',
+        fileBase64: workbook.toString('base64'),
+        boardId: importedBoard
+      });
+      assert.equal(r.json.data.plan.summary.events, 51, 'every event is found again');
+      assert.equal(r.json.data.plan.summary.create, 0, 'and none of them is a new one');
+      assert.equal(
+        r.json.data.plan.summary.unchanged,
+        51,
+        'and not one of them differs — the file said exactly what the board holds'
+      );
+    }
+
+    // --- a date somebody typed into the product survives the next import ---
+    const target = events[0];
+    await call('PATCH', `/events/${target.id}`, { note: 'לתאם עם הספק', version: target.version });
+    await call('POST', '/import/commit', {
+      fileName,
+      fileBase64,
+      boardId: importedBoard,
+      expect: { create: 0, update: 0 }
+    });
+    r = await call('GET', `/events/${target.id}`);
+    assert.equal(r.json.data.note, 'לתאם עם הספק', 'a file that says nothing about a note does not erase it');
+  }
+
+  await pg.query(`update users set is_owner = false where id = $1`, [staff.id]);
 }
 
 // ---------- archive removes it from reads ----------

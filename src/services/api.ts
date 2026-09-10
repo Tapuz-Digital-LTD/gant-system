@@ -23,7 +23,15 @@ import {
   Person,
   PermissionMatrix,
   Holiday,
-  SearchHit
+  SearchHit,
+  ImportPreview,
+  ImportResult,
+  Dashboard,
+  ReportDefinition,
+  ReportModel,
+  ReportResult,
+  SavedReport,
+  ChartKind
 } from '../types';
 
 const BASE = '/api';
@@ -73,6 +81,42 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const body = (data: unknown) => ({ body: JSON.stringify(data) });
 
+/**
+ * A file the server built, handed to the browser.
+ *
+ * Not `request`: the answer is a workbook, not JSON, and the filename is in a
+ * header rather than in a body. A failure still arrives as the house error
+ * shape, so it is parsed and thrown like every other one.
+ */
+async function download(path: string, payload: unknown, fallbackName: string): Promise<void> {
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    const e = text ? JSON.parse(text)?.error : null;
+    throw new ApiError(res.status, e?.code ?? 'UNKNOWN', e?.message ?? 'לא הצלחנו להוריד את הקובץ');
+  }
+
+  // filename*=UTF-8''%D7%93… — the only form that survives Hebrew in every browser.
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  const name = encoded ? decodeURIComponent(encoded) : fallbackName;
+
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Revoked on the next tick: revoking synchronously races the download in Safari.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export interface EventInput {
   title: string;
   category?: EventCategory;
@@ -81,6 +125,7 @@ export interface EventInput {
   actualPrecision?: DatePrecision;
   prepMonths?: number;
   /* Milestones — every one optional, none derived from another. */
+  kickoffMeetingDate?: string | null;
   workStartDate?: string | null;
   reviewDate?: string | null;
   freezeDate?: string | null;
@@ -180,6 +225,26 @@ export const api = {
       request<{ phone: string | null }>('/my/phone', { method: 'PUT', ...body({ phone }) })
   },
 
+  /**
+   * Everything on screen, as a real Excel file.
+   *
+   * Scope is enforced on the server from the session: naming boards can only
+   * narrow what somebody may already see, never widen it.
+   */
+  exports: {
+    xlsx: (input: {
+      scope: 'board' | 'boards' | 'events' | 'tasks' | 'all';
+      boardIds?: string[];
+      from?: string;
+      to?: string;
+      categories?: string[];
+      statuses?: string[];
+      assigneeIds?: string[];
+      includeTasks?: boolean;
+      fileName?: string;
+    }) => download('/export/xlsx', input, `${input.fileName ?? 'ייצוא'}.xlsx`)
+  },
+
   /** One task, and everything hanging off it. */
   task: {
     detail: (id: string) => request<TaskDetail>(`/tasks/${id}`),
@@ -224,6 +289,78 @@ export const api = {
       request<void>(`/boards/${boardId}/members`, { method: 'POST', ...body({ userId, role }) }),
     revokeBoard: (boardId: string, userId: string) =>
       request<void>(`/boards/${boardId}/members/${userId}`, { method: 'DELETE' })
+  },
+
+  /**
+   * Excel in, and the same file twice.
+   *
+   * The file rides along on both calls. Nothing is stored between them, so
+   * there is no half-finished import to expire and no state for a second tab
+   * to trample — the server derives the plan from the file each time, and the
+   * client sends decisions rather than data.
+   */
+  imports: {
+    preview: (input: {
+      fileName: string;
+      fileBase64: string;
+      boardId?: string | null;
+      accepted?: string[];
+      rejected?: string[];
+      excluded?: string[];
+    }) => request<ImportPreview>('/import/preview', { method: 'POST', ...body(input) }),
+    commit: (input: {
+      fileName: string;
+      fileBase64: string;
+      boardId?: string | null;
+      boardName?: string | null;
+      accepted: string[];
+      rejected: string[];
+      excluded: string[];
+      expect: { create: number; update: number };
+    }) => request<ImportResult>('/import/commit', { method: 'POST', ...body(input) })
+  },
+
+  /**
+   * Reports.
+   *
+   * The definition goes up, aggregated rows come back. The browser never
+   * receives the records a number is made of unless somebody clicks the number,
+   * which is what keeps a report on three years of campaigns the same size as a
+   * report on one.
+   */
+  reports: {
+    model: () => request<ReportModel>('/reports/model'),
+    run: (definition: ReportDefinition) =>
+      request<ReportResult>('/reports/run', { method: 'POST', ...body(definition) }),
+    /** The records behind one bar. Capped on the server; this is a look, not a download. */
+    drill: (definition: ReportDefinition, groupKey: string | null) =>
+      request<ReportResult>('/reports/drill', {
+        method: 'POST',
+        ...body({ definition, cell: { groupKey } })
+      }),
+
+    saved: {
+      list: () => request<SavedReport[]>('/reports/saved'),
+      create: (input: { name: string; definition: ReportDefinition; chart: ChartKind }) =>
+        request<SavedReport>('/reports/saved', { method: 'POST', ...body(input) }),
+      update: (
+        id: string,
+        changes: { name?: string; definition?: ReportDefinition; chart?: ChartKind; pinned?: boolean; position?: number }
+      ) => request<SavedReport>(`/reports/saved/${id}`, { method: 'PATCH', ...body(changes) }),
+      remove: (id: string) => request<void>(`/reports/saved/${id}`, { method: 'DELETE' }),
+      duplicate: (id: string) =>
+        request<SavedReport>(`/reports/saved/${id}/duplicate`, { method: 'POST' })
+    },
+
+    /** The same grid that is on screen, as a real workbook. */
+    exportXlsx: (definition: ReportDefinition, name: string) =>
+      download('/reports/export', { definition, name }, `${name}.xlsx`),
+
+    dashboard: {
+      get: () => request<Dashboard>('/reports/dashboard'),
+      save: (layout: Dashboard['layout']) =>
+        request<Dashboard>('/reports/dashboard', { method: 'PUT', ...body({ layout }) })
+    }
   },
 
   permissions: {

@@ -141,6 +141,11 @@ export const events = pgTable(
      * of what each one means and how it is drawn.
      */
 
+    /**
+     * ישיבת התנעה — the meeting that starts the work and hands it out.
+     * Never derived from workStartDate or kickoffDate; see ADR 0003.
+     */
+    kickoffMeetingDate: date('kickoff_meeting_date'),
     /** Overrides `actualDate - prepMonths` when the exact day is known. */
     workStartDate: date('work_start_date'),
     /** Checkpoint meeting: surface risks while there is still time. */
@@ -161,6 +166,16 @@ export const events = pgTable(
      */
     hebrewRule: jsonb('hebrew_rule'),
 
+    /**
+     * Where this row came from, when it came from outside.
+     *
+     * Null for anything a person typed. The importer sets it to a key derived
+     * from the source file's identity for the row, so re-importing the same
+     * file updates what it created rather than doubling it — see
+     * 0017_kickoff_meeting.sql.
+     */
+    sourceKey: text('source_key'),
+
     note: text('note'),
     description: text('description'),
 
@@ -177,7 +192,11 @@ export const events = pgTable(
     index('events_board_actual_idx').on(t.boardId, t.actualDate),
     index('events_board_status_idx').on(t.boardId, t.status),
     index('events_board_kickoff_idx').on(t.boardId, t.kickoffDate),
-    index('events_title_search_idx').using('gin', sql`to_tsvector('simple', ${t.title})`)
+    index('events_title_search_idx').using('gin', sql`to_tsvector('simple', ${t.title})`),
+    // Re-importing a file updates its own rows instead of doubling them.
+    uniqueIndex('events_source_key_idx')
+      .on(t.boardId, t.sourceKey)
+      .where(sql`${t.sourceKey} is not null`)
   ]
 );
 
@@ -488,4 +507,54 @@ export const invites = pgTable(
     index('invites_email_idx').on(sql`lower(${t.email})`),
     index('invites_board_idx').on(t.boardId)
   ]
+);
+
+/* ==================================================================
+   Reports. See 0018_reports.sql, and server/reports/model.ts for the
+   shape the `definition` column holds.
+   ================================================================== */
+
+/**
+ * A question somebody wants to keep asking.
+ *
+ * Holds the definition, never the answer — reopening it recomputes, so a saved
+ * report never quietly shows last quarter's numbers under this quarter's name.
+ *
+ * Visible to the whole workspace, because this product shares boards rather
+ * than private dashboards: a report nobody else can find is a report that gets
+ * rebuilt five times. Editing and deleting are a different question, and the
+ * route restricts those to the owner or an admin.
+ */
+export const savedReports = pgTable(
+  'saved_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    /** A `reportDefinition` as validated by server/reports/model.ts. */
+    definition: jsonb('definition').notNull(),
+    /** One of CHART_KINDS. Presentation only — the query never reads it. */
+    chart: text('chart').notNull().default('bar'),
+    /** Null once that person is gone: the report outlives them. */
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    pinned: boolean('pinned').notNull().default(false),
+    position: integer('position').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [index('saved_reports_order_idx').on(t.pinned, t.position, t.createdAt)]
+);
+
+/** One person's arrangement of reports everyone can see. One row each, enforced. */
+export const dashboards = pgTable(
+  'dashboards',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** An ordered list of `{ savedReportId, size }`. */
+    layout: jsonb('layout').notNull().default([]),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [uniqueIndex('dashboards_owner_idx').on(t.ownerId)]
 );

@@ -39,6 +39,7 @@ const STEPS: { id: StepId; label: string }[] = [
 
 /** One shape for "not filled in", so an empty field is never a stray undefined. */
 const NO_DATES: Record<MilestoneKey, string> = {
+  kickoffMeeting: '',
   workStart: '',
   review: '',
   freeze: '',
@@ -117,6 +118,7 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
   const warnings = useMemo(
     () =>
       milestoneWarnings({
+        kickoffMeetingDate: dates.kickoffMeeting || null,
         workStartDate: dates.workStart || null,
         reviewDate: dates.review || null,
         freezeDate: dates.freeze || null,
@@ -153,6 +155,7 @@ export const AddEventModal: React.FC<AddEventModalProps> = ({
       actualDate: resolvedActual,
       actualPrecision: hasExactDay ? 'day' : 'month',
       prepMonths: Number(prepMonths) || 0,
+      kickoffMeetingDate: dates.kickoffMeeting || null,
       workStartDate: dates.workStart || null,
       reviewDate: dates.review || null,
       freezeDate: dates.freeze || null,

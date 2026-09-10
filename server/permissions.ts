@@ -27,6 +27,7 @@ export const PERMISSIONS = [
   { key: 'board.purge', label: 'מחיקת לוח לצמיתות מהארכיון (אין שחזור)', group: 'לוחות' },
 
   { key: 'export.run', label: 'הורדה והדפסה לאקסל וגיבוי', group: 'נתונים' },
+  { key: 'import.run', label: 'ייבוא אירועים מקובץ אקסל', group: 'נתונים' },
   { key: 'activity.view', label: 'צפייה בלבד ביומן הפעילות', group: 'נתונים' },
 
   { key: 'people.manage', label: 'הוספה והסרה של אנשים', group: 'ניהול' },
@@ -61,6 +62,9 @@ export const DEFAULTS: Record<Role, PermissionKey[]> = {
     // 'board.purge' is absent for the same reason 'event.purge' is: an archive
     // anybody can empty is not an archive. An admin can grant it.
     'export.run',
+    // 'import.run' is deliberately absent. One file can rewrite the dates of a
+    // whole year in one click, and an editor who needs to do that can be given
+    // it in the settings screen without a deploy.
     'activity.view'
   ],
   viewer: ['export.run', 'activity.view']

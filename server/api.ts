@@ -4,6 +4,8 @@ import { getDb, isDatabaseReady } from './db/client.js';
 import { createRepo, ConflictError, ConflictExistsError, NotFoundError, type Repo } from './db/repo.js';
 import * as v from './validation.js';
 import { createAiRouter } from './ai.js';
+import { createExportRouter } from './export/routes.js';
+import { createReportsRouter } from './reports/routes.js';
 import { PERMISSIONS, ROLE_LABELS, type Role } from './permissions.js';
 import { holidaysBetween } from './holidays.js';
 import { codeForScreen } from './email.js';
@@ -54,6 +56,43 @@ const asyncRoute =
 
 function id(value: string): string {
   return v.uuidParam.parse(value);
+}
+
+/**
+ * An uploaded workbook, or a plain refusal.
+ *
+ * exceljs throws several different shapes at a file that is not a workbook —
+ * a zip error, a missing part, an undefined property — and none of them is
+ * something to show a person. Returns null once the refusal has been sent.
+ */
+async function readUpload(base64: string, res: Response) {
+  const buffer = Buffer.from(base64, 'base64');
+  if (buffer.length === 0) {
+    res.status(400).json({ error: { code: 'EMPTY_FILE', message: 'הקובץ ריק' } });
+    return null;
+  }
+  try {
+    const { readWorkbook } = await import('./import/workbook.js');
+    return await readWorkbook(buffer);
+  } catch (err) {
+    console.error(JSON.stringify({ level: 'warn', msg: 'import_unreadable', error: String(err) }));
+    res.status(400).json({
+      error: {
+        code: 'UNREADABLE_FILE',
+        message: 'לא הצלחנו לפתוח את הקובץ. צריך קובץ אקסל מסוג xlsx — לא CSV ולא PDF'
+      }
+    });
+    return null;
+  }
+}
+
+/** What each sheet contributed, so a sheet that gave nothing is visible. */
+function describeSheets(parsed: { sheetNames: string[]; rows: { sheet: string }[]; skipped: { sheet: string; reason: string }[] }) {
+  return parsed.sheetNames.map((name) => {
+    const rows = parsed.rows.filter((r) => r.sheet === name).length;
+    const skipped = parsed.skipped.find((s) => s.sheet === name);
+    return { name, rows, used: rows > 0, reason: skipped?.reason ?? null };
+  });
 }
 
 /**
@@ -108,6 +147,13 @@ export function createApiRouter(
   });
 
   api.use('/ai', createAiRouter());
+  /*
+   * Two routers of their own, mounted here so they inherit the middleware above
+   * — the repository, the session, and the error contract at the bottom of this
+   * file. Neither formats an error response itself.
+   */
+  api.use('/export', createExportRouter());
+  api.use('/reports', createReportsRouter());
 
   /*
    * Health, and enough to answer "why is it slow" without guessing.
@@ -757,6 +803,122 @@ export function createApiRouter(
     const eventId = id(req.params.id);
     await assertBoardRead(req.repo, actor, await req.repo.boardIdForEvent(eventId));
     res.json({ data: await req.repo.listActivity('event', eventId) });
+  }));
+
+  /* ==================================================================
+     ייבוא מאקסל
+
+     Two calls, and no state between them. The file is sent with both, the
+     plan is derived on the server both times, and what the client sends in
+     between is a list of decisions — never data. So there is no half-finished
+     import to expire, to clean up, or for a second tab to trample.
+     ================================================================== */
+
+  /** Everything that would happen, and nothing that does. Reads; never writes. */
+  api.post('/import/preview', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'import.run', 'ייבוא מקובץ');
+    const input = v.importPreview.parse(req.body);
+
+    const parsed = await readUpload(input.fileBase64, res);
+    if (!parsed) return;
+
+    let existing;
+    if (input.boardId) {
+      await assertBoardWrite(req.repo, actor, input.boardId);
+      existing = await req.repo.eventsForImport(input.boardId);
+    }
+
+    const { buildPlan } = await import('./import/plan.js');
+    res.json({
+      data: {
+        fileName: input.fileName,
+        sheets: describeSheets(parsed),
+        plan: buildPlan(parsed.rows, {
+          existing,
+          accepted: new Set(input.accepted),
+          rejected: new Set(input.rejected),
+          excluded: new Set(input.excluded)
+        })
+      }
+    });
+  }));
+
+  /**
+   * The same plan, run for real.
+   *
+   * `expect` is the safety catch: the screen says what it is about to do, and
+   * a file that no longer produces those numbers is a different file. Better a
+   * refusal than an import nobody approved.
+   */
+  api.post('/import/commit', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'import.run', 'ייבוא מקובץ');
+    const input = v.importCommit.parse(req.body);
+
+    const parsed = await readUpload(input.fileBase64, res);
+    if (!parsed) return;
+
+    let boardId = input.boardId ?? null;
+    let createdBoard: { id: string; name: string } | null = null;
+
+    if (!boardId) {
+      if (!input.boardName) throw new NotFoundError('לא נבחר לוח לייבוא');
+      await requirePermission(req.repo, req.actor, 'board.create', 'יצירת לוח');
+      if (actor.isGuest) throw new ForbiddenError('אורח אינו יכול ליצור לוח');
+      const board = await req.repo.createBoard({ name: input.boardName }, actor.id);
+      boardId = board.id;
+      createdBoard = { id: board.id, name: board.name };
+    } else {
+      await assertBoardWrite(req.repo, actor, boardId);
+    }
+
+    const { buildPlan } = await import('./import/plan.js');
+    const plan = buildPlan(parsed.rows, {
+      existing: await req.repo.eventsForImport(boardId),
+      accepted: new Set(input.accepted),
+      rejected: new Set(input.rejected),
+      excluded: new Set(input.excluded)
+    });
+
+    if (plan.summary.create !== input.expect.create || plan.summary.update !== input.expect.update) {
+      res.status(409).json({
+        error: {
+          code: 'IMPORT_CHANGED',
+          message:
+            `מה שהקובץ מבקש לעשות השתנה מאז המסך הקודם ` +
+            `(${plan.summary.create} חדשים ו-${plan.summary.update} עדכונים, במקום ` +
+            `${input.expect.create} ו-${input.expect.update}). פתח את התצוגה המקדימה שוב.`
+        }
+      });
+      return;
+    }
+
+    const result = await req.repo.applyImport(boardId, plan.events, actor.id);
+
+    res.json({
+      data: {
+        board: createdBoard ?? { id: boardId, name: null },
+        boardCreated: Boolean(createdBoard),
+        created: result.created.length,
+        updated: result.updated.length,
+        unchanged: result.unchanged,
+        skipped: result.skipped,
+        tasks: 0,
+        warnings: plan.summary.warnings,
+        errors: plan.summary.errors,
+        /* Ten rows a person can check against their own spreadsheet. */
+        sample: plan.events
+          .filter((e) => e.action !== 'skip')
+          .slice(0, 10)
+          .map((e) => ({
+            title: e.title,
+            sources: e.sources,
+            actualDate: e.values.actualDate,
+            kickoffMeetingDate: e.values.kickoffMeetingDate,
+            kickoffDate: e.values.kickoffDate,
+            prepMonths: e.values.prepMonths
+          }))
+      }
+    });
   }));
 
   api.all('*', (req, res) => {

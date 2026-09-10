@@ -1,5 +1,6 @@
 import express from 'express';
 import { createApiRouter } from '../server/api.js';
+import { mountBodyParsers } from '../server/http.js';
 import { initDb } from '../server/db/client.js';
 import { authHandler, describeAuthHandler, resolveActorFromSession } from '../server/mount-auth.js';
 
@@ -21,7 +22,7 @@ app.use(async (_req, _res, next) => {
 app.all('/api/auth/*', authHandler());
 app.get('/api/auth-config', describeAuthHandler());
 
-app.use(express.json({ limit: '1mb' }));
+mountBodyParsers(app);
 app.use('/api', createApiRouter(undefined, resolveActorFromSession));
 
 export default app;

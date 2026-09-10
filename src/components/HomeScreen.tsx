@@ -3,9 +3,12 @@ import {
   AlertTriangle,
   Archive,
   ArrowLeft,
+  BarChart3,
   CalendarDays,
   ChevronDown,
   Copy,
+  FileSpreadsheet,
+  LayoutDashboard,
   LayoutGrid,
   ListChecks,
   MoreHorizontal,
@@ -34,6 +37,9 @@ interface HomeScreenProps {
   onCreateBoard: () => void;
   onOpenPeople: () => void;
   onOpenSettings: () => void;
+  onOpenImport: () => void;
+  onOpenReports: () => void;
+  onOpenDashboard: () => void;
   onSignOut: () => void;
   /* --- project lifecycle: new → work → finished → archive → next --- */
   archivedBoards: GanttBoard[];
@@ -103,6 +109,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onCreateBoard,
   onOpenPeople,
   onOpenSettings,
+  onOpenImport,
+  onOpenReports,
+  onOpenDashboard,
   onSignOut,
   archivedBoards,
   archivedCount,
@@ -133,6 +142,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <span className="text-md font-bold tracking-tight text-ink">תכנון אירועים</span>
 
           <div className="flex-1" />
+
+          {/*
+            The morning screen, next to the bell.
+            
+            Somebody who has pinned four reports arrives to look at them, and a
+            dashboard three clicks in is a dashboard nobody opens.
+          */}
+          {can('activity.view') && (
+            <Button variant="ghost" size="sm" onClick={onOpenDashboard}>
+              <LayoutDashboard className="h-4.5 w-4.5" />
+              <span className="hidden sm:inline">לוח מחוונים</span>
+            </Button>
+          )}
 
           <NotificationsBell onOpenLink={onOpen} />
 
@@ -397,12 +419,31 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </section>
         )}
 
-        {can('board.create') && boards.length > 0 && (
-          <Button variant="secondary" className="mt-4" onClick={onCreateBoard}>
-            <Plus className="h-5 w-5" />
-            לוח חדש
-          </Button>
-        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {can('board.create') && boards.length > 0 && (
+            <Button variant="secondary" onClick={onCreateBoard}>
+              <Plus className="h-5 w-5" />
+              לוח חדש
+            </Button>
+          )}
+          {/*
+            Next to "new board", because that is the other way a year of
+            planning gets into the system — and for most people it is the first
+            one they will use.
+          */}
+          {can('import.run') && (
+            <Button variant="secondary" onClick={onOpenImport}>
+              <FileSpreadsheet className="h-5 w-5" />
+              ייבוא מאקסל
+            </Button>
+          )}
+          {can('activity.view') && (
+            <Button variant="secondary" onClick={onOpenReports}>
+              <BarChart3 className="h-5 w-5" />
+              דוחות
+            </Button>
+          )}
+        </div>
       </main>
     </div>
   );

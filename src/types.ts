@@ -25,7 +25,7 @@ export type Capability =
   | 'task.create' | 'task.edit' | 'task.delete'
   | 'comment.create'
   | 'board.create' | 'board.edit' | 'board.duplicate' | 'board.delete' | 'board.purge'
-  | 'export.run' | 'activity.view'
+  | 'export.run' | 'import.run' | 'activity.view'
   | 'people.manage' | 'permissions.manage';
 
 /** A person plus the boards they can reach. Staff have an empty list and see everything. */
@@ -85,6 +85,8 @@ export interface EventItem {
 
   /* Milestones — all optional, all day-precision, none derived from another.
      src/data/milestones.ts says what each one means and how it is drawn. */
+  /** ישיבת התנעה — the meeting that opens the work and hands it out. */
+  kickoffMeetingDate: string | null;
   /** Overrides `actualDate - prepMonths` when the exact day is known. */
   workStartDate: string | null;
   reviewDate: string | null;
@@ -329,6 +331,7 @@ export interface MonthMeta {
 
 /** One of the seven moments in an event's life. Described in data/milestones.ts. */
 export type MilestoneKey =
+  | 'kickoffMeeting'
   | 'workStart'
   | 'review'
   | 'freeze'
@@ -360,4 +363,215 @@ export function monthKeyOf(event: Pick<EventItem, 'actualDate'>): string {
 /** "During the month, no exact day" — one source of truth, no boolean to contradict it. */
 export function isFloating(event: Pick<EventItem, 'actualPrecision'>): boolean {
   return event.actualPrecision === 'month';
+}
+
+
+/* ==================================================================
+   ייבוא מאקסל
+
+   Mirrors server/import/plan.ts. Nothing here is computed on the client:
+   the plan is derived on the server from the file, twice — once to show and
+   once to run — so what a person approves is what happens.
+   ================================================================== */
+
+export interface ImportIssue {
+  severity: 'error' | 'warning';
+  /** "גיליון!12" — what to type into Excel's Name Box to go and look. */
+  where: string;
+  field?: string;
+  message: string;
+}
+
+export interface ImportSuggestion {
+  field: string;
+  fieldLabel: string;
+  from: string;
+  to: string;
+  reason: string;
+  /** The answer came from the file itself, so it arrives already ticked. */
+  fromFile: boolean;
+  applied: boolean;
+}
+
+export interface ImportConflict {
+  field: string;
+  fieldLabel: string;
+  values: { value: string; where: string[] }[];
+  chosen: string;
+}
+
+export type ImportAction = 'create' | 'update' | 'unchanged' | 'skip';
+
+export interface ImportEventValues {
+  title: string;
+  category: EventCategory;
+  actualDate: string;
+  actualPrecision: DatePrecision;
+  prepMonths: number;
+  kickoffMeetingDate: string | null;
+  workStartDate: string | null;
+  reviewDate: string | null;
+  freezeDate: string | null;
+  kickoffDate: string | null;
+  announceDate: string | null;
+  campaignEndDate: string | null;
+  note: string | null;
+  description: string | null;
+}
+
+export interface PlannedImportEvent {
+  sourceKey: string;
+  title: string;
+  action: ImportAction;
+  values: ImportEventValues;
+  stated: string[];
+  sources: string[];
+  issues: ImportIssue[];
+  conflicts: ImportConflict[];
+  suggestions: ImportSuggestion[];
+  existingId?: string;
+  changes?: { field: string; fieldLabel: string; from: string; to: string }[];
+}
+
+export interface ImportPlan {
+  events: PlannedImportEvent[];
+  issues: ImportIssue[];
+  summary: {
+    sourceRows: number;
+    events: number;
+    create: number;
+    update: number;
+    unchanged: number;
+    skip: number;
+    tasks: number;
+    errors: number;
+    warnings: number;
+    conflicts: number;
+    suggestions: number;
+  };
+}
+
+export interface ImportPreview {
+  fileName: string;
+  /** Every sheet in the file, including the ones that gave nothing and why. */
+  sheets: { name: string; rows: number; used: boolean; reason: string | null }[];
+  plan: ImportPlan;
+}
+
+export interface ImportResult {
+  board: { id: string; name: string | null };
+  boardCreated: boolean;
+  created: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  tasks: number;
+  warnings: number;
+  errors: number;
+  /** Ten rows to check against the spreadsheet by eye. */
+  sample: {
+    title: string;
+    sources: string[];
+    actualDate: string;
+    kickoffMeetingDate: string | null;
+    kickoffDate: string | null;
+    prepMonths: number;
+  }[];
+}
+
+
+/* ==================================================================
+   דוחות
+
+   Mirrors server/reports/. The vocabulary — which groupings and which
+   measures exist, and what each is called in Hebrew — is fetched from
+   `/api/reports/model` and never written down here: a label that lives
+   in two places is a label that will eventually disagree with itself.
+   ================================================================== */
+
+export type ReportDataset = 'events' | 'tasks';
+export type ChartKind = 'bar' | 'line' | 'pie' | 'table' | 'number';
+export type ReportColumnType = 'text' | 'number' | 'percent' | 'days';
+
+export interface ReportTerm {
+  key: string;
+  label: string;
+  hint: string;
+}
+
+export interface ReportMeasureTerm extends ReportTerm {
+  type: Exclude<ReportColumnType, 'text'>;
+}
+
+export interface ReportDatasetModel {
+  key: ReportDataset;
+  label: string;
+  hint: string;
+  dimensions: ReportTerm[];
+  measures: ReportMeasureTerm[];
+  dateFields: ReportTerm[];
+  filters: ReportTerm[];
+}
+
+export interface ReportModel {
+  datasets: ReportDatasetModel[];
+  values: {
+    categories: { key: string; label: string }[];
+    statuses: { key: string; label: string }[];
+    priorities: { key: string; label: string }[];
+  };
+  charts: { key: ChartKind; label: string }[];
+}
+
+/** Only keys the server's own model lists ever reach here. */
+export interface ReportFilters {
+  dateField?: string;
+  from?: string;
+  to?: string;
+  boardIds?: string[];
+  categories?: string[];
+  statuses?: string[];
+  priorities?: string[];
+  assigneeIds?: string[];
+  onlyOpen?: boolean;
+  onlyLate?: boolean;
+}
+
+export interface ReportDefinition {
+  dataset: ReportDataset;
+  dimension: string;
+  measures: string[];
+  filters: ReportFilters;
+  includeArchived: boolean;
+}
+
+export interface ReportColumn {
+  key: string;
+  label: string;
+  type: ReportColumnType;
+}
+
+export interface ReportResult {
+  columns: ReportColumn[];
+  rows: Record<string, string | number | null>[];
+  total: number;
+  truncated: boolean;
+}
+
+export interface SavedReport {
+  id: string;
+  name: string;
+  definition: ReportDefinition;
+  chart: ChartKind;
+  ownerId: string | null;
+  pinned: boolean;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DashboardSize = 'small' | 'medium' | 'large';
+
+export interface Dashboard {
+  layout: { savedReportId: string; size: DashboardSize }[];
 }

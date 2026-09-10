@@ -19,6 +19,7 @@ const event = (over: Partial<EventItem> = {}): EventItem => ({
   actualDate: '2026-12-14',
   actualPrecision: 'day',
   prepMonths: 2,
+  kickoffMeetingDate: null,
   workStartDate: null,
   reviewDate: null,
   freezeDate: null,
@@ -48,8 +49,8 @@ assert.equal(
 );
 assert.deepEqual(
   [...MILESTONES].sort((a, b) => a.order - b.order).map((m) => m.key),
-  ['workStart', 'review', 'freeze', 'kickoff', 'announce', 'actual', 'campaignEnd'],
-  'the story runs: start work, review, freeze, go live, tell the company, the event, the end'
+  ['kickoffMeeting', 'workStart', 'review', 'freeze', 'kickoff', 'announce', 'actual', 'campaignEnd'],
+  'the story runs: the kickoff meeting, start work, review, freeze, go live, tell the company, the event, the end'
 );
 
 // ---------- work window start ----------
@@ -76,6 +77,7 @@ assert.deepEqual(
 
   const full = milestonesOf(
     event({
+      kickoffMeetingDate: '2026-10-05',
       workStartDate: '2026-10-19',
       reviewDate: '2026-11-20',
       freezeDate: '2026-11-28',
@@ -86,7 +88,7 @@ assert.deepEqual(
   );
   assert.deepEqual(
     full.map((o) => o.meta.key),
-    ['workStart', 'review', 'freeze', 'kickoff', 'announce', 'actual', 'campaignEnd'],
+    ['kickoffMeeting', 'workStart', 'review', 'freeze', 'kickoff', 'announce', 'actual', 'campaignEnd'],
     'dates come back in calendar order, and same-day ones keep the story order'
   );
   assert.ok(full.every((o) => o.monthOnly === false), 'nothing here is month-only');
@@ -178,6 +180,57 @@ assert.deepEqual(
       `"${category}": the go-live date must say it is only for a different day`
     );
   }
+}
+
+/* ---------- ישיבת התנעה is its own moment, and it is not the others ---------- */
+{
+  const meeting = MILESTONES.find((m) => m.key === 'kickoffMeeting')!;
+  const workStart = MILESTONES.find((m) => m.key === 'workStart')!;
+  const kickoff = MILESTONES.find((m) => m.key === 'kickoff')!;
+
+  assert.equal(meeting.order, 1, 'the meeting opens the story');
+  assert.equal(meeting.field, 'kickoffMeetingDate', 'it has a column of its own');
+  assert.notEqual(meeting.field, workStart.field, 'it is not the start of the work period');
+  assert.notEqual(meeting.field, kickoff.field, 'and it is not the campaign going live');
+  assert.equal(meeting.required, false, 'like every milestone, it may be left empty');
+  assert.equal(meeting.allowsMonth, false, 'a meeting happens on a day');
+
+  // Every category is offered it: the meeting is what the product is for.
+  assert.equal(meeting.openFor.length, 6, 'every kind of work can have a kickoff meeting');
+
+  // An event with only a meeting shows exactly that, and invents nothing.
+  const only = milestonesOf(event({ kickoffMeetingDate: '2026-10-20' }));
+  assert.deepEqual(only.map((o) => o.meta.key), ['kickoffMeeting', 'actual']);
+
+  /*
+   * The real planning file: the meeting sits months before the month
+   * arithmetic would put the start of work, and the bar has to reach it.
+   */
+  const early = workWindowStart(
+    event({ actualDate: '2027-10-01', prepMonths: 4, kickoffMeetingDate: '2027-04-01' })
+  );
+  assert.equal(early.date, '2027-04-01', 'the bar starts at the meeting when the meeting is earlier');
+  assert.equal(early.approximate, false, 'and a typed day is exact, not a guess');
+
+  const later = workWindowStart(
+    event({ actualDate: '2026-12-14', prepMonths: 2, kickoffMeetingDate: '2026-11-20' })
+  );
+  assert.equal(later.date, '2026-10-01', 'a later meeting does not shorten the preparation window');
+  assert.equal(later.approximate, true);
+
+  // The three broken rows in the real file, as warnings and never refusals.
+  const upsideDown = milestoneWarnings(
+    event({ kickoffMeetingDate: '2026-11-26', kickoffDate: '2026-01-26' })
+  );
+  assert.ok(
+    upsideDown.some((w) => w.key === 'kickoffMeeting'),
+    'a meeting after the go-live is flagged'
+  );
+  assert.deepEqual(
+    milestoneWarnings(event({ kickoffMeetingDate: '2026-10-20', kickoffDate: '2026-12-06' })),
+    [],
+    'and the ordinary order says nothing'
+  );
 }
 
 console.log('milestones: כל הבדיקות עברו ✓');
