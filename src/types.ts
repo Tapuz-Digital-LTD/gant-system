@@ -85,6 +85,8 @@ export interface EventItem {
 
   /* Milestones — all optional, all day-precision, none derived from another.
      src/data/milestones.ts says what each one means and how it is drawn. */
+  /** ישיבת התנעה — the meeting that opens the work and hands it out. */
+  kickoffMeetingDate: string | null;
   /** Overrides `actualDate - prepMonths` when the exact day is known. */
   workStartDate: string | null;
   reviewDate: string | null;
@@ -329,6 +331,7 @@ export interface MonthMeta {
 
 /** One of the seven moments in an event's life. Described in data/milestones.ts. */
 export type MilestoneKey =
+  | 'kickoffMeeting'
   | 'workStart'
   | 'review'
   | 'freeze'

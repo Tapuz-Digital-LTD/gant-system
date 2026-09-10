@@ -19,6 +19,7 @@ const SUITES = [
   'src/utils/routes.test.ts',
   'src/utils/notificationGroups.test.ts',
   'server/db/migrate.test.ts',
+  'server/import/import.test.ts',
   'server/db/schema.test.ts',
   'server/notifications/reminders.test.ts',
   'server/notifications/milestone-labels.test.ts',

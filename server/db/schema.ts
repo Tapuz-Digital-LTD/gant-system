@@ -141,6 +141,11 @@ export const events = pgTable(
      * of what each one means and how it is drawn.
      */
 
+    /**
+     * ישיבת התנעה — the meeting that starts the work and hands it out.
+     * Never derived from workStartDate or kickoffDate; see ADR 0003.
+     */
+    kickoffMeetingDate: date('kickoff_meeting_date'),
     /** Overrides `actualDate - prepMonths` when the exact day is known. */
     workStartDate: date('work_start_date'),
     /** Checkpoint meeting: surface risks while there is still time. */
@@ -161,6 +166,16 @@ export const events = pgTable(
      */
     hebrewRule: jsonb('hebrew_rule'),
 
+    /**
+     * Where this row came from, when it came from outside.
+     *
+     * Null for anything a person typed. The importer sets it to a key derived
+     * from the source file's identity for the row, so re-importing the same
+     * file updates what it created rather than doubling it — see
+     * 0017_kickoff_meeting.sql.
+     */
+    sourceKey: text('source_key'),
+
     note: text('note'),
     description: text('description'),
 
@@ -177,7 +192,11 @@ export const events = pgTable(
     index('events_board_actual_idx').on(t.boardId, t.actualDate),
     index('events_board_status_idx').on(t.boardId, t.status),
     index('events_board_kickoff_idx').on(t.boardId, t.kickoffDate),
-    index('events_title_search_idx').using('gin', sql`to_tsvector('simple', ${t.title})`)
+    index('events_title_search_idx').using('gin', sql`to_tsvector('simple', ${t.title})`),
+    // Re-importing a file updates its own rows instead of doubling them.
+    uniqueIndex('events_source_key_idx')
+      .on(t.boardId, t.sourceKey)
+      .where(sql`${t.sourceKey} is not null`)
   ]
 );
 

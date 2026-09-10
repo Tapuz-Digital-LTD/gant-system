@@ -75,6 +75,8 @@
          Colour is never the only signal — an icon and a word always come with
          it — but a distinct hue lets the eye group a timeline at a glance.
          None of these is the brand red; that stays reserved for actions. --- */
+  --color-ms-meeting: #0369a1;
+  --color-ms-meeting-soft: #e0f2fe;
   --color-ms-workstart: #15803d;
   --color-ms-workstart-soft: #e3f5e9;
   --color-ms-review: #b45309;

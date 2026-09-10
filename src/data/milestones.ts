@@ -1,4 +1,5 @@
 import {
+  Users,
   Hammer,
   ClipboardCheck,
   Snowflake,
@@ -25,6 +26,7 @@ export type { MilestoneKey };
 
 /** The fields on an event that hold a date. */
 export type MilestoneField =
+  | 'kickoffMeetingDate'
   | 'workStartDate'
   | 'reviewDate'
   | 'freezeDate'
@@ -106,6 +108,34 @@ const EVERY_CATEGORY: EventCategory[] = [
 
 export const MILESTONES: MilestoneMeta[] = [
   {
+    key: 'kickoffMeeting',
+    field: 'kickoffMeetingDate',
+    label: 'מתי ישיבת ההתנעה?',
+    short: 'ישיבת התנעה',
+    hint: 'הפגישה שפותחת את העבודה: כל מי שמעורב יושב, מסכמים מה צריך לקרות, ומחלקים משימות.',
+    example: 'למשל: 20.10 — כל בעלי התפקידים בחדר אחד',
+    icon: Users,
+    text: 'text-ms-meeting',
+    bg: 'bg-ms-meeting-soft',
+    border: 'border-ms-meeting',
+    order: 1,
+    required: false,
+    allowsMonth: false,
+    /*
+     * Open for everything, and first.
+     *
+     * It is the one date the planning file records for almost every activity —
+     * 45 of 51 — and the moment work is actually handed to people. Hiding it
+     * behind "עוד תאריכי תכנון" would bury the field the product exists for.
+     */
+    openFor: EVERY_CATEGORY,
+    byCategory: {
+      campaign: { label: 'מתי ישיבת ההתנעה של המבצע?' },
+      holiday: { label: 'מתי נפגשים כדי לתכנן?' },
+      operational: { label: 'מתי נפגשים כדי לחלק את העבודה?' }
+    }
+  },
+  {
     key: 'workStart',
     field: 'workStartDate',
     label: 'מתי מתחילים לעבוד?',
@@ -116,7 +146,7 @@ export const MILESTONES: MilestoneMeta[] = [
     text: 'text-ms-workstart',
     bg: 'bg-ms-workstart-soft',
     border: 'border-ms-workstart',
-    order: 1,
+    order: 2,
     required: false,
     allowsMonth: false,
     openFor: []
@@ -132,7 +162,7 @@ export const MILESTONES: MilestoneMeta[] = [
     text: 'text-ms-review',
     bg: 'bg-ms-review-soft',
     border: 'border-ms-review',
-    order: 2,
+    order: 3,
     required: false,
     allowsMonth: false,
     openFor: CUSTOMER_FACING
@@ -148,7 +178,7 @@ export const MILESTONES: MilestoneMeta[] = [
     text: 'text-ms-freeze',
     bg: 'bg-ms-freeze-soft',
     border: 'border-ms-freeze',
-    order: 3,
+    order: 4,
     required: false,
     allowsMonth: false,
     openFor: CUSTOMER_FACING
@@ -178,7 +208,7 @@ export const MILESTONES: MilestoneMeta[] = [
     text: 'text-ms-kickoff',
     bg: 'bg-ms-kickoff-soft',
     border: 'border-ms-kickoff',
-    order: 4,
+    order: 5,
     required: false,
     allowsMonth: false,
     openFor: CUSTOMER_FACING
@@ -194,7 +224,7 @@ export const MILESTONES: MilestoneMeta[] = [
     text: 'text-ms-announce',
     bg: 'bg-ms-announce-soft',
     border: 'border-ms-announce',
-    order: 5,
+    order: 6,
     required: false,
     allowsMonth: false,
     openFor: CUSTOMER_FACING
@@ -237,7 +267,7 @@ export const MILESTONES: MilestoneMeta[] = [
     text: 'text-ms-actual',
     bg: 'bg-ms-actual-soft',
     border: 'border-ms-actual',
-    order: 6,
+    order: 7,
     required: true,
     allowsMonth: true,
     openFor: EVERY_CATEGORY
@@ -253,7 +283,7 @@ export const MILESTONES: MilestoneMeta[] = [
     text: 'text-ms-end',
     bg: 'bg-ms-end-soft',
     border: 'border-ms-end',
-    order: 7,
+    order: 8,
     required: false,
     allowsMonth: false,
     openFor: CUSTOMER_FACING
@@ -309,6 +339,7 @@ export function milestoneWarnings(
 ): MilestoneWarning[] {
   const out: MilestoneWarning[] = [];
   const {
+    kickoffMeetingDate: meeting,
     workStartDate: work,
     reviewDate: review,
     freezeDate: freeze,
@@ -319,6 +350,27 @@ export function milestoneWarnings(
   } = event;
 
   const after = (a: string | null, b: string | null) => Boolean(a && b && a > b);
+
+  /*
+   * The meeting comes first, or the plan is upside down.
+   *
+   * Three rows in the real planning file have exactly this shape — a year typed
+   * wrong in one field — and every one of them was invisible in a spreadsheet.
+   */
+  for (const [key, date, what] of [
+    ['review', review, 'הבקרה'],
+    ['freeze', freeze, 'הקפאת השינויים'],
+    ['kickoff', kickoff, 'העלייה לאוויר'],
+    ['announce', announce, 'ההודעה לחברה']
+  ] as const) {
+    if (after(meeting, date)) {
+      out.push({ key: 'kickoffMeeting', message: `ישיבת ההתנעה אחרי ${what}. בדוק אם זה נכון.` });
+      break;
+    }
+  }
+  if (meeting && meeting > actual) {
+    out.push({ key: 'kickoffMeeting', message: 'ישיבת ההתנעה אחרי תאריך האירוע. בדוק אם זה נכון.' });
+  }
 
   if (after(review, freeze)) {
     out.push({ key: 'review', message: 'הבקרה אחרי הקפאת השינויים. בדוק אם זה נכון.' });
@@ -336,7 +388,7 @@ export function milestoneWarnings(
   // Anything scheduled before work has started is worth a second look.
   if (work) {
     for (const m of MILESTONES) {
-      if (m.key === 'workStart') continue;
+      if (m.key === 'workStart' || m.key === 'kickoffMeeting') continue;
       const d = event[m.field];
       if (d && d < work) {
         out.push({ key: m.key, message: `${m.short} לפני שמתחילים לעבוד. בדוק אם זה נכון.` });
@@ -353,13 +405,29 @@ export function milestoneWarnings(
  * month calculation must not look as precise as one drawn from a typed date.
  */
 export function workWindowStart(
-  event: Pick<EventItem, 'workStartDate' | 'actualDate' | 'prepMonths'>
+  event: Pick<EventItem, 'kickoffMeetingDate' | 'workStartDate' | 'actualDate' | 'prepMonths'>
 ): { date: string; approximate: boolean } {
-  if (event.workStartDate) return { date: event.workStartDate, approximate: false };
+  const base = (() => {
+    if (event.workStartDate) return { date: event.workStartDate, approximate: false };
 
-  const [y, m] = event.actualDate.slice(0, 7).split('-').map(Number);
-  const ordinal = y * 12 + (m - 1) - Math.max(0, event.prepMonths || 0);
-  const year = Math.floor(ordinal / 12);
-  const month = (ordinal % 12) + 1;
-  return { date: `${year}-${String(month).padStart(2, '0')}-01`, approximate: true };
+    const [y, m] = event.actualDate.slice(0, 7).split('-').map(Number);
+    const ordinal = y * 12 + (m - 1) - Math.max(0, event.prepMonths || 0);
+    const year = Math.floor(ordinal / 12);
+    const month = (ordinal % 12) + 1;
+    return { date: `${year}-${String(month).padStart(2, '0')}-01`, approximate: true };
+  })();
+
+  /*
+   * The meeting that hands the work out is a day work has demonstrably started.
+   *
+   * In the real planning file it falls two to six months before the event, and
+   * often before `actualDate - prepMonths` — so without this the bar began
+   * after its own first marker, and the marker was drawn off the left edge of
+   * the row. An earlier typed day is a fact; the month arithmetic is a guess,
+   * and a fact beats a guess.
+   */
+  if (event.kickoffMeetingDate && event.kickoffMeetingDate < base.date) {
+    return { date: event.kickoffMeetingDate, approximate: false };
+  }
+  return base;
 }

@@ -81,6 +81,7 @@ export interface EventInput {
   actualPrecision?: DatePrecision;
   prepMonths?: number;
   /* Milestones — every one optional, none derived from another. */
+  kickoffMeetingDate?: string | null;
   workStartDate?: string | null;
   reviewDate?: string | null;
   freezeDate?: string | null;

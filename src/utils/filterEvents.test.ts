@@ -41,6 +41,7 @@ const event = (over: Partial<EventItem> = {}): EventItem => ({
   actualDate: '2026-09-11',
   actualPrecision: 'day',
   prepMonths: 4,
+  kickoffMeetingDate: null,
   workStartDate: null,
   reviewDate: null,
   freezeDate: null,

@@ -39,6 +39,7 @@ export const boardUpdate = boardCreate.partial().extend({
  * server that rejects a legitimate plan is worse than one that lets it through.
  */
 const milestones = {
+  kickoffMeetingDate: isoDate.nullish(),
   workStartDate: isoDate.nullish(),
   reviewDate: isoDate.nullish(),
   freezeDate: isoDate.nullish(),
@@ -203,6 +204,45 @@ export const permissionUpdate = z.object({
   role: memberRole,
   permission: z.string().trim().min(1).max(64),
   allowed: z.boolean()
+});
+
+/**
+ * An uploaded workbook, and what to do with what is in it.
+ *
+ * The file rides along on both calls on purpose: nothing is stored between the
+ * preview and the commit, so there is no half-finished import sitting in a
+ * table, no expiry to get wrong, and nothing for a second browser tab to
+ * corrupt. The plan is derived from the file on the server both times — the
+ * client sends decisions, never data.
+ */
+const importFile = {
+  fileName: z.string().trim().min(1).max(260),
+  /** base64. 25MB of body is roughly an 18MB workbook. */
+  fileBase64: z.string().min(1).max(25_000_000)
+};
+
+export const importPreview = z.object({
+  ...importFile,
+  boardId: z.string().uuid().nullish()
+});
+
+export const importCommit = z.object({
+  ...importFile,
+  boardId: z.string().uuid().nullish(),
+  /** A new board to put them in, when no boardId is given. */
+  boardName: z.string().trim().min(1).max(120).nullish(),
+  /** `${sourceKey}:${field}` for suggestions the person ticked. */
+  accepted: z.array(z.string().max(300)).max(2000).default([]),
+  /** The same, for file-supplied repairs they un-ticked. */
+  rejected: z.array(z.string().max(300)).max(2000).default([]),
+  /** Source keys of events they chose to leave out. */
+  excluded: z.array(z.string().max(300)).max(2000).default([]),
+  /**
+   * What the screen said would happen. The server re-derives the plan and
+   * refuses if the counts moved — a file swapped between the preview and the
+   * button is an import nobody actually approved.
+   */
+  expect: z.object({ create: z.number().int().min(0), update: z.number().int().min(0) })
 });
 
 export const searchQuery = z.object({ q: z.string().trim().min(2, 'צריך לפחות 2 תווים').max(100) });

@@ -12,6 +12,7 @@ export interface MilestoneLabel {
   key: string;
   /** The column on `events`, in the shape the repository returns. */
   field:
+    | 'kickoffMeetingDate'
     | 'workStartDate'
     | 'reviewDate'
     | 'freezeDate'
@@ -24,10 +25,11 @@ export interface MilestoneLabel {
 }
 
 export const MILESTONE_LABELS: MilestoneLabel[] = [
-  { key: 'workStart', field: 'workStartDate', short: 'תחילת עבודה', order: 1 },
-  { key: 'review', field: 'reviewDate', short: 'בקרה', order: 2 },
-  { key: 'freeze', field: 'freezeDate', short: 'הקפאת שינויים', order: 3 },
-  { key: 'kickoff', field: 'kickoffDate', short: 'עלייה לאוויר', order: 4 },
-  { key: 'announce', field: 'announceDate', short: 'הודעה לחברה', order: 5 },
-  { key: 'campaignEnd', field: 'campaignEndDate', short: 'סיום הקמפיין', order: 7 }
+  { key: 'kickoffMeeting', field: 'kickoffMeetingDate', short: 'ישיבת התנעה', order: 1 },
+  { key: 'workStart', field: 'workStartDate', short: 'תחילת עבודה', order: 2 },
+  { key: 'review', field: 'reviewDate', short: 'בקרה', order: 3 },
+  { key: 'freeze', field: 'freezeDate', short: 'הקפאת שינויים', order: 4 },
+  { key: 'kickoff', field: 'kickoffDate', short: 'עלייה לאוויר', order: 5 },
+  { key: 'announce', field: 'announceDate', short: 'הודעה לחברה', order: 6 },
+  { key: 'campaignEnd', field: 'campaignEndDate', short: 'סיום הקמפיין', order: 8 }
 ];

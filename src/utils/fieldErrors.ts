@@ -17,6 +17,7 @@ const FIELD_IDS: Record<string, string[]> = {
   actualPrecision: ['ae-actual', 'ev-actual'],
   prepMonths: ['ae-prep', 'ev-prep'],
   kickoffDate: ['ae-kickoff', 'ev-kickoff'],
+  kickoffMeetingDate: ['ae-kickoffMeeting', 'ev-kickoffMeeting'],
   workStartDate: ['ae-workStart', 'ev-workStart'],
   reviewDate: ['ae-review', 'ev-review'],
   freezeDate: ['ae-freeze', 'ev-freeze'],
