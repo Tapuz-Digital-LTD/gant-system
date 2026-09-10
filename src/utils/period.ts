@@ -253,8 +253,18 @@ export function calendarGrid(p: Period): CalendarDay[] {
  * the only question the timeline exists to answer.
  */
 export function timelineMonths(p: Period, count = 12): MonthMeta[] {
+  /*
+   * At least one month, always.
+   *
+   * A zero-length window is not a smaller timeline, it is an empty array that
+   * every caller then indexes into — and `months[0].key` on an empty array is
+   * a blank screen rather than a narrow one. A count of zero can only arrive by
+   * mistake, so the mistake is absorbed here instead of at each of the four
+   * places that read months[0].
+   */
+  const months = Math.max(1, Math.floor(count) || 0) || 1;
   const first = monthOrdinal(p.anchor);
-  return Array.from({ length: count }, (_, i) => monthMeta(monthKeyFromOrdinal(first + i)));
+  return Array.from({ length: months }, (_, i) => monthMeta(monthKeyFromOrdinal(first + i)));
 }
 
 /** What to ask the server for. The timeline needs its whole window, not the period. */

@@ -11,3 +11,4 @@ export { Tooltip, TooltipProvider } from './Tooltip';
 export { Popover, PopoverClose } from './Popover';
 export { ToastProvider, useToast } from './Toast';
 export { BusyBar } from './BusyBar';
+export { ErrorBoundary } from './ErrorBoundary';

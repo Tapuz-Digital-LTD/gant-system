@@ -29,7 +29,7 @@ import { SignIn } from './components/SignIn';
 import { fetchAuthConfig, fetchMe, authClient } from './services/auth';
 import { ApiError } from './services/api';
 import { focusFirstBadField } from './utils/fieldErrors';
-import { Button, ConfirmDialog, useToast } from './components/ui';
+import { Button, ConfirmDialog, ErrorBoundary, useToast } from './components/ui';
 import { makeCan } from './hooks/useCan';
 import { NoPermission } from './components/NoPermission';
 
@@ -140,7 +140,15 @@ export default function App() {
   const neighbours = useMemo(() => {
     if (route.view !== 'calendar' && route.view !== 'timeline') return [];
     const shape = route.view === 'calendar' ? periodRange : timelineRange;
-    return [shiftPeriod(route.period, -1), shiftPeriod(route.period, 1)].map(shape);
+    /*
+     * `.map((p) => shape(p))`, never `.map(shape)`.
+     *
+     * map passes three arguments, so `.map(shape)` handed the array index to
+     * timelineRange's second parameter — its month count. The first neighbour
+     * therefore asked for a zero-month window, and the timeline crashed on an
+     * empty array of months.
+     */
+    return [shiftPeriod(route.period, -1), shiftPeriod(route.period, 1)].map((period) => shape(period));
   }, [route.view, route.period]);
 
   usePrefetchNeighbouringPeriods(board?.id, neighbours, !eventsQuery.isLoading);
@@ -616,7 +624,16 @@ export default function App() {
             <span className="text-base">טוען אירועים…</span>
           </div>
         ) : (
-          <>
+          /*
+           * One broken view instead of a blank application.
+           *
+           * A render error under React unmounts the whole tree, so a single
+           * unexpected record used to take the header, the navigation and every
+           * other view with it. The boundary is keyed on the view so switching
+           * away from a broken one clears it rather than carrying the error
+           * across.
+           */
+          <ErrorBoundary key={route.view} label="התצוגה הזאת לא נטענה">
             {route.view === 'calendar' && (
               <CalendarView
                 period={route.period}
@@ -687,7 +704,7 @@ export default function App() {
                   detail="בקש ממנהל המערכת להוסיף לך את ההרשאה לצפייה בנתונים."
                 />
               ))}
-          </>
+          </ErrorBoundary>
         )}
       </main>
 

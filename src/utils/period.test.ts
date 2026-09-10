@@ -9,6 +9,7 @@ import {
   monthKeyFromOrdinal,
   monthOrdinal,
   periodContains,
+  periodOfToday,
   periodRange,
   periodTitle,
   shiftPeriod,
@@ -147,6 +148,40 @@ assert.ok(hebrewMonthRange('2031-05').length > 0, 'and still has a Hebrew date')
   assert.ok(w.every((d) => d.inPeriod), 'a week borrows nothing');
   assert.equal(w[0].date, '2026-12-27');
   assert.equal(w[6].date, '2027-01-02', 'and it may run into the next year');
+}
+
+/*
+ * ---------- a window is never zero months wide ----------
+ *
+ * This crashed production. `[a, b].map(timelineRange)` looks harmless and is
+ * not: map passes three arguments, so the array index arrived as the month
+ * count, the first neighbour asked for a zero-month window, and every caller
+ * that reads months[0] met an empty array.
+ *
+ * The call site is fixed. This is the second line of defence, because the next
+ * person to write `.map(fn)` over these will not be thinking about arity.
+ */
+{
+  const p = periodOfToday('month');
+
+  assert.equal(timelineMonths(p).length, 12, 'the default window is a year');
+  assert.equal(timelineMonths(p, 0).length, 1, 'zero is not a window, it is a mistake');
+  assert.equal(timelineMonths(p, -5).length, 1, 'and so is a negative one');
+  assert.equal(timelineMonths(p, Number.NaN).length, 1, 'and so is a NaN');
+
+  // The exact shape that broke it, asserted end to end.
+  const neighbours = [shiftPeriod(p, -1), shiftPeriod(p, 1)].map((period) => timelineRange(period));
+  assert.equal(neighbours.length, 2);
+  for (const r of neighbours) {
+    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(r.from), 'each neighbour has a real start');
+    assert.ok(r.to > r.from, 'and spans forwards');
+  }
+
+  // And the mistake itself no longer throws.
+  assert.doesNotThrow(
+    () => [shiftPeriod(p, -1), shiftPeriod(p, 1)].map(timelineRange),
+    'passing the index as a count must not take the screen down'
+  );
 }
 
 console.log('period: כל הבדיקות עברו ✓');

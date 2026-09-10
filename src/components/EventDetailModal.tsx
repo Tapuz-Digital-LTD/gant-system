@@ -89,16 +89,36 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const cat = CATEGORY_META[event.category];
   const userNames = new Map(users.map((u) => [u.id, u.name]));
 
+  /** Carried between tasks: in a kickoff the next three often go to one person. */
+  const [quickAssignee, setQuickAssignee] = useState<string | null>(null);
+  const [quickDue, setQuickDue] = useState('');
+  const titleRef = React.useRef<HTMLInputElement>(null);
+
   const commentsQuery = useComments(tab === 'comments' ? event.id : undefined);
   const comments = commentsQuery.data ?? [];
 
-  /** One field, one Enter — replaces the old five-click form. */
+  /*
+   * Handing work out, in a row, without leaving.
+   *
+   * The shape this is built for is the end of a kickoff meeting: ten pieces of
+   * work, ten different people, one sitting. Every field is on one line and the
+   * owner and the date carry over to the next task — in that meeting the next
+   * three usually go to the same person, and re-picking them each time is the
+   * friction that makes somebody give up and write it in a notebook.
+   *
+   * Focus returns to the title, so the next task starts by typing.
+   */
   const addQuickTask = (e: React.FormEvent) => {
     e.preventDefault();
     const title = quickTitle.trim();
     if (!title) return;
-    onCreateTask({ title, dueDate: event.kickoffDate });
+    onCreateTask({
+      title,
+      assigneeId: quickAssignee,
+      dueDate: quickDue || event.kickoffDate
+    });
     setQuickTitle('');
+    titleRef.current?.focus();
   };
 
   const addComment = (e: React.FormEvent) => {
@@ -216,17 +236,46 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
         {tab === 'tasks' && (
           <div className="flex flex-col gap-1">
             {canEdit && (
-              <form onSubmit={addQuickTask} className="mb-2 flex gap-2">
+              <form
+                onSubmit={addQuickTask}
+                className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-canvas p-2"
+              >
                 <Input
+                  ref={titleRef}
                   value={quickTitle}
                   onChange={(e) => setQuickTitle(e.target.value)}
-                  placeholder="אישור תקציב"
-                  aria-label="הוסף משימה חדשה"
+                  placeholder="מה צריך לעשות?"
+                  aria-label="שם המשימה החדשה"
+                  className="h-9 min-w-44 flex-1"
                 />
+
+                {/* The owner and the date stay put between tasks. */}
+                <AssigneePicker
+                  users={users}
+                  assigneeId={quickAssignee}
+                  canEdit
+                  taskTitle="המשימה החדשה"
+                  onChange={setQuickAssignee}
+                />
+
+                <Tooltip label="תאריך יעד">
+                  <Input
+                    type="date"
+                    value={quickDue}
+                    onChange={(e) => setQuickDue(e.target.value)}
+                    aria-label="תאריך יעד למשימה החדשה"
+                    // max-w, not w: cn() concatenates rather than merging, so a
+                    // plain w-36 loses to the Input's own w-full and the field
+                    // takes a line of its own.
+                    className="h-9 max-w-36 text-sm"
+                  />
+                </Tooltip>
+
                 <Button type="submit" variant="primary" disabled={!quickTitle.trim()}>
                   <Plus className="h-5 w-5" />
                   הוספה
                 </Button>
+
                 <Tooltip label="קבל הצעות למשימות">
                   <Button variant="secondary" iconOnly onClick={() => setAiOpen(true)} aria-label="קבל הצעות למשימות">
                     <Sparkles className="h-5 w-5" />
