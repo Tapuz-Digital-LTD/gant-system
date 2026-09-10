@@ -163,6 +163,29 @@ export const personUpdate = z.object({
 /** Empty string clears it — a person taking their number back out is a save, not a delete. */
 export const phoneInput = z.object({ phone: z.string().trim().max(30).nullable() });
 
+export const checklistCreate = z.object({ text: trimmed(200) });
+export const checklistUpdate = z.object({
+  text: trimmed(200).optional(),
+  done: z.boolean().optional()
+});
+
+/**
+ * A link, and only over http.
+ *
+ * `javascript:` and `data:` URLs in an href are a script somebody else runs in
+ * your session — the scheme check is the whole defence and it belongs here,
+ * where every other input is already cleaned.
+ */
+export const attachmentCreate = z.object({
+  title: z.string().trim().max(120).optional(),
+  url: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .refine((u) => /^https?:\/\//i.test(u), 'הקישור צריך להתחיל ב-http או https')
+});
+
 export const boardGrant = z.object({
   userId: z.string().uuid(),
   role: boardRole.default('viewer')

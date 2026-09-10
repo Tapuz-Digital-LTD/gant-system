@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './client.js';
 import { israelNow } from '../notifications/prefs.js';
-import { boards, boardMembers, events, tasks, checklistItems, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions, aiUsage } from './schema.js';
+import { boards, boardMembers, events, tasks, checklistItems, taskAttachments, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions, aiUsage } from './schema.js';
 import { DEFAULT_PREFS, readPrefs, type NotificationPrefs } from '../notifications/prefs.js';
 import { MILESTONE_LABELS } from '../notifications/milestone-labels.js';
 import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permissions.js';
@@ -14,6 +14,15 @@ import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permiss
  * working day and then finds mysteriously reset in the middle of the next.
  */
 const israelDay = () => israelNow().date;
+
+/** The host of a URL, or null when it is not one. Used to name a bare link. */
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * What actually changed, in the words a person uses.
@@ -1054,6 +1063,100 @@ export function createRepo(db: Database) {
           changed: describeTaskChange(entry.before, entry.after)
         }))
       };
+    },
+
+    /* ------------------------------------------------ what hangs off a task */
+
+    async listChecklist(taskId: string) {
+      return db
+        .select()
+        .from(checklistItems)
+        .where(eq(checklistItems.taskId, taskId))
+        .orderBy(asc(checklistItems.position));
+    },
+
+    async addChecklistItem(taskId: string, text: string) {
+      const [{ next }] = await db
+        .select({ next: sql<number>`coalesce(max(${checklistItems.position}), -1) + 1` })
+        .from(checklistItems)
+        .where(eq(checklistItems.taskId, taskId));
+      const [row] = await db.insert(checklistItems).values({ taskId, text, position: next }).returning();
+      return row;
+    },
+
+    async setChecklistItem(id: string, changes: { text?: string; done?: boolean }) {
+      const [row] = await db.update(checklistItems).set(changes).where(eq(checklistItems.id, id)).returning();
+      if (!row) throw new NotFoundError('לא מצאנו את הסעיף');
+      return row;
+    },
+
+    async deleteChecklistItem(id: string) {
+      await db.delete(checklistItems).where(eq(checklistItems.id, id));
+    },
+
+    async listAttachments(taskId: string) {
+      return db
+        .select({
+          id: taskAttachments.id,
+          kind: taskAttachments.kind,
+          title: taskAttachments.title,
+          url: taskAttachments.url,
+          createdAt: taskAttachments.createdAt,
+          addedByName: users.name
+        })
+        .from(taskAttachments)
+        .leftJoin(users, eq(taskAttachments.addedBy, users.id))
+        .where(eq(taskAttachments.taskId, taskId))
+        .orderBy(asc(taskAttachments.createdAt));
+    },
+
+    async addAttachment(taskId: string, input: { title?: string; url: string }, actorId: string | null) {
+      /*
+       * A link with no name is named after where it points.
+       *
+       * "drive.google.com" tells somebody more than an empty row does, and it
+       * saves the person adding it from inventing a title for something whose
+       * name they will recognise anyway.
+       */
+      const title = input.title?.trim() || hostOf(input.url) || 'קישור';
+      const [row] = await db
+        .insert(taskAttachments)
+        .values({ taskId, title, url: input.url.trim(), kind: 'link', addedBy: actorId })
+        .returning();
+      await log(db, actorId, 'task', taskId, 'attachment_added', null, { title, url: row.url });
+      return row;
+    },
+
+    async deleteAttachment(id: string, actorId: string | null) {
+      const [row] = await db.delete(taskAttachments).where(eq(taskAttachments.id, id)).returning();
+      if (!row) throw new NotFoundError('לא מצאנו את הקישור');
+      await log(db, actorId, 'task', row.taskId, 'attachment_removed', { title: row.title }, null);
+      return row;
+    },
+
+    /** The task's own conversation, separate from the event's. */
+    async listTaskComments(taskId: string) {
+      return db
+        .select({
+          id: comments.id,
+          body: comments.body,
+          createdAt: comments.createdAt,
+          authorName: users.name
+        })
+        .from(comments)
+        .leftJoin(users, eq(comments.authorId, users.id))
+        .where(eq(comments.taskId, taskId))
+        .orderBy(asc(comments.createdAt));
+    },
+
+    async addTaskComment(taskId: string, body: string, actorId: string | null) {
+      const [task] = await db.select({ eventId: tasks.eventId }).from(tasks).where(eq(tasks.id, taskId));
+      if (!task) throw new NotFoundError('לא מצאנו את המשימה');
+      const [row] = await db
+        .insert(comments)
+        .values({ eventId: task.eventId, taskId, body, authorId: actorId })
+        .returning();
+      return row;
     },
 
     async updateTask(

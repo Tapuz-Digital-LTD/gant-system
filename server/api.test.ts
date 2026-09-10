@@ -220,6 +220,67 @@ assert.ok(r.json.data.length >= 2, 'creation and update are both recorded');
 }
 
 /*
+ * ---------- a task carries its own work, not just a tick ----------
+ *
+ * A checklist, links to the material, and its own conversation. Without these
+ * a "task" is a line in a to-do list, which is the thing this is not meant to
+ * be.
+ */
+{
+  const t = await call('POST', `/events/${event.id}/tasks`, { title: 'להכין קריאייטיב' });
+  const taskId = t.json.data.id;
+
+  // Checklist
+  const step = await call('POST', `/tasks/${taskId}/checklist`, { text: 'לאסוף רפרנסים' });
+  assert.equal(step.status, 201);
+  await call('POST', `/tasks/${taskId}/checklist`, { text: 'לשלוח לאישור' });
+  r = await call('GET', `/tasks/${taskId}/checklist`);
+  assert.equal(r.json.data.length, 2, 'the steps are kept in order');
+  assert.equal(r.json.data[0].text, 'לאסוף רפרנסים');
+  assert.equal(r.json.data[0].done, false);
+
+  await call('PATCH', `/tasks/${taskId}/checklist/${step.json.data.id}`, { done: true });
+  r = await call('GET', `/tasks/${taskId}/checklist`);
+  assert.equal(r.json.data[0].done, true, 'and each can be ticked on its own');
+
+  // Attachments: a link, named after where it points when nobody names it.
+  r = await call('POST', `/tasks/${taskId}/attachments`, { url: 'https://drive.google.com/file/abc' });
+  assert.equal(r.status, 201);
+  assert.equal(r.json.data.title, 'drive.google.com', 'a bare link is named after its host');
+
+  r = await call('POST', `/tasks/${taskId}/attachments`, {
+    url: 'https://example.com/brief.pdf',
+    title: 'הבריף המאושר'
+  });
+  assert.equal(r.json.data.title, 'הבריף המאושר', 'and a named one keeps its name');
+
+  /*
+   * A `javascript:` href is a script somebody else runs in your session. The
+   * scheme check is the whole defence, so it is asserted rather than assumed.
+   */
+  r = await call('POST', `/tasks/${taskId}/attachments`, { url: 'javascript:alert(1)' });
+  assert.equal(r.status, 400, 'only http links');
+  r = await call('POST', `/tasks/${taskId}/attachments`, { url: 'data:text/html,<script>x</script>' });
+  assert.equal(r.status, 400, 'and nothing that smuggles a document in');
+
+  r = await call('GET', `/tasks/${taskId}/attachments`);
+  assert.equal(r.json.data.length, 2, 'the two real links are there');
+  assert.ok(r.json.data[0].addedByName, 'with who added them');
+
+  // Its own conversation, not the event's.
+  await call('POST', `/tasks/${taskId}/comments`, { body: 'התחלתי לעבוד על זה' });
+  r = await call('GET', `/tasks/${taskId}/comments`);
+  assert.equal(r.json.data.length, 1);
+  assert.ok(r.json.data[0].authorName, 'and who said it');
+
+  const eventComments = await call('GET', `/events/${event.id}/comments`);
+  assert.ok(
+    eventComments.json.data.some((c: { taskId: string | null }) => c.taskId === taskId),
+    'a task comment still belongs to its event, so nothing is orphaned'
+  );
+}
+
+/*
  * ---------- the Hebrew calendar comes back as dates, not as a promise ----------
  *
  * `res.json` accepts anything, so making holidaysBetween async — to keep a 4MB

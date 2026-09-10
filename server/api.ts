@@ -519,6 +519,76 @@ export function createApiRouter(
     res.status(201).json({ data: await req.repo.createTask(eventId, input, actor.id) });
   }));
 
+  /* ----------------------------- what hangs off a task ---------------------
+     All of these gate on the task's board, so a person who may write there may
+     write here — the board is where permission lives, not the task. */
+
+  api.get('/tasks/:id/checklist', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const taskId = id(req.params.id);
+    await assertBoardRead(req.repo, actor, await req.repo.boardIdForTask(taskId));
+    res.json({ data: await req.repo.listChecklist(taskId) });
+  }));
+
+  api.post('/tasks/:id/checklist', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'task.edit', 'עריכת משימות');
+    const taskId = id(req.params.id);
+    await assertBoardWrite(req.repo, actor, await req.repo.boardIdForTask(taskId));
+    const input = v.checklistCreate.parse(req.body);
+    res.status(201).json({ data: await req.repo.addChecklistItem(taskId, input.text) });
+  }));
+
+  api.patch('/tasks/:taskId/checklist/:id', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'task.edit', 'עריכת משימות');
+    await assertBoardWrite(req.repo, actor, await req.repo.boardIdForTask(id(req.params.taskId)));
+    const input = v.checklistUpdate.parse(req.body);
+    res.json({ data: await req.repo.setChecklistItem(id(req.params.id), input) });
+  }));
+
+  api.delete('/tasks/:taskId/checklist/:id', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'task.edit', 'עריכת משימות');
+    await assertBoardWrite(req.repo, actor, await req.repo.boardIdForTask(id(req.params.taskId)));
+    await req.repo.deleteChecklistItem(id(req.params.id));
+    res.status(204).end();
+  }));
+
+  api.get('/tasks/:id/attachments', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const taskId = id(req.params.id);
+    await assertBoardRead(req.repo, actor, await req.repo.boardIdForTask(taskId));
+    res.json({ data: await req.repo.listAttachments(taskId) });
+  }));
+
+  api.post('/tasks/:id/attachments', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'task.edit', 'עריכת משימות');
+    const taskId = id(req.params.id);
+    await assertBoardWrite(req.repo, actor, await req.repo.boardIdForTask(taskId));
+    const input = v.attachmentCreate.parse(req.body);
+    res.status(201).json({ data: await req.repo.addAttachment(taskId, input, actor.id) });
+  }));
+
+  api.delete('/tasks/:taskId/attachments/:id', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'task.edit', 'עריכת משימות');
+    await assertBoardWrite(req.repo, actor, await req.repo.boardIdForTask(id(req.params.taskId)));
+    await req.repo.deleteAttachment(id(req.params.id), actor.id);
+    res.status(204).end();
+  }));
+
+  api.get('/tasks/:id/comments', asyncRoute(async (req, res) => {
+    const actor = requireActor(req.actor);
+    const taskId = id(req.params.id);
+    await assertBoardRead(req.repo, actor, await req.repo.boardIdForTask(taskId));
+    res.json({ data: await req.repo.listTaskComments(taskId) });
+  }));
+
+  api.post('/tasks/:id/comments', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'comment.create', 'כתיבת תגובות');
+    const taskId = id(req.params.id);
+    await assertBoardWrite(req.repo, actor, await req.repo.boardIdForTask(taskId));
+    const input = v.commentCreate.parse(req.body);
+    res.status(201).json({ data: await req.repo.addTaskComment(taskId, input.body, actor.id) });
+  }));
+
   api.patch('/tasks/:id', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'task.edit', 'עריכת משימות');
     const taskId = id(req.params.id);
