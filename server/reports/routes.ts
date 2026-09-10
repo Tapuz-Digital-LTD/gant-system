@@ -42,6 +42,12 @@ const savedReportUpdate = z.strictObject({
   position: z.number().int().min(0).max(9999).optional()
 });
 
+const exportInput = z.strictObject({
+  definition: reportDefinition,
+  /** What the person called the report. Becomes the tab name and the filename. */
+  name: z.string().trim().min(1).max(120).default('דוח')
+});
+
 const drillInput = z.strictObject({
   definition: reportDefinition,
   cell: reportCell
@@ -112,6 +118,47 @@ export function createReportsRouter(getDatabase: () => Database = getDb): Router
     const actor = await requirePermission(req.repo, req.actor, 'activity.view', 'צפייה בדוחות');
     const { definition, cell } = drillInput.parse(req.body);
     res.json({ data: await drillRows(getDatabase(), definition, cell, await scopeOf(req, actor)) });
+  }));
+
+  /**
+   * The same numbers, in a file.
+   *
+   * The definition is re-run rather than the rows being posted back up: an
+   * export that trusts the browser's copy of the grid is an export somebody can
+   * edit before downloading, and it would also drift from the board scope the
+   * session allows. Same query, same filters, same grouping — the file cannot
+   * disagree with the screen.
+   */
+  reports.post('/export', asyncRoute(async (req, res) => {
+    const actor = await requirePermission(req.repo, req.actor, 'export.run', 'הורדה לאקסל');
+    await requirePermission(req.repo, req.actor, 'activity.view', 'צפייה בדוחות');
+    const { definition, name } = exportInput.parse(req.body);
+
+    const result = await runReport(getDatabase(), definition, await scopeOf(req, actor));
+    const { buildGridWorkbook } = await import('../export/xlsx.js');
+
+    const dataset = definition.dataset === 'events' ? 'אירועים' : 'משימות';
+    const range =
+      definition.filters.from || definition.filters.to
+        ? `${definition.filters.from ?? 'ההתחלה'} עד ${definition.filters.to ?? 'הסוף'}`
+        : 'כל התקופות';
+
+    const file = await buildGridWorkbook({
+      sheetName: name,
+      title: name,
+      subtitle: `${dataset} · ${range}`,
+      columns: result.columns,
+      rows: result.rows,
+      generatedBy: actor.name
+    });
+
+    const fileName = `${name} ${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    // Hebrew in a bare `filename=` is mangled by every browser; RFC 5987 is the
+    // form that survives it.
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(file);
   }));
 
   // ---------------- saved reports ----------------

@@ -56,6 +56,8 @@ const ArchiveModal = React.lazy(() => import('./components/ArchiveModal').then((
 const SettingsScreen = React.lazy(() => import('./components/SettingsScreen').then((m) => ({ default: m.SettingsScreen })));
 /* The spreadsheet parser lives behind this door and nowhere else. */
 const ImportScreen = React.lazy(() => import('./components/ImportScreen').then((m) => ({ default: m.ImportScreen })));
+const ReportsScreen = React.lazy(() => import('./components/ReportsScreen').then((m) => ({ default: m.ReportsScreen })));
+const DashboardScreen = React.lazy(() => import('./components/DashboardScreen').then((m) => ({ default: m.DashboardScreen })));
 
 import { api } from './services/api';
 
@@ -434,7 +436,15 @@ export default function App() {
       )}
 
       {isExportOpen && board && (
-        <ExportModal isOpen onClose={() => setIsExportOpen(false)} board={board} events={events} />
+        <ExportModal
+          isOpen
+          onClose={() => setIsExportOpen(false)}
+          board={board}
+          events={events}
+          boards={boards}
+          range={range}
+          filterState={filterState}
+        />
       )}
 
       {isArchiveOpen && board && (
@@ -515,6 +525,50 @@ export default function App() {
       )}
     </React.Suspense>
   );
+
+  // ------------------------------------------------------------ reports
+
+  if (route.reports || route.dashboard) {
+    if (!can('activity.view')) {
+      return (
+        <NoPermission
+          title="אין לך גישה לדוחות"
+          detail="דוח מראה נתונים של כל הצוות, ולכן הוא ניתן בנפרד. בקש ממנהל המערכת."
+        />
+      );
+    }
+    return (
+      <>
+        <React.Suspense fallback={<FullScreenSpinner label="טוען…" />}>
+          {route.dashboard ? (
+            <DashboardScreen
+              canSave={can('activity.view')}
+              onBackHome={() => navigate('/')}
+              onOpenReports={() => navigate('/reports')}
+              onOpenReport={(id) => navigate(`/reports/${id}`)}
+            />
+          ) : (
+            <ReportsScreen
+              boards={boards}
+              users={users}
+              canSave={can('activity.view')}
+              canExport={can('export.run')}
+              currentUserId={currentUser.id}
+              isOwner={Boolean(currentUser.isOwner)}
+              openId={route.reportId}
+              creating={route.creating}
+              onOpenReport={(id) => navigate(`/reports/${id}`)}
+              onNew={() => navigate('/reports?new=1')}
+              onCloseReport={() => navigate('/reports')}
+              onBackHome={() => navigate('/')}
+              onOpenDashboard={() => navigate('/dashboard')}
+            />
+          )}
+        </React.Suspense>
+        {dialogs}
+      </>
+    );
+  }
 
   // ------------------------------------------------------------- import
 
@@ -608,6 +662,8 @@ export default function App() {
           onOpenPeople={() => setIsPermissionsOpen(true)}
           onOpenSettings={() => navigate('/settings')}
           onOpenImport={() => navigate('/import')}
+          onOpenReports={() => navigate('/reports')}
+          onOpenDashboard={() => navigate('/dashboard')}
           onSignOut={signOut}
         />
         {dialogs}

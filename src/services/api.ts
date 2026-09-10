@@ -81,6 +81,42 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const body = (data: unknown) => ({ body: JSON.stringify(data) });
 
+/**
+ * A file the server built, handed to the browser.
+ *
+ * Not `request`: the answer is a workbook, not JSON, and the filename is in a
+ * header rather than in a body. A failure still arrives as the house error
+ * shape, so it is parsed and thrown like every other one.
+ */
+async function download(path: string, payload: unknown, fallbackName: string): Promise<void> {
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    const e = text ? JSON.parse(text)?.error : null;
+    throw new ApiError(res.status, e?.code ?? 'UNKNOWN', e?.message ?? 'לא הצלחנו להוריד את הקובץ');
+  }
+
+  // filename*=UTF-8''%D7%93… — the only form that survives Hebrew in every browser.
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  const name = encoded ? decodeURIComponent(encoded) : fallbackName;
+
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Revoked on the next tick: revoking synchronously races the download in Safari.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export interface EventInput {
   title: string;
   category?: EventCategory;
@@ -189,6 +225,26 @@ export const api = {
       request<{ phone: string | null }>('/my/phone', { method: 'PUT', ...body({ phone }) })
   },
 
+  /**
+   * Everything on screen, as a real Excel file.
+   *
+   * Scope is enforced on the server from the session: naming boards can only
+   * narrow what somebody may already see, never widen it.
+   */
+  exports: {
+    xlsx: (input: {
+      scope: 'board' | 'boards' | 'events' | 'tasks' | 'all';
+      boardIds?: string[];
+      from?: string;
+      to?: string;
+      categories?: string[];
+      statuses?: string[];
+      assigneeIds?: string[];
+      includeTasks?: boolean;
+      fileName?: string;
+    }) => download('/export/xlsx', input, `${input.fileName ?? 'ייצוא'}.xlsx`)
+  },
+
   /** One task, and everything hanging off it. */
   task: {
     detail: (id: string) => request<TaskDetail>(`/tasks/${id}`),
@@ -295,6 +351,10 @@ export const api = {
       duplicate: (id: string) =>
         request<SavedReport>(`/reports/saved/${id}/duplicate`, { method: 'POST' })
     },
+
+    /** The same grid that is on screen, as a real workbook. */
+    exportXlsx: (definition: ReportDefinition, name: string) =>
+      download('/reports/export', { definition, name }, `${name}.xlsx`),
 
     dashboard: {
       get: () => request<Dashboard>('/reports/dashboard'),

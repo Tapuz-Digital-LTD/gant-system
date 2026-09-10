@@ -41,7 +41,7 @@ const ROW_CAP = 1000;
 /** One cell's worth of records. Enough to recognise them, not enough to be a data dump. */
 const DRILL_CAP = 200;
 
-/** A group with no value: an event with no go-live date, a task with no assignee. */
+/** What this session may see. Always from the session, never from the request body. */
 export interface ReportScope {
   /** Null for staff (unfiltered). A list — possibly empty — for a guest. */
   boardIds: string[] | null;

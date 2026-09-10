@@ -400,3 +400,72 @@ export async function buildWorkbook(data: ExportData): Promise<Buffer> {
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
+
+/* ==================================================================
+   A report, as a sheet.
+
+   The report engine already produced the exact grid a person is looking
+   at — the same grouping, the same filters, the same range — so the
+   export writes that grid rather than re-querying and risking a
+   different answer than the one on screen.
+   ================================================================== */
+
+export interface GridColumn {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'percent' | 'days';
+}
+
+export interface GridExport {
+  /** Excel refuses \ / ? * [ ] : in a sheet name, and silently truncates at 31. */
+  sheetName: string;
+  title: string;
+  /** One line saying what was asked, so a downloaded file explains itself. */
+  subtitle: string;
+  columns: GridColumn[];
+  rows: Record<string, string | number | null>[];
+  generatedBy: string;
+}
+
+/** Excel's own rules for a tab name, applied rather than discovered at open time. */
+export function safeSheetName(name: string): string {
+  const cleaned = name.replace(/[\\/?*[\]:]/g, ' ').trim();
+  return (cleaned || 'דוח').slice(0, 31);
+}
+
+export async function buildGridWorkbook(input: GridExport): Promise<Buffer> {
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = input.generatedBy;
+  wb.created = new Date();
+  wb.title = input.title;
+  wb.description = input.subtitle;
+
+  const ws = sheetFor(
+    wb,
+    safeSheetName(input.sheetName),
+    input.columns.map((c) => ({ header: c.label, width: c.type === 'text' ? 28 : 16 }))
+  );
+
+  for (const row of input.rows) {
+    const cells: Cell[] = input.columns.map((c) => {
+      const value = row[c.key];
+      if (value === null || value === undefined || value === '') return null;
+      if (c.type === 'text') return text(String(value));
+      const n = Number(value);
+      if (!Number.isFinite(n)) return null;
+      // Excel multiplies a percent-formatted cell by 100 on display, so the
+      // stored number is the fraction. Writing 42 with '0%' shows 4200%.
+      return c.type === 'percent' ? n / 100 : n;
+    });
+
+    const added = addRow(ws, cells);
+    input.columns.forEach((c, i) => {
+      if (c.type === 'percent') added.getCell(i + 1).numFmt = '0%';
+    });
+  }
+
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: input.columns.length } };
+
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
