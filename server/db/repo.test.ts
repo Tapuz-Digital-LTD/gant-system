@@ -644,5 +644,25 @@ assert.ok(update?.before && update?.after, 'the trail keeps both sides of a chan
   assert.ok(html.includes('e=2&amp;t=3'), 'and the link we build ourselves still works');
 }
 
+// ---------- a workspace setting changed by nobody in particular ----------
+{
+  /*
+   * The activity log points at a uuid, and a workspace-wide setting has no row
+   * of its own. Borrowing the actor's id worked until there was no actor: the
+   * setting was written, the log insert then threw, and the caller was told the
+   * change had failed when it had already happened.
+   */
+  const before = await repo.channelSwitches();
+  assert.equal(before.assignment, true, 'being handed work is announced by default');
+  assert.equal(before.digest, false, 'the daily broadcast is not');
+
+  const saved = await repo.saveChannelSwitches({ digest: true }, null);
+  assert.equal(saved.digest, true, 'a change with no actor behind it still goes through');
+  assert.equal(saved.assignment, true, 'and leaves the other switch alone');
+  assert.equal((await repo.channelSwitches()).digest, true, 'and it is still true when read back');
+
+  await repo.saveChannelSwitches({ digest: false }, null);
+}
+
 await pg.close();
 console.log('repo: כל הבדיקות עברו ✓');

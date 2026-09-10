@@ -8,6 +8,18 @@ import { MILESTONE_LABELS } from '../notifications/milestone-labels.js';
 import { readChannels, type ChannelSwitches } from '../notifications/channels.js';
 import { PERMISSIONS, DEFAULTS, type PermissionKey, type Role } from '../permissions.js';
 
+/**
+ * The workspace itself, as something the activity log can point at.
+ *
+ * `activity.entity_id` is a uuid column, and a setting that belongs to the whole
+ * organisation has no row of its own to name. It used to borrow the actor's id,
+ * falling back to the string 'workspace' when there was no actor — which is not
+ * a uuid, so any change made by the system rather than by a person threw *after*
+ * the setting had already been written. The caller saw a failure for a change
+ * that had in fact happened, which is the worst answer available.
+ */
+const WORKSPACE_ENTITY = '00000000-0000-0000-0000-000000000000';
+
 /** Thrown when a write carries a stale `version`. Routes turn this into 409. */
 /*
  * The day boundary is Israel's, not UTC's.
@@ -749,7 +761,7 @@ export function createRepo(db: Database) {
           target: workspaceSettings.id,
           set: { channels: clean, updatedAt: new Date() }
         });
-      await log(db, actorId, 'settings', actorId ?? 'workspace', 'channels_updated', null, clean);
+      await log(db, actorId, 'settings', WORKSPACE_ENTITY, 'channels_updated', null, clean);
       return clean;
     },
 
@@ -762,7 +774,7 @@ export function createRepo(db: Database) {
           target: workspaceSettings.id,
           set: { notificationDefaults: clean, updatedAt: new Date() }
         });
-      await log(db, actorId, 'settings', actorId ?? 'workspace', 'notifications_updated', null, clean);
+      await log(db, actorId, 'settings', WORKSPACE_ENTITY, 'notifications_updated', null, clean);
       return clean;
     },
 
