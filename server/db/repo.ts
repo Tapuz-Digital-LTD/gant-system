@@ -69,6 +69,11 @@ export function createRepo(db: Database) {
      * Drizzle emits bare column names, so `boards.id` would silently bind to the
      * inner table and every count would come back 0.
      */
+    /** One round trip, doing nothing, to time the distance to the database. */
+    async ping() {
+      await db.execute(sql`select 1`);
+    },
+
     async listBoards(onlyIds?: string[] | null, archived = false) {
       if (onlyIds !== null && onlyIds !== undefined && onlyIds.length === 0) return [];
       const state = archived ? isNotNull(boards.archivedAt) : isNull(boards.archivedAt);

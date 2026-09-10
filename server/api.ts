@@ -42,6 +42,9 @@ declare global {
   }
 }
 
+/** True until this warm instance has answered something. */
+let firstRequest = true;
+
 const asyncRoute =
   (fn: (req: Request, res: Response) => Promise<unknown>) =>
   (req: Request, res: Response, next: NextFunction) => {
@@ -95,9 +98,36 @@ export function createApiRouter(
 
   api.use('/ai', createAiRouter());
 
-  api.get('/health', (_req, res) => {
-    res.json({ status: 'ok', database: isDatabaseReady(), timestamp: new Date().toISOString() });
-  });
+  /*
+   * Health, and enough to answer "why is it slow" without guessing.
+   *
+   * The three numbers that decide perceived speed on serverless are: where the
+   * function is, how far the database is from there, and whether this instance
+   * had to start up. All three are invisible from the outside and each can cost
+   * more than every query on the page put together.
+   */
+  api.get('/health', asyncRoute(async (req, res) => {
+    const startedAt = Date.now();
+    let dbMs: number | null = null;
+    try {
+      const t0 = Date.now();
+      await req.repo.ping();
+      dbMs = Date.now() - t0;
+    } catch {
+      dbMs = null;
+    }
+
+    res.json({
+      status: 'ok',
+      database: isDatabaseReady(),
+      region: process.env.VERCEL_REGION ?? 'local',
+      dbRoundTripMs: dbMs,
+      coldStart: firstRequest,
+      handlerMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString()
+    });
+    firstRequest = false;
+  }));
 
   // ---------------- boards ----------------
 
