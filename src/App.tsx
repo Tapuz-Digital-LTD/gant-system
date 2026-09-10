@@ -287,6 +287,15 @@ export default function App() {
    */
   const openTask = (taskId: string) => go({ taskId });
   const closeTask = () => go({ taskId: null });
+  /*
+   * The X and the back arrow are not the same button.
+   *
+   * Back goes up one level, to the campaign the task came from. The X means
+   * "I am done here" — leaving it on the campaign dialog would be closing a
+   * window and finding another one underneath, which is the thing people press
+   * X twice for.
+   */
+  const closeTaskAndEvent = () => go({ taskId: null, eventId: null });
   const openAddEvent = (date?: string, month?: string) => {
     // Opened from the toolbar, the form should start in the month on screen —
     // not in today's, which is somewhere else entirely once you have navigated.
@@ -363,7 +372,18 @@ export default function App() {
           taskId={route.taskId}
           users={users}
           canEdit={can('task.edit')}
-          onClose={closeTask}
+          onClose={detailEvent ? closeTaskAndEvent : closeTask}
+          /*
+           * Back, not a second window.
+           *
+           * When a task was opened from its campaign, the campaign is still in
+           * the URL — so "close the task" and "go back" are the same move, and
+           * the campaign reappears underneath because it was never covered up.
+           * Arriving straight from an email link there is no eventId, nothing
+           * to go back to, and the header simply has no back button.
+           */
+          onBack={detailEvent ? closeTask : undefined}
+          backLabel={detailEvent?.title}
           onOpenEvent={(eventId) => {
             closeTask();
             openEvent(eventId);
@@ -459,7 +479,16 @@ export default function App() {
         />
       )}
 
-      {detailEvent && (
+      {/*
+        One dialog at a time, never one on top of the other.
+
+        A task opened from a campaign keeps the campaign in the URL, so both
+        conditions are true at once. Stacking them put two close buttons and two
+        footers on screen with the first dialog's shadow poking out behind the
+        second. The task is a step further in, so it is the one that shows, and
+        its header carries the way back.
+      */}
+      {detailEvent && !route.taskId && (
         <EventDetailModal
           event={detailEvent}
           users={users}

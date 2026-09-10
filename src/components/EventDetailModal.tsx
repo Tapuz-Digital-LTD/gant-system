@@ -556,13 +556,21 @@ export function AssigneePicker({
   assigneeId,
   canEdit,
   taskTitle,
-  onChange
+  onChange,
+  renderTrigger
 }: {
   users: UserAccess[];
   assigneeId: string | null;
   canEdit: boolean;
   taskTitle: string;
   onChange: (assigneeId: string | null) => void;
+  /*
+   * In a dense task list the face alone is the control, and that is right —
+   * the rows are one line tall and a whole field per row would bury the work.
+   * In the open task there is a labelled column, and there a lone avatar tells
+   * nobody it can be clicked. Same menu, same list, different handle.
+   */
+  renderTrigger?: (face: React.ReactNode, assigneeName: string | null) => React.ReactNode;
 }) {
   const assignee = users.find((u) => u.id === assigneeId) ?? null;
 
@@ -580,19 +588,30 @@ export function AssigneePicker({
   );
 
   if (!canEdit) {
+    if (renderTrigger) return <>{renderTrigger(face, assignee?.name ?? null)}</>;
     return <Tooltip label={assignee ? `אחראי: ${assignee.name}` : 'אין אחראי'}>{face}</Tooltip>;
   }
+
+  const label = assignee
+    ? `אחראי: ${assignee.name}. שנה אחראי ל${taskTitle}`
+    : `בחר אחראי ל${taskTitle}`;
 
   return (
     <Menu
       align="end"
       trigger={
-        <button
-          className="shrink-0 rounded-full transition-opacity hover:opacity-80"
-          aria-label={assignee ? `אחראי: ${assignee.name}. שנה אחראי ל${taskTitle}` : `בחר אחראי ל${taskTitle}`}
-        >
-          {face}
-        </button>
+        renderTrigger ? (
+          <button className="w-full" aria-label={label}>
+            {renderTrigger(face, assignee?.name ?? null)}
+          </button>
+        ) : (
+          <button
+            className="shrink-0 rounded-full transition-opacity hover:opacity-80"
+            aria-label={label}
+          >
+            {face}
+          </button>
+        )
       }
     >
       <MenuLabel>מי אחראי?</MenuLabel>

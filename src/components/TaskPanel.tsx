@@ -3,6 +3,7 @@ import {
   AlignLeft,
   Check,
   CheckSquare,
+  ChevronDown,
   Clock,
   ExternalLink,
   History,
@@ -55,12 +56,17 @@ export function TaskPanel({
   users,
   canEdit,
   onClose,
+  onBack,
+  backLabel,
   onOpenEvent
 }: {
   taskId: string;
   users: UserAccess[];
   canEdit: boolean;
   onClose: () => void;
+  /** Given when the task was opened from its campaign — the way back out. */
+  onBack?: () => void;
+  backLabel?: string;
   onOpenEvent?: (eventId: string) => void;
 }) {
   const detail = useTaskDetail(taskId);
@@ -78,9 +84,11 @@ export function TaskPanel({
       onOpenChange={(next) => !next && onClose()}
       size="lg"
       title={task?.title ?? 'משימה'}
-      description={
-        task ? `${task.board.name} · ${task.event.title}` : undefined
-      }
+      onBack={onBack}
+      backLabel={backLabel}
+      /* The campaign is already named in the back button; repeating it here
+         would be the same words twice, one line apart. */
+      description={task ? (onBack ? task.board.name : `${task.board.name} · ${task.event.title}`) : undefined}
       footer={
         <Button variant="secondary" onClick={onClose}>
           סגור
@@ -95,7 +103,7 @@ export function TaskPanel({
       ) : (
         <div className="flex flex-col gap-5 lg:flex-row-reverse">
           {/* ------------------------------------------------- the properties */}
-          <aside className="flex shrink-0 flex-col gap-3 lg:w-52">
+          <aside className="flex shrink-0 flex-col gap-3 lg:w-56">
             <Property label="מצב">
               {canEdit ? (
                 <Menu
@@ -103,11 +111,12 @@ export function TaskPanel({
                   trigger={
                     <button
                       aria-label={`מצב: ${STATUS_META[task.status].label}. לחץ לשינוי`}
-                      className="rounded-full transition hover:brightness-95"
+                      className={FIELD}
                     >
                       <StatusPill fill={STATUS_META[task.status].fill}>
                         {STATUS_META[task.status].label}
                       </StatusPill>
+                      <ChevronDown className={CHEVRON} aria-hidden="true" />
                     </button>
                   }
                 >
@@ -118,25 +127,31 @@ export function TaskPanel({
                   ))}
                 </Menu>
               ) : (
-                <StatusPill fill={STATUS_META[task.status].fill}>
-                  {STATUS_META[task.status].label}
-                </StatusPill>
+                <ReadOnlyField>
+                  <StatusPill fill={STATUS_META[task.status].fill}>
+                    {STATUS_META[task.status].label}
+                  </StatusPill>
+                </ReadOnlyField>
               )}
             </Property>
 
             <Property label="אחראי">
-              <div className="flex items-center gap-2">
-                <AssigneePicker
-                  users={users}
-                  assigneeId={task.assigneeId}
-                  canEdit={canEdit}
-                  taskTitle={task.title}
-                  onChange={(assigneeId) => save({ assigneeId })}
-                />
-                <span className="truncate text-base text-ink-secondary">
-                  {task.assigneeName ?? 'לא שויך'}
-                </span>
-              </div>
+              <AssigneePicker
+                users={users}
+                assigneeId={task.assigneeId}
+                canEdit={canEdit}
+                taskTitle={task.title}
+                onChange={(assigneeId) => save({ assigneeId })}
+                renderTrigger={(face, name) => (
+                  <span className={canEdit ? FIELD : READ_ONLY}>
+                    <span className="flex min-w-0 items-center gap-2">
+                      {face}
+                      <span className="truncate text-base text-ink-secondary">{name ?? 'לא שויך'}</span>
+                    </span>
+                    {canEdit && <ChevronDown className={CHEVRON} aria-hidden="true" />}
+                  </span>
+                )}
+              />
             </Property>
 
             <Property label="תאריך יעד">
@@ -146,7 +161,7 @@ export function TaskPanel({
                 disabled={!canEdit}
                 onChange={(e) => save({ dueDate: e.target.value || null })}
                 aria-label="תאריך יעד"
-                className="h-9 text-sm"
+                className="h-10 text-sm"
               />
             </Property>
 
@@ -155,10 +170,14 @@ export function TaskPanel({
                 <Menu
                   align="end"
                   trigger={
-                    <button aria-label={`עדיפות: ${PRIORITY_META[task.priority].label}`} className="rounded-md">
+                    <button
+                      aria-label={`עדיפות: ${PRIORITY_META[task.priority].label}. לחץ לשינוי`}
+                      className={FIELD}
+                    >
                       <Badge tone={PRIORITY_META[task.priority].tone}>
                         {PRIORITY_META[task.priority].label}
                       </Badge>
+                      <ChevronDown className={CHEVRON} aria-hidden="true" />
                     </button>
                   }
                 >
@@ -169,7 +188,11 @@ export function TaskPanel({
                   ))}
                 </Menu>
               ) : (
-                <Badge tone={PRIORITY_META[task.priority].tone}>{PRIORITY_META[task.priority].label}</Badge>
+                <ReadOnlyField>
+                  <Badge tone={PRIORITY_META[task.priority].tone}>
+                    {PRIORITY_META[task.priority].label}
+                  </Badge>
+                </ReadOnlyField>
               )}
             </Property>
 
@@ -178,15 +201,17 @@ export function TaskPanel({
               <button
                 onClick={() => onOpenEvent?.(task.event.id)}
                 disabled={!onOpenEvent}
-                className="text-start text-base text-primary hover:underline disabled:text-ink-secondary disabled:no-underline"
+                className="flex flex-col items-start gap-0.5 rounded-lg px-1 py-1 text-start transition-colors hover:bg-subtle disabled:hover:bg-transparent"
               >
-                {task.event.title}
+                <span className="text-base text-primary group-disabled:text-ink-secondary">
+                  {task.event.title}
+                </span>
+                <span className="text-sm text-ink-tertiary">{task.board.name}</span>
               </button>
-              <p className="mt-0.5 text-sm text-ink-tertiary">{task.board.name}</p>
             </Property>
 
             {task.creatorName && (
-              <p className="pt-1 text-sm text-ink-tertiary">נפתחה על ידי {task.creatorName}</p>
+              <p className="px-1 pt-1 text-sm text-ink-tertiary">נפתחה על ידי {task.creatorName}</p>
             )}
           </aside>
 
@@ -202,6 +227,33 @@ export function TaskPanel({
       )}
     </Modal>
   );
+}
+
+/*
+ * What a changeable property looks like.
+ *
+ * These used to be bare pills on the background. A pill is a label — it says
+ * what something *is* — so nothing on screen said the state and the priority
+ * could be changed at all, and people went looking for an edit button that was
+ * never there. A border, a background and a chevron are the three things every
+ * select control on the web has, and they cost one line each.
+ *
+ * `justify-between` puts the value at the right edge and the chevron at the
+ * left, which in Hebrew is value-first and affordance-last — the same order a
+ * native <select> uses, mirrored.
+ */
+const FIELD =
+  'flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-start ' +
+  'transition-colors hover:border-line-strong hover:bg-subtle ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40';
+
+const CHEVRON = 'h-4 w-4 shrink-0 text-ink-tertiary';
+
+/** The same box without the promise of a menu, for somebody who cannot edit. */
+const READ_ONLY = 'flex w-full items-center rounded-lg border border-line bg-subtle px-2.5 py-2';
+
+function ReadOnlyField({ children }: { children: React.ReactNode }) {
+  return <div className={READ_ONLY}>{children}</div>;
 }
 
 function Property({ label, children }: { label: string; children: React.ReactNode }) {
