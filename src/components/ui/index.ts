@@ -13,4 +13,4 @@ export { ToastProvider, useToast } from './Toast';
 export { BusyBar } from './BusyBar';
 export { ErrorBoundary } from './ErrorBoundary';
 export { XtraMark } from './XtraMark';
-export { OtpInput } from './OtpInput';
+export { OtpInput, isCompleteOtp } from './OtpInput';

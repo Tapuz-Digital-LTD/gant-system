@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserPlus, Trash2, Loader2, Shield, Eye, Pencil, Building2, Mail, Users, SlidersHorizontal, Crown } from 'lucide-react';
+import { UserPlus, Trash2, Loader2, Shield, Eye, Pencil, Building2, Mail, Smartphone, Users, SlidersHorizontal, Crown } from 'lucide-react';
 import { GanttBoard, Person, UserAccess, UserRole } from '../types';
 import { usePeople, usePeopleMutations, describeError } from '../hooks/useBoardData';
 import { useFormValidation, isEmail, required } from '../hooks/useFormValidation';
@@ -44,6 +44,8 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
 
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  /** Optional, and the other way in: with a number they can sign in by SMS. */
+  const [phone, setPhone] = useState('');
   const [role, setRole] = useState<UserRole>('editor');
   /** A guest reaches only the boards granted to them; staff reach the workspace. */
   const [isGuest, setIsGuest] = useState(false);
@@ -53,7 +55,13 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
   const form = useFormValidation({
     email: () =>
       required(email, 'מה כתובת מייל?') ??
-      (isEmail(email) ? undefined : 'נראה שחסר משהו בכתובת. בדוק שיש @')
+      (isEmail(email) ? undefined : 'נראה שחסר משהו בכתובת. בדוק שיש @'),
+    // Checked here as well as on the server: a number rejected after the click
+    // loses the rest of the form for somebody who typed one digit too few.
+    phone: () =>
+      !phone.trim() || /^0?5\d[- ]?\d{3}[- ]?\d{4}$/.test(phone.replace(/[^\d-\s]/g, '').trim())
+        ? undefined
+        : 'מספר נייד ישראלי, למשל 050-1234567'
   });
 
   const run = async (work: Promise<unknown>, ok?: string) => {
@@ -71,12 +79,19 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
     e.preventDefault();
     if (!form.check('up')) return;
     const added = await run(
-      m.add.mutateAsync({ email: email.trim(), name: name.trim() || undefined, role, isGuest }),
+      m.add.mutateAsync({
+        email: email.trim(),
+        name: name.trim() || undefined,
+        role,
+        isGuest,
+        phone: phone.trim() || null
+      }),
       'נוסף'
     );
     if (added) {
       setEmail('');
       setName('');
+      setPhone('');
       form.reset();
     }
   };
@@ -154,6 +169,27 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="נייד"
+              hint="לא חובה — מאפשר כניסה בקוד ל-SMS"
+              error={form.error('phone')}
+              htmlFor="up-phone"
+            >
+              <Input
+                id="up-phone"
+                type="tel"
+                inputMode="tel"
+                dir="ltr"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="050-000-0000"
+                aria-invalid={Boolean(form.error('phone'))}
+                className={cn('text-start', form.error('phone') && 'border-late')}
+              />
+            </Field>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="תפקיד" hint={ROLES.find((r) => r.value === role)?.hint} htmlFor="up-role">
               <Select id="up-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
                 {ROLES.map((r) => (
@@ -181,7 +217,7 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
 
           <p className="flex items-start gap-1.5 text-sm text-ink-tertiary">
             <Mail className="mt-0.5 h-4 w-4 shrink-0" />
-            אין צורך בסיסמה. בכניסה הראשונה הם יזינו את המייל ויקבלו קוד.
+            אין צורך בסיסמה. בכניסה הראשונה הם יזינו את המייל — או את הנייד, אם מולא — ויקבלו קוד.
           </p>
         </form>
 
@@ -217,7 +253,15 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
                           </Badge>
                         )}
                       </span>
-                      <span className="truncate text-sm text-ink-tertiary">{u.email}</span>
+                      <span className="flex min-w-0 items-center gap-2 text-sm text-ink-tertiary">
+                        <span className="truncate">{u.email}</span>
+                        {u.phone && (
+                          <span className="flex shrink-0 items-center gap-1" dir="ltr">
+                            <Smartphone className="h-3.5 w-3.5" aria-hidden="true" />
+                            {u.phone}
+                          </span>
+                        )}
+                      </span>
                     </div>
 
                     {u.isOwner ? (

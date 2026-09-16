@@ -13,6 +13,7 @@ import { spawnSync } from 'node:child_process';
 
 const SUITES = [
   'src/utils/csv.test.ts',
+  'src/components/ui/otp.test.ts',
   'src/utils/filterEvents.test.ts',
   'src/data/milestones.test.ts',
   'src/utils/period.test.ts',

@@ -50,8 +50,9 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 
-  get isConflict() {
-    return this.status === 409;
+  /** A write that lost a race. Not every 409 — `ALREADY_EXISTS` is one too. */
+  get isStaleVersion() {
+    return this.code === 'STALE_VERSION';
   }
 }
 
@@ -281,9 +282,9 @@ export const api = {
 
   people: {
     list: () => request<Person[]>('/people'),
-    create: (input: { email: string; name?: string; role: UserRole; isGuest: boolean }) =>
+    create: (input: { email: string; name?: string; role: UserRole; isGuest: boolean; phone?: string | null }) =>
       request<Person>('/people', { method: 'POST', ...body(input) }),
-    update: (id: string, input: { name?: string; role?: UserRole }) =>
+    update: (id: string, input: { name?: string; role?: UserRole; phone?: string | null }) =>
       request<Person>(`/people/${id}`, { method: 'PATCH', ...body(input) }),
     remove: (id: string) => request<void>(`/people/${id}`, { method: 'DELETE' }),
     grantBoard: (boardId: string, userId: string, role: 'editor' | 'viewer') =>

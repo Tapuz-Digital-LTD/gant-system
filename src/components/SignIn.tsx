@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowRight, Check, Loader2, LogIn, Mail, Smartphone } from 'lucide-react';
 import { authClient, fetchSignInCode, type AuthConfig } from '../services/auth';
 import { useFormValidation, isEmail, required } from '../hooks/useFormValidation';
-import { Button, Field, Input, OtpInput, XtraMark, cn } from './ui';
+import { Button, Field, Input, OtpInput, isCompleteOtp, XtraMark, cn } from './ui';
 
 /**
  * The only screen a signed-out visitor can reach.
@@ -26,10 +26,17 @@ type Channel = 'email' | 'phone';
  * by pressing "send again" twice — which is exactly the moment they are least
  * able to read "Too many requests" and work out that waiting is the answer.
  */
-function signInError(error: { status?: number; message?: string }, fallback?: string): string {
-  if (error.status === 429 || error.status === 403) {
-    return 'שלחנו כבר קוד. חכה דקה ונסה שוב.';
+function signInError(
+  error: { status?: number; message?: string; code?: string },
+  fallback?: string
+): string {
+  // Ours, in Hebrew already: somebody whose access was removed must be told
+  // that, not handed "the code is wrong" for a code that was perfectly right.
+  if (error.code === 'ACCESS_REMOVED' && error.message) return error.message;
+  if (error.code === 'TOO_MANY_ATTEMPTS' || error.status === 403) {
+    return 'הקוד נחסם אחרי שלוש טעויות. בקשו קוד חדש.';
   }
+  if (error.status === 429) return 'שלחנו כבר קוד. חכה דקה ונסה שוב.';
   return fallback ?? 'לא הצלחנו לשלוח את הקוד. נסה שוב בעוד רגע.';
 }
 
@@ -41,6 +48,8 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
   const [busy, setBusy] = useState<'send' | 'verify' | null>(null);
   const [step, setStep] = useState<'who' | 'code'>('who');
   const [error, setError] = useState('');
+  /** Said out loud after a resend: the earlier code is dead the moment a new one exists. */
+  const [resent, setResent] = useState(false);
   /** Shown only where nothing was delivered — see showsCodesOnScreen on the server. */
   const [screenCode, setScreenCode] = useState<string | null>(null);
 
@@ -62,7 +71,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
   const codeForm = useFormValidation({
     otp: () =>
       required(otp, 'הזן את הקוד שקיבלת') ??
-      (otp.trim().length === 6 ? undefined : 'הקוד צריך להיות בן 6 ספרות')
+      (isCompleteOtp(otp) ? undefined : 'הקוד צריך להיות בן 6 ספרות')
   });
 
   const cleanEmail = () => email.trim().toLowerCase();
@@ -115,7 +124,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
    * reading the code without its final digit.
    */
   const submitCode = React.useCallback(async (code: string) => {
-    if (code.trim().length !== 6) return;
+    if (!isCompleteOtp(code)) return;
     setBusy('verify');
     setError('');
 
@@ -204,7 +213,9 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
               <p className="mt-1.5 text-base text-ink-tertiary">
                 {step === 'who'
                   ? 'בוחרים לאן ישלח הקוד, מקבלים אותו, ונכנסים.'
-                  : 'שלחנו קוד בן 6 ספרות. הוא תקף לעשר דקות.'}
+                  : resent
+                    ? 'שלחנו קוד חדש. הקוד הקודם כבר לא תקף — השתמשו בזה שהגיע עכשיו.'
+                    : 'שלחנו קוד בן 6 ספרות. הוא תקף לעשר דקות.'}
               </p>
             </header>
 
@@ -330,6 +341,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
                       setStep('who');
                       setOtp('');
                       setError('');
+                      setResent(false);
                       setScreenCode(null);
                     }}
                     className="flex items-center gap-1 text-sm text-ink-tertiary hover:text-ink hover:underline"
@@ -343,6 +355,7 @@ export function SignIn({ config, onSignedIn }: { config: AuthConfig; onSignedIn:
                     onClick={(e) => {
                       setOtp('');
                       setError('');
+                      setResent(true);
                       void sendCode(e);
                     }}
                     className="text-sm text-ink-tertiary hover:text-ink hover:underline"

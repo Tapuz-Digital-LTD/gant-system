@@ -1,6 +1,26 @@
 import React from 'react';
 import { cn } from './cn';
 
+export const OTP_LENGTH = 6;
+
+/** Six digits and nothing else — a hole left by a correction is not a code. */
+export const isCompleteOtp = (value: string) => /^\d{6}$/.test(value);
+
+/**
+ * One digit into one box, positionally.
+ *
+ * A blank box stays a blank character so every later digit keeps its place;
+ * only the tail is trimmed, so a finished code is six digits and nothing else.
+ * Collapsing the blanks instead — which is what this used to do — slid the rest
+ * of the code one box to the left the moment somebody fixed a digit in the
+ * middle, and the correction landed on the wrong digit.
+ */
+export function setOtpDigit(value: string, index: number, digit: string): string {
+  const next = value.padEnd(OTP_LENGTH, ' ').split('');
+  next[index] = digit || ' ';
+  return next.join('').slice(0, OTP_LENGTH).replace(/ +$/, '');
+}
+
 /**
  * Six boxes, one per digit, and no button at the end.
  *
@@ -12,6 +32,9 @@ import { cn } from './cn';
  * Laid out left to right even on a right-to-left page: a number is read in one
  * direction in every language, and mirroring the boxes would put the first
  * digit typed under the last box.
+ *
+ * The value is positional — see `setOtpDigit` — so `isCompleteOtp` is the only
+ * test of readiness.
  */
 export function OtpInput({
   value,
@@ -23,13 +46,13 @@ export function OtpInput({
 }: {
   value: string;
   onChange: (next: string) => void;
-  /** Fired once, when the sixth digit lands. */
+  /** Fired once, when all six digits are present. */
   onComplete: (code: string) => void;
   invalid?: boolean;
   disabled?: boolean;
   label?: string;
 }) {
-  const LENGTH = 6;
+  const LENGTH = OTP_LENGTH;
   const boxes = React.useRef<(HTMLInputElement | null)[]>([]);
   /*
    * So a complete code fires once.
@@ -40,18 +63,16 @@ export function OtpInput({
   const fired = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    if (value.length === LENGTH && fired.current !== value) {
+    if (isCompleteOtp(value) && fired.current !== value) {
       fired.current = value;
       onComplete(value);
     }
-    if (value.length < LENGTH) fired.current = null;
+    if (!isCompleteOtp(value)) fired.current = null;
   }, [value, onComplete]);
 
-  const setDigit = (index: number, digit: string) => {
-    const next = value.padEnd(LENGTH, ' ').split('');
-    next[index] = digit;
-    onChange(next.join('').replace(/\s/g, '').slice(0, LENGTH));
-  };
+  const setDigit = (index: number, digit: string) => onChange(setOtpDigit(value, index, digit));
+
+  const digitAt = (index: number) => (value[index] ?? '').trim();
 
   const focusBox = (index: number) => boxes.current[Math.max(0, Math.min(LENGTH - 1, index))]?.focus();
 
@@ -76,13 +97,13 @@ export function OtpInput({
           maxLength={1}
           disabled={disabled}
           aria-label={`ספרה ${i + 1} מתוך ${LENGTH}`}
-          value={value[i] ?? ''}
+          value={digitAt(i)}
           onChange={(e) => {
             const digits = e.target.value.replace(/\D/g, '');
             if (!digits) return;
             // A paste lands in one box; spread it across the rest.
             if (digits.length > 1) {
-              onChange((value.slice(0, i) + digits).slice(0, LENGTH));
+              onChange((value.padEnd(i, ' ').slice(0, i) + digits).slice(0, LENGTH).replace(/ +$/, ''));
               focusBox(i + digits.length);
               return;
             }
@@ -94,7 +115,7 @@ export function OtpInput({
               e.preventDefault();
               // Clear this one, or step back and clear that — which is what
               // backspace does everywhere else.
-              if (value[i]) setDigit(i, '');
+              if (digitAt(i)) setDigit(i, '');
               else {
                 setDigit(i - 1, '');
                 focusBox(i - 1);

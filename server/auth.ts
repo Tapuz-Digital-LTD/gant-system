@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { emailOTP, phoneNumber } from 'better-auth/plugins';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getDb, schema } from './db/client.js';
 import { sendSignInCode, sendSignInSms, isMailConfigured } from './email.js';
 import { israeliMobile, showsCodesOnScreen } from './notifications/inforu.js';
@@ -67,6 +69,36 @@ function build() {
       updateAge: 60 * 60 * 24,
       // Avoids a database round-trip per request, which matters on serverless.
       cookieCache: { enabled: true, maxAge: 60 * 5 }
+    },
+
+    /*
+     * Removing somebody has to mean they cannot get back in.
+     *
+     * A removal is a soft delete, and Better Auth knows nothing about
+     * `deleted_at` — it saw a row with a matching email, accepted the code and
+     * issued a session. Every API route then refused that session, because
+     * `loadActor` skips deleted rows, so the person was thrown back to the
+     * sign-in screen with no idea why. Refused here instead: one gate, on the
+     * one step every sign-in route ends with, so it covers mail, SMS and
+     * anything added later.
+     */
+    databaseHooks: {
+      session: {
+        create: {
+          before: async (session) => {
+            const [live] = await getDb()
+              .select({ id: schema.users.id })
+              .from(schema.users)
+              .where(and(eq(schema.users.id, session.userId), isNull(schema.users.deletedAt)));
+            if (!live) {
+              throw new APIError('FORBIDDEN', {
+                code: 'ACCESS_REMOVED',
+                message: 'הגישה שלך למערכת הוסרה. פנה למנהל המערכת'
+              });
+            }
+          }
+        }
+      }
     },
 
     advanced: {

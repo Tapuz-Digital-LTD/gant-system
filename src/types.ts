@@ -37,6 +37,8 @@ export interface Person {
   isGuest: boolean;
   /** The workspace owner: bypasses every permission and cannot be removed. */
   isOwner: boolean;
+  /** Israeli mobile, or null. The other way in — a code by SMS instead of mail. */
+  phone: string | null;
   createdAt: string;
   boards: { boardId: string; role: 'editor' | 'viewer' }[];
 }

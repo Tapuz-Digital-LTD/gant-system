@@ -2,7 +2,7 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle
 import type { Database } from './client.js';
 import { israelNow } from '../notifications/prefs.js';
 import { sendEmail } from '../notifications/inforu.js';
-import { boards, boardMembers, events, tasks, checklistItems, taskAttachments, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions, aiUsage } from './schema.js';
+import { boards, boardMembers, events, tasks, checklistItems, taskAttachments, comments, users, activity, notifications, notificationPrefs, workspaceSettings, rolePermissions, aiUsage, sessions } from './schema.js';
 import { DEFAULT_PREFS, readPrefs, type NotificationPrefs } from '../notifications/prefs.js';
 import { MILESTONE_LABELS } from '../notifications/milestone-labels.js';
 import { readChannels, type ChannelSwitches } from '../notifications/channels.js';
@@ -1737,6 +1737,9 @@ export function createRepo(db: Database) {
           role: users.role,
           isGuest: users.isGuest,
           isOwner: users.isOwner,
+          // Shown so whoever manages access can see who is reachable by SMS —
+          // and can sign in with a phone at all.
+          phone: users.phone,
           createdAt: users.createdAt
         })
         .from(users)
@@ -1760,22 +1763,53 @@ export function createRepo(db: Database) {
     /**
      * Adds a person by email. Staff get the whole workspace; a guest gets
      * nothing until a board is granted, which is a separate call.
+     *
+     * Somebody who was removed is revived rather than rejected. A removal is a
+     * soft delete — the row stays so their name keeps hanging on the events
+     * they created — and `lower(email)` is unique, so a second row is
+     * impossible. Treating the leftover row as a clash made "remove, then add
+     * back" permanently impossible for the one address it matters for.
      */
     async addPerson(
-      input: { email: string; name?: string; role: 'admin' | 'editor' | 'viewer'; isGuest: boolean },
+      input: {
+        email: string;
+        name?: string;
+        role: 'admin' | 'editor' | 'viewer';
+        isGuest: boolean;
+        phone?: string | null;
+      },
       actorId: string | null
     ) {
       const email = input.email.trim().toLowerCase();
+      const name = input.name?.trim() || email.split('@')[0];
       const [clash] = await db.select().from(users).where(sql`lower(${users.email}) = ${email}`);
-      if (clash) throw new ConflictExistsError('המייל הזה כבר נוסף');
+      if (clash && !clash.deletedAt) throw new ConflictExistsError('המייל הזה כבר נוסף');
+
+      if (clash) {
+        const [revived] = await db
+          .update(users)
+          .set({
+            deletedAt: null,
+            name,
+            role: input.role,
+            isGuest: input.isGuest,
+            phone: input.phone ?? null,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, clash.id))
+          .returning();
+        await log(db, actorId, 'user', revived.id, 'created', null, { email: revived.email, role: revived.role, revived: true });
+        return revived;
+      }
 
       const [row] = await db
         .insert(users)
         .values({
           email,
-          name: input.name?.trim() || email.split('@')[0],
+          name,
           role: input.role,
-          isGuest: input.isGuest
+          isGuest: input.isGuest,
+          phone: input.phone ?? null
         })
         .returning();
 
@@ -1785,7 +1819,7 @@ export function createRepo(db: Database) {
 
     async updatePerson(
       id: string,
-      changes: { name?: string; role?: 'admin' | 'editor' | 'viewer' },
+      changes: { name?: string; role?: 'admin' | 'editor' | 'viewer'; phone?: string | null },
       actorId: string | null
     ) {
       const [before] = await db.select().from(users).where(eq(users.id, id));
@@ -1815,6 +1849,11 @@ export function createRepo(db: Database) {
         .returning();
       if (!row) throw new NotFoundError('לא מצאנו את האדם הזה');
       await db.delete(boardMembers).where(eq(boardMembers.userId, id));
+      // The cookie in their browser is still valid until it expires. Every API
+      // route would refuse them — `loadActor` skips deleted rows — but a live
+      // session that answers "who am I" is a session, and removing access has
+      // to mean the tab they left open stops being signed in.
+      await db.delete(sessions).where(eq(sessions.userId, id));
       await log(db, actorId, 'user', id, 'removed');
       return row;
     },

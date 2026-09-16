@@ -200,6 +200,34 @@ assert.equal((await call('admin', 'DELETE', `/people/${ACTORS.admin.id}`)).statu
 assert.equal((await call('admin', 'DELETE', `/people/${added}`)).status, 204);
 assert.equal((await call('admin', 'GET', '/people')).json.data.length, before, 'removed people drop out of the list');
 
+/*
+ * Removed, then invited back.
+ *
+ * A removal is a soft delete, and the leftover row used to read as a clash —
+ * so "remove, then add again" answered ALREADY_EXISTS about somebody the list
+ * no longer showed, and no admin could undo their own mistake.
+ */
+r = await call('admin', 'POST', '/people', {
+  email: 'new@xtra.co.il',
+  name: 'חזרה',
+  role: 'viewer',
+  phone: '052-577-0223'
+});
+assert.equal(r.status, 201, 'somebody who was removed can be added back');
+assert.equal(r.json.data.id, added, 'and it is the same row, so their name stays on old events');
+assert.equal(r.json.data.role, 'viewer', 'the new invitation decides the role');
+assert.equal(r.json.data.phone, '0525770223', 'a number given at invitation is normalised');
+assert.equal(
+  (await call('admin', 'GET', '/people')).json.data.length,
+  before + 1,
+  'and they are back in the list'
+);
+
+r = await call('admin', 'POST', '/people', { email: 'back-again@xtra.co.il', phone: '12345' });
+assert.equal(r.status, 400, 'a number that is not an Israeli mobile is refused, not stored');
+
+assert.equal((await call('admin', 'DELETE', `/people/${added}`)).status, 204);
+
 // ================= granting a board to a guest =================
 r = await call('admin', 'POST', `/boards/${secretBoard.id}/members`, { userId: guest.id, role: 'viewer' });
 assert.equal(r.status, 204);

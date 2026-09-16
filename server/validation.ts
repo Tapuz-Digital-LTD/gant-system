@@ -153,12 +153,20 @@ export const personCreate = z.object({
   name: z.string().trim().max(120).optional(),
   role: memberRole.default('editor'),
   /** A guest sees only the boards granted to them; staff see the workspace. */
-  isGuest: z.boolean().default(false)
+  isGuest: z.boolean().default(false),
+  /**
+   * Optional, and normalised by the route rather than here — a number is the
+   * other way into this system, and somebody who is given one can sign in by
+   * SMS on their first day instead of waiting for a mailbox.
+   */
+  phone: z.string().trim().max(30).nullish()
 });
 
 export const personUpdate = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  role: memberRole.optional()
+  role: memberRole.optional(),
+  /** Empty string clears it, the same rule as somebody editing their own. */
+  phone: z.string().trim().max(30).nullish()
 });
 
 /** Empty string clears it — a person taking their number back out is a save, not a delete. */

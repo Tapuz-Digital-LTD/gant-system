@@ -763,16 +763,42 @@ export function createApiRouter(
     res.json({ data: await req.repo.listPeople() });
   }));
 
+  /**
+   * A number given at the point of invitation, not typed in afterwards.
+   *
+   * Rejected rather than stored as typed: a wrong number sends a sign-in code
+   * to a stranger, and the person it was meant for would only ever see "the
+   * code never arrives". Same normalisation and same refusal as `/my/phone`.
+   */
+  const normalisePhone = (phone: string | null | undefined): string | null | undefined => {
+    if (phone === undefined) return undefined;
+    if (phone === null || phone === '') return null;
+    const normalised = israeliMobile(phone);
+    if (!normalised) {
+      throw new ZodError([
+        { code: 'custom', path: ['phone'], message: 'מספר הנייד לא נראה תקין. לדוגמה: 050-1234567' }
+      ]);
+    }
+    return normalised;
+  };
+
   api.post('/people', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'people.manage', 'ניהול אנשים');
     const input = v.personCreate.parse(req.body);
-    res.status(201).json({ data: await req.repo.addPerson(input, actor.id) });
+    const person = await req.repo.addPerson(
+      { ...input, phone: normalisePhone(input.phone) ?? null },
+      actor.id
+    );
+    res.status(201).json({ data: person });
   }));
 
   api.patch('/people/:id', asyncRoute(async (req, res) => {
     const actor = await requirePermission(req.repo, req.actor, 'people.manage', 'ניהול אנשים');
     const userId = id(req.params.id);
-    const input = v.personUpdate.parse(req.body);
+    const parsed = v.personUpdate.parse(req.body);
+    // `phone` absent means "not part of this change"; null means "clear it".
+    const input =
+      parsed.phone === undefined ? parsed : { ...parsed, phone: normalisePhone(parsed.phone) ?? null };
 
     // The owner's role is fixed. Everything else can lock a workspace out.
     if (input.role) requireOwnerSafe(actor, await req.repo.isOwner(userId), 'לשנות את התפקיד של');

@@ -459,7 +459,11 @@ export function useEventMutations(boardId: string | undefined, from: string, to:
 /** Turns any thrown value into something a person can read. */
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.isConflict) return 'מישהו אחר שינה את זה בינתיים. רענן את הדף';
+    // Keyed on the code, not on 409. A stale `version` and "that email is
+    // already here" are both 409, so testing the status told somebody adding a
+    // person that a colleague had edited something — for an error that was
+    // already a readable Hebrew sentence written for exactly this screen.
+    if (error.code === 'STALE_VERSION') return 'מישהו אחר שינה את זה בינתיים. רענן את הדף';
     if (error.details?.length) return error.details.map((d) => d.message).join(' · ');
     return error.message;
   }
@@ -483,7 +487,7 @@ export function usePeopleMutations() {
   return {
     add: useMutation({ mutationFn: api.people.create, onSuccess: refresh }),
     update: useMutation({
-      mutationFn: (v: { id: string; name?: string; role?: 'admin' | 'editor' | 'viewer' }) =>
+      mutationFn: (v: { id: string; name?: string; role?: 'admin' | 'editor' | 'viewer'; phone?: string | null }) =>
         api.people.update(v.id, v),
       onSuccess: refresh
     }),
